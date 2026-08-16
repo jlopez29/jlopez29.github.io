@@ -8,51 +8,86 @@
     name="description"
     content="Portfolio for Jesse Lopez — software developer focused on application development."
   />
+  <meta id="theme-color" name="theme-color" content="#cedde8" />
 
   <title>Jesse Lopez | Software Developer</title>
 
   <link rel="icon" href="favicon.ico" />
+  <script>
+    (() => {
+      let savedTheme;
+
+      try {
+        savedTheme = localStorage.getItem("portfolio-theme");
+      } catch (error) {
+        savedTheme = null;
+      }
+
+      const preferredTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+
+      document.documentElement.dataset.theme = savedTheme || preferredTheme;
+    })();
+  </script>
   <link rel="stylesheet" href="home.css" />
 </head>
 
-<body>
+<body id="top">
   <div class="background-grid"></div>
   <div class="ambient ambient-blue"></div>
   <div class="ambient ambient-purple"></div>
 
-  <header class="site-header shell">
-    <a class="brand" href="./" aria-label="Jesse Lopez home">
-      <img src="profile.png" alt="JL" class="brand-avatar" />
-      <span>Jesse Lopez</span>
-    </a>
-
-    <nav class="nav" aria-label="Primary navigation">
-      <a href="#applications">Applications</a>
-
-      <a
-        href="https://github.com/jlopez29"
-        target="_blank"
-        rel="noreferrer"
-      >
-        GitHub
+  <div class="header-wrap shell">
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Jesse Lopez home">
+        <img src="profile.png" alt="" class="brand-avatar" />
+        <span>Jesse Lopez</span>
       </a>
 
-      <a
-        href="https://www.linkedin.com/in/jessealexanderlopez222/"
-        target="_blank"
-        rel="noreferrer"
-      >
-        LinkedIn
-      </a>
-    </nav>
-  </header>
+      <div class="header-tools">
+        <nav class="nav" id="primary-navigation" aria-label="Primary navigation">
+          <a href="#top">Home</a>
+          <a href="#applications">Applications</a>
+          <a href="https://github.com/jlopez29" target="_blank" rel="noreferrer">GitHub</a>
+          <a
+            class="nav-cta"
+            href="https://www.linkedin.com/in/jessealexanderlopez222/"
+            target="_blank"
+            rel="noreferrer"
+          >Let's connect</a>
+        </nav>
+
+        <button class="theme-toggle" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+          <svg class="moon-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20.2 15.7A8.5 8.5 0 0 1 8.3 3.8 8.5 8.5 0 1 0 20.2 15.7Z"/>
+          </svg>
+          <svg class="sun-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.5"/>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/>
+          </svg>
+        </button>
+
+        <button
+          class="menu-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="primary-navigation"
+          aria-label="Open navigation menu"
+        >
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </header>
+  </div>
 
   <main>
     <section class="hero shell">
       <div class="hero-content">
         <p class="eyebrow">SOFTWARE DEVELOPMENT</p>
 
-        <h1>Portfolio for Jesse Lopez</h1>
+        <h1>Portfolio for <em>Jesse Lopez.</em></h1>
 
         <div class="hero-subtitle">
           <span>Software Developer</span>
@@ -95,10 +130,12 @@
 
     <section id="applications" class="applications shell">
       <div class="section-heading">
-        <p class="eyebrow">APPLICATIONS</p>
-        <h2>Projects</h2>
+        <div class="section-title">
+          <p class="eyebrow">APPLICATIONS</p>
+          <h2>Projects</h2>
+        </div>
         <p>
-          Select an application below to launch it.
+          Select an application below to launch it and explore the details.
         </p>
       </div>
 
@@ -187,8 +224,60 @@
   </footer>
 
   <script>
-    document.getElementById("year").textContent =
-      new Date().getFullYear();
+    document.getElementById("year").textContent = new Date().getFullYear();
+
+    const menuButton = document.querySelector(".menu-toggle");
+    const navigation = document.querySelector(".nav");
+    const themeButton = document.querySelector(".theme-toggle");
+    const themeColor = document.querySelector("#theme-color");
+
+    function updateThemeButton(theme) {
+      const nextTheme = theme === "dark" ? "light" : "dark";
+      const label = `Switch to ${nextTheme} theme`;
+
+      themeButton.setAttribute("aria-label", label);
+      themeButton.setAttribute("title", label);
+      themeColor.setAttribute("content", theme === "dark" ? "#171221" : "#cedde8");
+    }
+
+    updateThemeButton(document.documentElement.dataset.theme);
+
+    themeButton.addEventListener("click", () => {
+      const currentTheme = document.documentElement.dataset.theme;
+      const nextTheme = currentTheme === "dark" ? "light" : "dark";
+
+      document.documentElement.dataset.theme = nextTheme;
+      try {
+        localStorage.setItem("portfolio-theme", nextTheme);
+      } catch (error) {
+        // The toggle still works when browser storage is unavailable.
+      }
+      updateThemeButton(nextTheme);
+    });
+
+    function closeMenu() {
+      menuButton.setAttribute("aria-expanded", "false");
+      menuButton.setAttribute("aria-label", "Open navigation menu");
+      navigation.classList.remove("is-open");
+      document.body.classList.remove("menu-open");
+    }
+
+    menuButton.addEventListener("click", () => {
+      const isOpen = menuButton.getAttribute("aria-expanded") === "true";
+      menuButton.setAttribute("aria-expanded", String(!isOpen));
+      menuButton.setAttribute("aria-label", isOpen ? "Open navigation menu" : "Close navigation menu");
+      navigation.classList.toggle("is-open", !isOpen);
+      document.body.classList.toggle("menu-open", !isOpen);
+    });
+
+    navigation.querySelectorAll("a").forEach((link) => link.addEventListener("click", closeMenu));
+    window.addEventListener("resize", () => {
+      if (window.innerWidth > 700) closeMenu();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeMenu();
+    });
   </script>
 </body>
 </html>
