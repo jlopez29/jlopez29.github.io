@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Draft IQ — League Learning Games</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">LEAGUE OF LEGENDS LEARNING GAMES</p>
+        <h1>Draft <span>IQ</span></h1>
+        <p class="subtitle">Learn the reason behind the pick — not just the champion name.</p>
+      </div>
+      <div class="stats">
+        <div><strong id="score">0</strong><span>Score</span></div>
+        <div><strong id="streak">0</strong><span>Streak</span></div>
+        <div><strong id="round">1</strong><span>Round</span></div>
+      </div>
+    </header>
+
+    <section class="controls">
+      <div class="control-group">
+        <span class="control-label">GAME MODE</span>
+        <div class="segmented" id="modeControl">
+          <button class="segment active" data-mode="comp">Team Comp</button>
+          <button class="segment" data-mode="counter">Counter Pick</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">DIFFICULTY</span>
+        <div class="segmented" id="difficultyControl">
+          <button class="segment active" data-difficulty="easy">Easy</button>
+          <button class="segment" data-difficulty="medium">Medium</button>
+          <button class="segment" data-difficulty="hard">Hard</button>
+        </div>
+      </div>
+
+      <button id="newScenarioBtn" class="secondary-btn">New scenario</button>
+    </section>
+
+    <section id="difficultyInfo" class="difficulty-info"></section>
+
+    <!-- TEAM COMP MODE -->
+    <div id="compGame">
+      <section class="lesson-strip">
+        <div>
+          <span class="lesson-label">YOUR ROLE</span>
+          <strong id="roleLabel">MID</strong>
+        </div>
+        <div class="lesson-tip">
+          <span class="lesson-label">DRAFT QUESTION</span>
+          <strong id="draftQuestion">What does your team need most?</strong>
+        </div>
+      </section>
+
+      <section class="board">
+        <div class="team-panel ally">
+          <div class="panel-heading">
+            <div>
+              <span class="side-label">BLUE SIDE</span>
+              <h2>Your team</h2>
+            </div>
+            <div id="allyNeeds" class="needs"></div>
+          </div>
+          <div id="allyTeam" class="champ-grid"></div>
+        </div>
+
+        <div class="versus">VS</div>
+
+        <div class="team-panel enemy">
+          <div class="panel-heading">
+            <div>
+              <span class="side-label">RED SIDE</span>
+              <h2>Enemy team</h2>
+            </div>
+            <div id="enemyThreats" class="needs"></div>
+          </div>
+          <div id="enemyTeam" class="champ-grid"></div>
+        </div>
+      </section>
+
+      <section class="decision-panel">
+        <div class="decision-heading">
+          <div>
+            <span class="side-label">YOUR PICK</span>
+            <h2>Who should you lock in?</h2>
+          </div>
+          <p id="scenarioHint"></p>
+        </div>
+        <div id="choices" class="choices"></div>
+      </section>
+    </div>
+
+    <!-- COUNTER PICK MODE -->
+    <div id="counterGame" class="hidden">
+      <section class="counter-stage">
+        <div class="draft-header">
+          <div>
+            <span class="side-label">SOLO QUEUE DRAFT</span>
+            <h2>You are assigned <span id="counterRole">TOP</span></h2>
+          </div>
+          <div class="enemy-lock-label">ENEMY LOCKED</div>
+        </div>
+
+        <div class="ban-row">
+          <div>
+            <span class="ban-title blue-text">Your team's bans</span>
+            <div id="blueBans" class="ban-list"></div>
+          </div>
+          <div>
+            <span class="ban-title red-text">Enemy team's bans</span>
+            <div id="redBans" class="ban-list"></div>
+          </div>
+        </div>
+
+        <div class="counter-matchup">
+          <div class="assigned-card">
+            <span class="small-label">YOU</span>
+            <div class="role-emblem" id="roleEmblem">TOP</div>
+            <h3 id="assignedRoleText">Top Lane</h3>
+            <p>Choose the champion whose kit best attacks the enemy pick's weaknesses.</p>
+          </div>
+
+          <div class="counter-arrow">→</div>
+
+          <div id="enemyPickCard" class="enemy-pick-card"></div>
+        </div>
+
+        <div id="counterHint" class="counter-hint"></div>
+      </section>
+
+      <section class="decision-panel">
+        <div class="decision-heading">
+          <div>
+            <span class="side-label">COUNTER PICK</span>
+            <h2>What do you lock in?</h2>
+          </div>
+          <p id="counterDecisionText"></p>
+        </div>
+        <div id="counterChoices" class="choices"></div>
+      </section>
+    </div>
+
+    <section id="resultPanel" class="result-panel hidden">
+      <div class="result-header">
+        <div>
+          <p id="resultKicker" class="result-kicker">GOOD READ</p>
+          <h2 id="resultTitle">That pick fits the draft.</h2>
+        </div>
+        <div id="resultGrade" class="grade">A</div>
+      </div>
+
+      <div class="explanation-grid">
+        <article class="explanation-card">
+          <h3 id="explainHeading1">What your team needed</h3>
+          <div id="explain1"></div>
+        </article>
+        <article class="explanation-card">
+          <h3>Your pick</h3>
+          <div id="explain2"></div>
+        </article>
+        <article class="explanation-card best-answer">
+          <h3>Best answer</h3>
+          <div id="explain3"></div>
+        </article>
+      </div>
+
+      <div class="teaching-point">
+        <span>KEY LESSON</span>
+        <p id="teachingPoint"></p>
+      </div>
+
+      <button id="nextRoundBtn" class="primary-btn">Next round →</button>
+    </section>
+
+    <section class="how-it-works">
+      <h2>Skills you're training</h2>
+      <div class="concept-grid">
+        <div><b>Damage profile</b><span>Do you need magic or physical damage?</span></div>
+        <div><b>Frontline & engage</b><span>Who starts the fight and creates safe space?</span></div>
+        <div><b>Peel & anti-dive</b><span>Can your carries survive the enemy's access tools?</span></div>
+        <div><b>Range & tempo</b><span>Who controls neutral space and objective setup?</span></div>
+        <div><b>Matchup mechanics</b><span>Which kits punish the enemy champion's core pattern?</span></div>
+        <div><b>Win condition</b><span>What does your five-man composition actually want to do?</span></div>
+      </div>
+    </section>
+
+    <footer>
+      <p>Champion artwork is loaded from Riot Games' Data Dragon static asset CDN. Draft lessons are simplified educational scenarios, not live-patch win-rate claims.</p>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
