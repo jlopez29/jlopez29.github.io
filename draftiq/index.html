@@ -21,12 +21,43 @@
       </div>
     </header>
 
+    <section class="progression-hud" aria-label="Player progression">
+      <div class="rank-emblem">
+        <span>LEVEL</span>
+        <strong id="playerLevel">1</strong>
+      </div>
+      <div class="rank-progress">
+        <div class="rank-line">
+          <div><span class="control-label">CURRENT RANK</span><strong id="rankTitle">Draft Recruit</strong></div>
+          <span id="xpText">0 / 500 XP</span>
+        </div>
+        <div class="xp-track"><span id="xpBar"></span></div>
+      </div>
+      <div class="mission-widget">
+        <div class="mission-copy">
+          <span class="control-label">FIVE-ROUND MISSION</span>
+          <strong id="missionText">Get 4 correct</strong>
+        </div>
+        <div id="missionPips" class="mission-pips" aria-label="Mission progress"></div>
+      </div>
+      <div id="comboWidget" class="combo-widget">
+        <span>COMBO</span>
+        <strong id="comboMultiplier">×1.0</strong>
+      </div>
+    </section>
+
+    <section class="achievement-shelf" aria-label="Achievements">
+      <span class="control-label">BADGES</span>
+      <div id="achievementList" class="achievement-list"></div>
+    </section>
+
     <section class="controls">
       <div class="control-group">
         <span class="control-label">GAME MODE</span>
         <div class="segmented" id="modeControl">
           <button class="segment active" data-mode="comp">Team Comp</button>
           <button class="segment" data-mode="counter">Counter Pick</button>
+          <button class="segment" data-mode="quiz">League Academy</button>
         </div>
       </div>
 
@@ -145,13 +176,85 @@
       </section>
     </div>
 
+    <!-- LEAGUE ACADEMY QUIZ MODE -->
+    <div id="quizGame" class="hidden">
+      <section class="academy-hero">
+        <div>
+          <span class="side-label">LEAGUE ACADEMY</span>
+          <h2>Turn game knowledge into instinct.</h2>
+          <p>Short lessons on the language, builds, champion kits, and map decisions that League expects you to know.</p>
+        </div>
+        <div class="academy-count">
+          <strong id="quizQuestionCount">32</strong>
+          <span>lessons in the library</span>
+        </div>
+      </section>
+
+      <section class="academy-toolbar" aria-label="Quiz category">
+        <div class="category-tabs" id="quizCategoryControl">
+          <button class="category-tab active" data-category="all">All topics</button>
+          <button class="category-tab" data-category="terms">Terminology</button>
+          <button class="category-tab" data-category="items">Items & builds</button>
+          <button class="category-tab" data-category="abilities">Champion abilities</button>
+          <button class="category-tab" data-category="macro">Macro & objectives</button>
+        </div>
+        <button id="reviewMissedBtn" class="secondary-btn" disabled>Review missed <span id="missedCount">0</span></button>
+      </section>
+
+      <section class="mastery-panel" aria-label="Topic mastery">
+        <div class="mastery-heading">
+          <div>
+            <span class="side-label">YOUR KNOWLEDGE MAP</span>
+            <h2>Topic mastery</h2>
+          </div>
+          <p id="masterySummary">Answer questions to build your knowledge map.</p>
+        </div>
+        <div id="masteryGrid" class="mastery-grid"></div>
+      </section>
+
+      <section class="quiz-stage">
+        <div class="quiz-progress" aria-hidden="true"><span id="quizProgressBar"></span></div>
+        <div class="quiz-meta">
+          <span id="quizCategoryBadge" class="quiz-badge">TERMINOLOGY</span>
+          <span id="quizLevelBadge" class="quiz-level">FOUNDATION</span>
+          <span id="quizProgressText">Question 1</span>
+        </div>
+
+        <div class="quiz-question-layout">
+          <div id="quizVisual" class="quiz-visual" aria-hidden="true"><span>GL</span></div>
+          <div class="quiz-copy">
+            <p id="quizContext" class="quiz-context"></p>
+            <h2 id="quizQuestion">What does “peel” mean?</h2>
+            <div id="quizHint" class="quiz-hint"></div>
+          </div>
+        </div>
+
+        <div id="quizChoices" class="quiz-choices"></div>
+
+        <div id="quizFeedback" class="quiz-feedback hidden" aria-live="polite">
+          <div class="feedback-mark" id="quizFeedbackMark">✓</div>
+          <div class="feedback-copy">
+            <span id="quizFeedbackKicker">CORRECT</span>
+            <h3 id="quizFeedbackTitle">You got it.</h3>
+            <p id="quizExplanation"></p>
+            <div class="quiz-takeaway"><b>Remember:</b> <span id="quizTakeaway"></span></div>
+            <div id="quizReward" class="reward-chip quiz-reward">+100 · +80 XP</div>
+          </div>
+          <button id="nextQuizBtn" class="primary-btn">Next lesson →</button>
+        </div>
+      </section>
+    </div>
+
     <section id="resultPanel" class="result-panel hidden">
       <div class="result-header">
         <div>
           <p id="resultKicker" class="result-kicker">GOOD READ</p>
           <h2 id="resultTitle">That pick fits the draft.</h2>
         </div>
-        <div id="resultGrade" class="grade">A</div>
+        <div class="result-score-stack">
+          <div id="resultReward" class="reward-chip">+100 · +80 XP</div>
+          <div id="resultGrade" class="grade">A</div>
+        </div>
       </div>
 
       <div class="explanation-grid">
@@ -186,6 +289,9 @@
         <div><b>Range & tempo</b><span>Who controls neutral space and objective setup?</span></div>
         <div><b>Matchup mechanics</b><span>Which kits punish the enemy champion's core pattern?</span></div>
         <div><b>Win condition</b><span>What does your five-man composition actually want to do?</span></div>
+        <div><b>League vocabulary</b><span>Understand terms teammates and guides use without stopping to look them up.</span></div>
+        <div><b>Item decisions</b><span>Build for the game in front of you, not from one rigid shopping list.</span></div>
+        <div><b>Ability knowledge</b><span>Recognize the key spell that defines a champion's threat or counterplay.</span></div>
       </div>
     </section>
 
@@ -193,6 +299,8 @@
       <p>Champion artwork is loaded from Riot Games' Data Dragon static asset CDN. Draft lessons are simplified educational scenarios, not live-patch win-rate claims.</p>
     </footer>
   </main>
+
+  <div id="gameToast" class="game-toast" role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>
 </body>

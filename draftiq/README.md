@@ -1,8 +1,34 @@
-# Draft IQ v2
+# Draft IQ v3
 
 Vanilla HTML/CSS/JavaScript League of Legends learning mini-games.
 
-## What's new in v2
+## What's new in v3: League Academy
+
+League Academy is a guided quiz mode with 32 starter lessons across:
+
+- League terminology
+- Items and build-order decisions
+- Champion abilities and counterplay
+- Macro, waves, vision, and objectives
+
+The mode includes category filters, difficulty-based lesson pools, detailed answer explanations, topic mastery, a focused “Review missed” deck, and progress saved in `localStorage`.
+
+Item questions intentionally teach decision frameworks rather than claiming one fixed six-item build is correct in every patch and matchup. New lessons can be added to the `quizQuestions` array in `app.js` using the same data shape as the existing questions.
+
+## Shared progression
+
+All three game modes now feed one persistent progression system:
+
+- XP, player levels, and rank titles
+- Score multipliers at 3, 5, and 8-answer streaks
+- Difficulty-scaled XP rewards
+- Repeatable five-round missions that award bonus XP for four correct answers
+- Eight persistent badges for streaks, mode mastery, missions, and levels
+- Reward summaries, unlock toasts, level-up feedback, and mobile-friendly progress displays
+
+Score, XP, missions, best streak, mode totals, and badges are saved in `localStorage`. Switching modes keeps the active combo so exploring another mini-game does not end a run.
+
+## Also included from v2
 
 ### 1. Difficulty levels
 
@@ -80,7 +106,7 @@ Then browse to:
 
 `http://localhost:8080`
 
-## Suggested v3 ideas
+## Suggested next ideas
 
 - Pull the entire champion roster automatically from Data Dragon.
 - Add Riot role icons.
@@ -89,7 +115,9 @@ Then browse to:
 - Add "Who is the biggest threat?" rounds.
 - Add "Build the last two picks" multi-step draft puzzles.
 - Add a full ban phase.
-- Add localStorage for persistent score, streak, difficulty and mastery.
-- Track concepts the player misses (e.g. peel, damage balance, anti-dive).
-- Add adaptive difficulty based on weak concepts.
+- Extend settings persistence to the selected mode and difficulty.
+- Add adaptive difficulty that automatically changes based on weak concepts.
 - Optionally ingest a live-patch matchup data source for a separate **Meta Counter** mode.
+- Split the Academy question library into its own data file as it grows.
+- Add champion and role-specific learning paths.
+- Add current-patch item and rune lessons generated from Riot's static data.

@@ -233,6 +233,51 @@ const counterScenarios = [
   }
 ];
 
+// The Academy library favors durable concepts over patch-specific stat trivia.
+// Item questions teach a decision process; a real build should still react to the
+// current patch, champion, matchup, gold on recall, and both team compositions.
+const quizQuestions = [
+  // TERMINOLOGY
+  {id:"term-peel",category:"terms",level:"easy",visual:"PEEL",context:"A carry is being chased by Vi and Leona.",prompt:"When a teammate asks you to “peel” for the carry, what should you do?",options:["Use crowd control and protection to keep threats away from the carry","Leave the fight and push a side lane","Start Baron immediately","Use every spell on the enemy tank"],answer:"Use crowd control and protection to keep threats away from the carry",hint:"Think about removing danger from a high-value teammate.",explanation:"Peel is defensive protection. Slows, knockbacks, shields, heals, and crowd control can all create the space a carry needs to keep dealing damage.",takeaway:"Peel is about protecting a teammate's ability to play the fight, not necessarily killing the diver."},
+  {id:"term-prio",category:"terms",level:"easy",visual:"PRIO",context:"Your jungler wants to contest the river crab.",prompt:"What does it mean when your lane has priority, or “prio”?",options:["You can move first because your opponent must answer the lane state","You have more total kills than your opponent","You are the team's main carry","Your champion always wins the matchup"],answer:"You can move first because your opponent must answer the lane state",hint:"It is about who can leave lane first without giving something up.",explanation:"Lane priority usually comes from controlling the wave or pressuring the opponent so they cannot move before you. It gives your team earlier access to river plays.",takeaway:"Priority is temporary. Re-check the wave before assuming a teammate can move."},
+  {id:"term-reset",category:"terms",level:"easy",visual:"RESET",context:"You have 1,300 gold, low mana, and the next wave is secured.",prompt:"What does “reset” usually mean in League?",options:["Recall to spend gold and restore resources, then return to the map","Restart the entire match","Drop all current objectives","Swap lanes with the support"],answer:"Recall to spend gold and restore resources, then return to the map",hint:"A good one converts gold into power without losing much on the map.",explanation:"A reset is a recall timed around waves and objectives. Strong reset timing lets you spend gold and refill before the next important play.",takeaway:"Gold in your inventory gives no combat stats until you spend it."},
+  {id:"term-tempo",category:"terms",level:"medium",visual:"TEMPO",context:"Your team recalls first after pushing mid and reaches dragon before the enemy.",prompt:"What advantage did your team create?",options:["Tempo — time to act while the enemy is busy responding","Scaling — permanent late-game power","Leash — help on the first jungle camp","A freeze — a wave held near your turret"],answer:"Tempo — time to act while the enemy is busy responding",hint:"The advantage here is measured in time, not raw stats.",explanation:"Tempo is the time or initiative to make the next move. Pushing, recalling first, or forcing an opponent to respond can buy a window to set vision or start an objective.",takeaway:"Tempo becomes valuable only when you use the window it creates."},
+  {id:"term-front-to-back",category:"terms",level:"medium",visual:"FTB",context:"Ornn stands in front while Jinx attacks the closest safe target behind him.",prompt:"Which teamfight pattern is this?",options:["Front-to-back","Split push","Cheese invade","Base race"],answer:"Front-to-back",hint:"The formation and target order are both in the name.",explanation:"Front-to-back teams fight through the enemy frontline while protecting their own carries. Carries usually hit the safest available target instead of forcing access to the backline.",takeaway:"The closest safe target is often the correct target for a sustained-damage carry."},
+  {id:"term-freeze",category:"terms",level:"medium",visual:"FREEZE",context:"You keep a small enemy minion advantage just outside your turret range.",prompt:"What are you trying to create?",options:["A freeze that holds the wave in a dangerous position for the opponent","A fast push that crashes immediately","A neutral objective trade","A level-one invade"],answer:"A freeze that holds the wave in a dangerous position for the opponent",hint:"The wave stays in roughly the same place over multiple waves.",explanation:"A freeze uses a controlled enemy minion advantage to keep the wave near your side. It can deny farm and force the opponent to walk farther forward.",takeaway:"A freeze is wave control, not simply last-hitting slowly."},
+  {id:"term-weakside",category:"terms",level:"hard",visual:"WEAK",context:"Your jungler invests resources on bot side while top receives little help.",prompt:"What does it mean for top lane to play “weak side”?",options:["Play with fewer allied resources and manage risk while pressure goes elsewhere","Intentionally lose lane so another player gets shutdown gold","Pick only tank champions","Never leave the top lane"],answer:"Play with fewer allied resources and manage risk while pressure goes elsewhere",hint:"It describes resource allocation, not player strength.",explanation:"Weak side is the side receiving less jungle attention, vision, or team investment. Its job is often to limit losses while the strong side creates an advantage.",takeaway:"Playing weak side well means preserving value without demanding resources your team is using elsewhere."},
+  {id:"term-zone",category:"terms",level:"hard",visual:"ZONE",context:"An Orianna ball sits in a choke even though Shockwave has not been cast.",prompt:"Why can this still be valuable?",options:["It zones enemies by making an area dangerous to enter","It permanently grants vision through walls","It increases allied objective damage","It prevents enemy recalls everywhere"],answer:"It zones enemies by making an area dangerous to enter",hint:"Threat can change movement even before a spell is used.",explanation:"Zoning is controlling space through the threat of damage or crowd control. Enemies may give up the best route simply because entering it would be too risky.",takeaway:"An unused ability can create value when its threat controls important space."},
+
+  // ITEMS & BUILD ORDER
+  {id:"item-armor",category:"items",level:"easy",visual:"ARMOR",context:"Two enemy frontliners are stacking armor and your physical damage is falling off.",prompt:"Which stat should move up your shopping priority?",options:["Percentage armor penetration","Flat health regeneration","Magic resistance","Mana regeneration"],answer:"Percentage armor penetration",hint:"You need a stat that reduces the value of their growing armor total.",explanation:"Percentage armor penetration becomes more valuable as enemy armor totals rise. It is the standard way for a physical-damage carry to keep threatening armored targets.",takeaway:"Build against the defenses enemies actually buy."},
+  {id:"item-healing",category:"items",level:"easy",visual:"HEAL",context:"The enemy team has several major healing sources and nobody has anti-heal.",prompt:"What is the best team-level item response?",options:["Have an appropriate teammate add Grievous Wounds without needlessly duplicating it","All five players must immediately buy the same anti-heal item","Ignore healing and only buy movement speed","Sell completed items for starter items"],answer:"Have an appropriate teammate add Grievous Wounds without needlessly duplicating it",hint:"The effect matters; buying it five times is usually inefficient.",explanation:"Grievous Wounds reduces healing. The team should decide who can apply it reliably and whether buying it now is worth delaying another power spike.",takeaway:"Itemization is a team problem: cover the need efficiently, then keep building toward your win condition."},
+  {id:"item-boots",category:"items",level:"easy",visual:"BOOTS",context:"You are laning into repeated physical basic attacks and the enemy team has little crowd control.",prompt:"Which boot profile is the most logical defensive choice?",options:["Armor and basic-attack mitigation","Magic resistance and tenacity","Out-of-combat movement only","No boots under any circumstances"],answer:"Armor and basic-attack mitigation",hint:"Match your defense to the damage pattern you face most often.",explanation:"Plated Steelcaps are the familiar example of boots that answer physical basic attacks. Mercury's Treads make more sense when magic damage and reducible crowd control are the larger threat.",takeaway:"Boot choice should react to damage type, crowd control, lane pressure, and your job in fights."},
+  {id:"item-components",category:"items",level:"medium",visual:"RECALL",context:"You recall short of the gold needed for your full first item.",prompt:"What is usually better than waiting in base for a large amount of gold?",options:["Buy useful components and return to the map on time","Wait indefinitely until the full item is affordable","Buy random cheap items with no build path","Leave every inventory slot empty for flexibility"],answer:"Buy useful components and return to the map on time",hint:"Map time and immediate combat stats both have value.",explanation:"Strong components let you convert available gold into power and preserve tempo. Waiting a long time in base can cost waves, camps, vision, or an objective setup.",takeaway:"Build order includes recall timing and components, not just the final six-item screenshot."},
+  {id:"item-jinx-armor",category:"items",level:"medium",visual:"LDR",context:"Jinx has two core damage items. Malphite and Rammus are now stacking heavy armor and blocking every fight.",prompt:"What should usually move ahead of another luxury damage item?",options:["A percentage armor-penetration item such as Lord Dominik's Regards","A magic-resistance tank item","An AP item with ability haste","A support ward item"],answer:"A percentage armor-penetration item such as Lord Dominik's Regards",hint:"Your next purchase should solve the reason you cannot deal damage now.",explanation:"Against multiple high-armor targets, a percentage armor-penetration item can be a higher-value third purchase than another item that only adds raw damage.",takeaway:"Do not follow a fixed order past the point where the game state asks a different question."},
+  {id:"item-survival",category:"items",level:"medium",visual:"STASIS",context:"You are an AP carry against a fed Zed and die during his commitment before casting a second rotation.",prompt:"Which purchase can be more valuable than rushing maximum raw damage?",options:["A stasis item such as Zhonya's Hourglass","Another item that offers only damage","A physical lifesteal item with no useful stats for your champion","A jungle companion"],answer:"A stasis item such as Zhonya's Hourglass",hint:"A dead carry deals no damage after the first rotation.",explanation:"Stasis can deny the assassin's burst window and buy time for cooldowns and teammates. Defensive items are damage items when they let you survive long enough to cast again.",takeaway:"Measure an item by how it changes the fight, not only by the size of its offensive stat line."},
+  {id:"item-tank-order",category:"items",level:"hard",visual:"AD x4",context:"You are the frontline into four physical-damage champions, including two crit-based basic attackers.",prompt:"Which build plan best reflects the enemy threat profile?",options:["Prioritize early armor and basic-attack or crit mitigation, then reassess","Stack magic resistance first because all tanks need both defenses equally","Buy only health and ignore resistance types","Copy last game's build in the exact same order"],answer:"Prioritize early armor and basic-attack or crit mitigation, then reassess",hint:"Count damage types and identify how the carries deliver that damage.",explanation:"Armor is unusually efficient into a heavily physical team. Effects that reduce basic-attack or critical-strike damage can add more value when those patterns dominate, though penetration and mixed damage still require reassessment.",takeaway:"Tank builds should be a live threat assessment, not a fixed list."},
+  {id:"item-build-framework",category:"items",level:"hard",visual:"BUILD",context:"A guide shows one six-item build, but your lane, enemy threats, and recall gold are different.",prompt:"What is the strongest way to decide your actual order?",options:["Start from the champion's core synergy, then adapt components, defenses, and penetration to the game","Copy all six items in order regardless of context","Buy the most expensive item available every recall","Counter only your lane opponent and ignore the other eight players"],answer:"Start from the champion's core synergy, then adapt components, defenses, and penetration to the game",hint:"Separate the champion's must-have interactions from situational slots.",explanation:"Good itemization combines a champion's core needs with the current game: lane pressure, major enemy threats, team damage profile, objective timing, and the amount of gold on each recall.",takeaway:"A build is a decision tree, not a shopping list."},
+
+  // CHAMPION ABILITIES
+  {id:"ability-poppy",category:"abilities",level:"easy",champion:"Poppy",context:"Lee Sin and Irelia need dashes to reach your backline.",prompt:"Which part of Poppy's kit directly interferes with their access?",options:["Steadfast Presence stops nearby enemy dashes","Her passive removes all enemy items","Hammer Shock silences the whole map","Keeper's Verdict permanently lowers attack range"],answer:"Steadfast Presence stops nearby enemy dashes",hint:"Her W creates a defensive zone around her.",explanation:"Poppy's Steadfast Presence can stop enemy dashes in its area and ground the champion it interrupts. Positioning the zone well can deny an engage before it starts.",takeaway:"Learn the one mechanic-defining spell that changes how opponents must approach each champion."},
+  {id:"ability-morgana",category:"abilities",level:"easy",champion:"Morgana",context:"Blitzcrank is looking to hook your ADC.",prompt:"Why is Morgana's Black Shield such an important answer?",options:["It can block magic damage and prevent crowd-control effects while it holds","It makes the target permanently invisible","It reflects every projectile","It teleports the target to base"],answer:"It can block magic damage and prevent crowd-control effects while it holds",hint:"The shield is valuable for more than its damage absorption.",explanation:"Black Shield absorbs magic damage and protects against disabling effects while the shield remains. Timing matters because losing the shield removes that protection.",takeaway:"When playing into Black Shield, break or wait out the shield before committing key crowd control."},
+  {id:"ability-xayah",category:"abilities",level:"easy",champion:"Xayah",context:"Vi commits her ultimate onto Xayah.",prompt:"What defensive feature makes Xayah's Featherstorm powerful against dive?",options:["Xayah becomes untargetable during the cast","It permanently doubles her armor","It cancels every enemy ultimate globally","It revives all dead teammates"],answer:"Xayah becomes untargetable during the cast",hint:"It can make a committed enemy ability lose its target window.",explanation:"Featherstorm briefly makes Xayah untargetable while also placing feathers she can later recall. Holding it for the enemy's key commitment is often more valuable than using it for damage.",takeaway:"Track defensive cooldowns before committing point-and-click access tools."},
+  {id:"ability-kindred",category:"abilities",level:"medium",champion:"Kindred",context:"Both teams are low inside Lamb's Respite.",prompt:"Who can be prevented from dying by Kindred's ultimate?",options:["Any unit inside the zone, ally or enemy, while the effect applies","Only Kindred","Only allied champions","Only jungle monsters"],answer:"Any unit inside the zone, ally or enemy, while the effect applies",hint:"This ultimate is not a normal one-sided protection spell.",explanation:"Lamb's Respite creates a zone where units cannot fall below a health threshold for its duration, then heals units still inside. Enemies can benefit too.",takeaway:"Plan the end of Lamb's Respite: displacement, burst timing, and healing reduction can decide what happens when safety expires."},
+  {id:"ability-orianna",category:"abilities",level:"medium",champion:"Orianna",context:"Orianna's ball is attached to Malphite as he dives into the enemy team.",prompt:"Where will Command: Shockwave activate?",options:["Around the current location of Orianna's ball","Always around Orianna herself","At the allied fountain","On the lowest-health enemy anywhere on the map"],answer:"Around the current location of Orianna's ball",hint:"Track the ball, not just Orianna's model.",explanation:"Orianna's spells are centered on her ball. A diver carrying the ball can deliver Shockwave into the enemy team, but losing track of the ball creates missed casts.",takeaway:"The ball's position is Orianna's effective threat position."},
+  {id:"ability-malphite",category:"abilities",level:"medium",champion:"Malphite",context:"Malphite is looking for a grouped backline at an objective choke.",prompt:"What makes Unstoppable Force a defining engage tool?",options:["Malphite becomes unstoppable during the dash and knocks up enemies at the destination","It is a global point-and-click execute","It grants permanent invulnerability","It can only hit minions"],answer:"Malphite becomes unstoppable during the dash and knocks up enemies at the destination",hint:"Its reliability comes from both the travel and the crowd control on arrival.",explanation:"Unstoppable Force rapidly crosses space while Malphite is unstoppable, then damages and knocks up enemies in the impact area. Spacing and vision are the main forms of counterplay.",takeaway:"Against Malphite, avoid stacking on top of other high-value targets in his engage range."},
+  {id:"ability-caitlyn",category:"abilities",level:"hard",champion:"Caitlyn",context:"An enemy is already rooted by Morgana's Dark Binding.",prompt:"How should Caitlyn use Yordle Snap Trap to extend the punish?",options:["Place a trap under the immobilized target to chain the control and enable a Headshot","Place every trap at her own fountain","Wait until the root ends, then place it far behind the target","Use traps only for minion damage"],answer:"Place a trap under the immobilized target to chain the control and enable a Headshot",hint:"Reliable allied crowd control can remove the normal difficulty of landing a trap.",explanation:"Caitlyn traps arm after placement, so allied crowd control creates a dependable setup. Chaining the trap extends the target's vulnerable window and enables Caitlyn's empowered follow-up.",takeaway:"Many abilities become dramatically stronger when sequenced after allied setup rather than cast independently."},
+  {id:"ability-leesin",category:"abilities",level:"hard",champion:"Lee Sin",context:"Lee Sin needs one more angle to reach a carry behind the frontline.",prompt:"What enables his classic ward-hop reposition?",options:["Safeguard can dash Lee Sin to an allied ward or allied unit","Sonic Wave always teleports behind the farthest enemy","Dragon's Rage resets every ward","Tempest creates a permanent tunnel"],answer:"Safeguard can dash Lee Sin to an allied ward or allied unit",hint:"The movement comes from the first cast of his W.",explanation:"Lee Sin can place a ward and cast Safeguard to it, creating a new angle for escape or an ultimate kick. Denying space and tracking ward availability reduces his options.",takeaway:"Advanced champion knowledge often means understanding what their basic abilities are allowed to target."},
+
+  // MACRO & OBJECTIVES
+  {id:"macro-wave-first",category:"macro",level:"easy",visual:"0:45",context:"Dragon spawns in 45 seconds and the mid wave is arriving.",prompt:"What is the best default preparation?",options:["Push the wave, recall or move on time, then establish river vision","Ignore the wave and stand in the pit for 45 seconds","Start a distant side-lane fight with no teleport","Spend all wards in your own fountain"],answer:"Push the wave, recall or move on time, then establish river vision",hint:"Prepare the lane before leaving it.",explanation:"Pushing first forces the opponent to choose between catching the wave and matching your move. That priority buys time for vision and better objective positions.",takeaway:"Objective setup starts with nearby waves, not when the monster spawns."},
+  {id:"macro-baron-recall",category:"macro",level:"easy",visual:"BARON",context:"Your team wins a fight, but everyone is low and carrying a lot of gold while Baron is not safely finishable.",prompt:"What is often the highest-value next action?",options:["Take safe nearby resources, reset, and return with spent gold","Stay indefinitely until the enemy respawns and catches you","Start Baron at critical health with no damage dealer","Walk separately through unwarded enemy jungle"],answer:"Take safe nearby resources, reset, and return with spent gold",hint:"Do not let a won fight create a losing second fight.",explanation:"A clean reset converts the fight win into items and restores health, mana, and wards. Forcing an unsafe objective can hand the advantage back.",takeaway:"After a win, secure what is safe and preserve the next tempo."},
+  {id:"macro-crossmap",category:"macro",level:"easy",visual:"TRADE",context:"Five enemies show bot to take dragon and your team cannot contest in time.",prompt:"What does a useful cross-map response look like?",options:["Take a top-side objective, turret, camps, or waves instead of arriving late","Walk one by one into dragon after it dies","Wait in base until the enemy leaves","Give every resource on the other side too"],answer:"Take a top-side objective, turret, camps, or waves instead of arriving late",hint:"If one side of the map is lost, ask what is free on the other side.",explanation:"Cross-mapping trades value when direct contest is impossible or too late. It reduces the cost of the enemy play and can force them to respond next.",takeaway:"A lost objective does not require a lost minute."},
+  {id:"macro-numbers",category:"macro",level:"medium",visual:"5v4",context:"An enemy top laner shows in a side lane without Teleport while Baron is alive.",prompt:"What temporary advantage should your team recognize?",options:["A numbers window to pressure Baron vision, start it, or force a fight","A reason for all five players to recall","Proof that Baron deals no damage","A permanent 5v4 for the rest of the match"],answer:"A numbers window to pressure Baron vision, start it, or force a fight",hint:"Count visible champions and check their ways to join.",explanation:"Showing far from an objective without a global tool creates a temporary numbers disadvantage. Your team can use that window, but must still account for vision, health, and enemy engage.",takeaway:"Macro begins with counting who can reach the next play in time."},
+  {id:"macro-split",category:"macro",level:"medium",visual:"1–4",context:"Your Fiora wins side lane, while the other four teammates can safely clear and disengage.",prompt:"What is the core purpose of a 1–4 setup?",options:["Force the enemy to answer the side-lane threat without letting the four-player group be engaged on","Have Fiora join every mid wave and abandon side pressure","Make the four-player group fight 4v5 immediately","Keep all five allies in separate lanes"],answer:"Force the enemy to answer the side-lane threat without letting the four-player group be engaged on",hint:"One player creates pressure; four players must avoid throwing while using it.",explanation:"The side laner pulls a response and creates map pressure. The group of four controls space or an objective but should avoid a losing engage while the split pusher is away.",takeaway:"Split pushing is coordinated pressure, not simply farming alone."},
+  {id:"macro-vision",category:"macro",level:"medium",visual:"VISION",context:"Your team arrives first around Baron with control wards and sweepers.",prompt:"Why is denying enemy vision so powerful?",options:["It creates uncertainty: the enemy cannot safely know whether you are starting Baron, setting a trap, or rotating","It makes Baron permanently weaker","It disables every enemy trinket for the full match","It guarantees a win even if your team leaves the area"],answer:"It creates uncertainty: the enemy cannot safely know whether you are starting Baron, setting a trap, or rotating",hint:"Information pressure can force dangerous face-checks.",explanation:"Vision denial hides both your position and your intent. The enemy must spend time checking, give the objective, or enter through controlled choke points.",takeaway:"Objective control is often won through information before combat begins."},
+  {id:"macro-death-wave",category:"macro",level:"hard",visual:"WAVE",context:"You can chase a low-health support, but two large enemy waves are about to crash into your side turrets.",prompt:"What is the disciplined macro choice?",options:["Secure the waves first unless the chase is nearly guaranteed and worth more","Chase across the map no matter how long it takes","Let the waves die because minions never matter","Have the whole team wait in a bush with no objective nearby"],answer:"Secure the waves first unless the chase is nearly guaranteed and worth more",hint:"Compare guaranteed gold and experience with uncertain reward and lost time.",explanation:"Large waves are reliable resources and protect turret health. A long chase can lose more guaranteed value than the possible kill provides while also exposing your team to a turn.",takeaway:"Evaluate plays by opportunity cost, not only by whether a kill is possible."},
+  {id:"macro-baron-use",category:"macro",level:"hard",visual:"BUFF",context:"Your team has Baron buff, but the enemy clears mid comfortably under turret.",prompt:"How should you create more pressure?",options:["Use empowered waves in multiple lanes while maintaining safe rotations and matching enemy threats","Send all five players mid for the entire buff regardless of wave states","Farm only your own jungle until the buff expires","Fight under the enemy turret without minions"],answer:"Use empowered waves in multiple lanes while maintaining safe rotations and matching enemy threats",hint:"Baron empowers minions, so make the enemy answer more than one wave.",explanation:"Baron is strongest when coordinated lane pressure stretches the defense. The exact setup depends on engage risk and side-lane matchups, but synchronized waves create harder choices than one predictable lane.",takeaway:"The goal of Baron is usually map progress—turrets, inhibitors, and control—not forcing a fight at any cost."}
+];
+
 const labels = {
   AP:"Magic damage",AD:"Physical damage",frontline:"Frontline",engage:"Engage",peel:"Peel",
   antiDive:"Anti-dive",teamfight:"Teamfight",scaling:"Scaling",dps:"Sustained DPS",
@@ -241,20 +286,87 @@ const labels = {
 };
 
 const roleNames = {TOP:"Top Lane",JUNGLE:"Jungle",MID:"Mid Lane",ADC:"Bot / ADC",SUPPORT:"Support"};
+const quizCategories = {
+  terms:{label:"Terminology",short:"WORDS",icon:"Aa"},
+  items:{label:"Items & builds",short:"BUILD",icon:"◆"},
+  abilities:{label:"Champion abilities",short:"KITS",icon:"QWER"},
+  macro:{label:"Macro & objectives",short:"MAP",icon:"⌖"}
+};
+const difficultyRank = {easy:1,medium:2,hard:3};
+const XP_PER_LEVEL = 500;
+const achievementDefinitions = [
+  {id:"first-read",icon:"✦",name:"First Read",description:"Answer your first challenge.",test:p=>p.totals.answers>=1},
+  {id:"on-fire",icon:"🔥",name:"On Fire",description:"Reach a 3-answer streak.",test:p=>p.bestStreak>=3},
+  {id:"unstoppable",icon:"⚡",name:"Unstoppable",description:"Reach a 7-answer streak.",test:p=>p.bestStreak>=7},
+  {id:"draft-reader",icon:"◈",name:"Draft Reader",description:"Get 5 Team Comp answers right.",test:p=>p.modes.comp.correct>=5},
+  {id:"counter-pro",icon:"⚔",name:"Counter Pro",description:"Find 5 clean counter picks.",test:p=>p.modes.counter.correct>=5},
+  {id:"academy-scholar",icon:"◆",name:"Academy Scholar",description:"Get 10 Academy lessons right.",test:p=>p.modes.quiz.correct>=10},
+  {id:"mission-clear",icon:"★",name:"Mission Clear",description:"Complete a five-round mission.",test:p=>p.completedMissions>=1},
+  {id:"shotcaller",icon:"♛",name:"Shotcaller",description:"Reach level 5.",test:p=>Math.floor(p.xp/XP_PER_LEVEL)+1>=5}
+];
 const $ = id => document.getElementById(id);
 const getChampion = name => champions.find(c => c.name === name);
+
+function loadAcademyProgress() {
+  try {
+    const saved=JSON.parse(localStorage.getItem("draftIqAcademyProgress"));
+    return saved&&saved.questions&&Array.isArray(saved.missed) ? saved : {questions:{},missed:[]};
+  } catch(error) {
+    return {questions:{},missed:[]};
+  }
+}
+
+function freshPlayerProgress() {
+  return {
+    xp:0,score:0,bestStreak:0,completedMissions:0,achievements:[],
+    totals:{answers:0,correct:0},
+    modes:{comp:{answers:0,correct:0},counter:{answers:0,correct:0},quiz:{answers:0,correct:0}},
+    mission:{results:[],complete:false,success:false}
+  };
+}
+
+function loadPlayerProgress() {
+  const fallback=freshPlayerProgress();
+  try {
+    const saved=JSON.parse(localStorage.getItem("draftIqPlayerProgress"));
+    if(!saved) return fallback;
+    return {
+      ...fallback,...saved,
+      totals:{...fallback.totals,...saved.totals},
+      modes:{
+        comp:{...fallback.modes.comp,...saved.modes?.comp},
+        counter:{...fallback.modes.counter,...saved.modes?.counter},
+        quiz:{...fallback.modes.quiz,...saved.modes?.quiz}
+      },
+      mission:{...fallback.mission,...saved.mission,results:Array.isArray(saved.mission?.results)?saved.mission.results:[]},
+      achievements:Array.isArray(saved.achievements)?saved.achievements:[]
+    };
+  } catch(error) {
+    return fallback;
+  }
+}
+
+const savedPlayerProgress=loadPlayerProgress();
 
 let state = {
   mode:"comp",
   difficulty:"easy",
-  score:0,
+  score:savedPlayerProgress.score,
   streak:0,
   round:1,
   compIndex:-1,
   counterIndex:-1,
+  quizCategory:"all",
+  quizReview:false,
+  quizQueue:[],
+  quizCycleTotal:0,
+  quizCyclePosition:0,
+  quizProgress:loadAcademyProgress(),
+  playerProgress:savedPlayerProgress,
   answered:false,
   scenario:null,
-  choices:[]
+  choices:[],
+  quizOptions:[]
 };
 
 function shuffle(arr) {
@@ -269,12 +381,155 @@ function shuffle(arr) {
 function labelForTag(tag) { return labels[tag] || tag.replace(/([A-Z])/g," $1"); }
 
 function difficultyCopy() {
+  if(state.mode==="quiz") {
+    const quizCopy = {
+      easy:"<strong>Easy:</strong> Foundation lessons include a direct hint and three answer choices.",
+      medium:"<strong>Medium:</strong> Foundation and applied lessons use all four choices with a lighter clue.",
+      hard:"<strong>Hard:</strong> The full curriculum is unlocked, including expert decision-making questions with no hints."
+    };
+    $("difficultyInfo").innerHTML = quizCopy[state.difficulty];
+    return;
+  }
   const copy = {
     easy:"<strong>Easy:</strong> Draft needs, enemy threats and champion descriptions are shown. Focus on learning the concepts.",
     medium:"<strong>Medium:</strong> Explicit need/threat tags disappear and choice descriptions are hidden. You still get one directional hint.",
     hard:"<strong>Hard:</strong> No draft hints, no need tags and no choice descriptions. Read the champions and solve the draft yourself."
   };
   $("difficultyInfo").innerHTML = copy[state.difficulty];
+}
+
+function saveAcademyProgress() {
+  try { localStorage.setItem("draftIqAcademyProgress",JSON.stringify(state.quizProgress)); }
+  catch(error) { /* Progress still works for this session when storage is unavailable. */ }
+}
+
+function eligibleQuizQuestions() {
+  const missed=new Set(state.quizProgress.missed);
+  let pool=quizQuestions.filter(q=>
+    difficultyRank[q.level]<=difficultyRank[state.difficulty] &&
+    (state.quizCategory==="all"||q.category===state.quizCategory)
+  );
+  if(state.quizReview) pool=pool.filter(q=>missed.has(q.id));
+  return pool;
+}
+
+function makeQuizQueue() {
+  let pool=eligibleQuizQuestions();
+  if(!pool.length&&state.quizReview) {
+    state.quizReview=false;
+    pool=eligibleQuizQuestions();
+  }
+  const missed=new Set(state.quizProgress.missed);
+  const unseen=shuffle(pool.filter(q=>!state.quizProgress.questions[q.id]));
+  const review=shuffle(pool.filter(q=>state.quizProgress.questions[q.id]&&missed.has(q.id)));
+  const learned=shuffle(pool.filter(q=>state.quizProgress.questions[q.id]&&!missed.has(q.id)));
+  state.quizQueue=[...unseen,...review,...learned];
+  state.quizCycleTotal=state.quizQueue.length;
+  state.quizCyclePosition=0;
+  updateReviewButton();
+}
+
+function buildQuizOptions(question) {
+  if(state.difficulty!=="easy") return shuffle(question.options);
+  return shuffle([question.answer,...shuffle(question.options.filter(option=>option!==question.answer)).slice(0,2)]);
+}
+
+function quizLevelLabel(level) {
+  return {easy:"Foundation",medium:"Applied",hard:"Expert"}[level];
+}
+
+function renderMastery() {
+  const progress=state.quizProgress.questions;
+  let totalAttempts=0,totalCorrect=0;
+  $("masteryGrid").innerHTML=Object.entries(quizCategories).map(([key,category])=>{
+    const ids=quizQuestions.filter(q=>q.category===key).map(q=>q.id);
+    const stats=ids.reduce((sum,id)=>{
+      const entry=progress[id]||{attempts:0,correct:0};
+      sum.attempts+=entry.attempts;
+      sum.correct+=entry.correct;
+      return sum;
+    },{attempts:0,correct:0});
+    totalAttempts+=stats.attempts;
+    totalCorrect+=stats.correct;
+    const percent=stats.attempts?Math.round((stats.correct/stats.attempts)*100):0;
+    return `<div class="mastery-card ${state.quizCategory===key?"active":""}" data-mastery-category="${key}">
+      <div class="mastery-card-top"><span>${category.icon}</span><b>${percent}%</b></div>
+      <h3>${category.label}</h3>
+      <div class="mastery-meter"><span style="width:${percent}%"></span></div>
+      <p>${stats.attempts?`${stats.correct} correct · ${stats.attempts} attempts`:"Not started"}</p>
+    </div>`;
+  }).join("");
+  const overall=totalAttempts?Math.round((totalCorrect/totalAttempts)*100):0;
+  $("masterySummary").textContent=totalAttempts
+    ? `${overall}% overall accuracy across ${totalAttempts} answer${totalAttempts===1?"":"s"}. Missed lessons return sooner.`
+    : "Answer questions to build your knowledge map.";
+  document.querySelectorAll("[data-mastery-category]").forEach(card=>card.addEventListener("click",()=>setQuizCategory(card.dataset.masteryCategory)));
+}
+
+function updateReviewButton() {
+  const count=state.quizProgress.missed.filter(id=>{
+    const q=quizQuestions.find(question=>question.id===id);
+    return q&&(state.quizCategory==="all"||q.category===state.quizCategory)&&difficultyRank[q.level]<=difficultyRank[state.difficulty];
+  }).length;
+  $("missedCount").textContent=count;
+  $("reviewMissedBtn").disabled=!count;
+  $("reviewMissedBtn").classList.toggle("active",state.quizReview);
+}
+
+function renderQuizQuestion() {
+  const q=state.scenario;
+  const category=quizCategories[q.category];
+  state.quizOptions=buildQuizOptions(q);
+  $("quizCategoryBadge").textContent=category.label.toUpperCase();
+  $("quizLevelBadge").textContent=quizLevelLabel(q.level).toUpperCase();
+  $("quizLevelBadge").className=`quiz-level ${q.level}`;
+  $("quizContext").textContent=q.context;
+  $("quizQuestion").textContent=q.prompt;
+  $("quizProgressText").textContent=`Lesson ${state.quizCyclePosition} of ${state.quizCycleTotal}${state.quizReview?" · review":""}`;
+  $("quizProgressBar").style.width=`${Math.max(6,(state.quizCyclePosition/state.quizCycleTotal)*100)}%`;
+
+  if(q.champion) {
+    $("quizVisual").className="quiz-visual champion-visual";
+    $("quizVisual").innerHTML=`<img src="${portrait(q.champion)}" alt=""><span>${q.champion}</span>`;
+  } else {
+    $("quizVisual").className=`quiz-visual ${q.category}`;
+    $("quizVisual").innerHTML=`<small>${category.short}</small><span>${q.visual||category.icon}</span>`;
+  }
+
+  if(state.difficulty==="easy") {
+    $("quizHint").classList.remove("hidden");
+    $("quizHint").innerHTML=`<b>Learning clue:</b> ${q.hint}`;
+  } else if(state.difficulty==="medium") {
+    $("quizHint").classList.remove("hidden");
+    $("quizHint").innerHTML=`<b>Think about:</b> ${q.hint}`;
+  } else {
+    $("quizHint").classList.add("hidden");
+  }
+
+  $("quizChoices").innerHTML=state.quizOptions.map((option,index)=>`<button class="quiz-answer" data-index="${index}">
+    <span>${String.fromCharCode(65+index)}</span><b>${option}</b>
+  </button>`).join("");
+  document.querySelectorAll("#quizChoices .quiz-answer").forEach(btn=>btn.addEventListener("click",()=>answerQuiz(Number(btn.dataset.index))));
+  $("quizFeedback").className="quiz-feedback hidden";
+}
+
+function nextQuiz() {
+  prepareNextMission();
+  if(!state.quizQueue.length) makeQuizQueue();
+  if(!state.quizQueue.length) return;
+  state.scenario=state.quizQueue.shift();
+  state.quizCyclePosition+=1;
+  renderQuizQuestion();
+  renderMastery();
+}
+
+function setQuizCategory(category) {
+  state.quizCategory=category;
+  state.quizReview=false;
+  document.querySelectorAll("#quizCategoryControl .category-tab").forEach(btn=>btn.classList.toggle("active",btn.dataset.category===category));
+  state.quizQueue=[];
+  state.answered=false;
+  nextQuiz();
 }
 
 function champCard(name) {
@@ -416,23 +671,159 @@ function nextCounter() {
   renderCounterScenario();
 }
 
+function savePlayerProgress() {
+  state.playerProgress.score=state.score;
+  try { localStorage.setItem("draftIqPlayerProgress",JSON.stringify(state.playerProgress)); }
+  catch(error) { /* Keep session progression when persistent storage is unavailable. */ }
+}
+
+function playerLevel() {
+  return Math.floor(state.playerProgress.xp/XP_PER_LEVEL)+1;
+}
+
+function rankForLevel(level) {
+  if(level>=12)return "Draft Master";
+  if(level>=8)return "Team Captain";
+  if(level>=5)return "Shotcaller";
+  if(level>=3)return "Draft Analyst";
+  return "Draft Recruit";
+}
+
+function multiplierForStreak(streak) {
+  if(streak>=8)return 2;
+  if(streak>=5)return 1.5;
+  if(streak>=3)return 1.25;
+  return 1;
+}
+
+let toastTimer;
+function showGameToast(icon,title,copy) {
+  const toast=$("gameToast");
+  toast.innerHTML=`<span>${icon}</span><div><b>${title}</b><small>${copy}</small></div>`;
+  toast.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>toast.classList.remove("visible"),3600);
+}
+
+function renderProgression() {
+  const p=state.playerProgress;
+  const level=playerLevel();
+  const levelXp=p.xp%XP_PER_LEVEL;
+  $("playerLevel").textContent=level;
+  $("rankTitle").textContent=rankForLevel(level);
+  $("xpText").textContent=`${levelXp} / ${XP_PER_LEVEL} XP`;
+  $("xpBar").style.width=`${(levelXp/XP_PER_LEVEL)*100}%`;
+
+  const results=p.mission.results;
+  const correct=results.filter(Boolean).length;
+  $("missionPips").innerHTML=Array.from({length:5},(_,index)=>{
+    const status=index>=results.length?"":results[index]?"correct":"wrong";
+    return `<span class="${status}">${index<results.length?(results[index]?"✓":"×"):index+1}</span>`;
+  }).join("");
+  $("missionText").textContent=p.mission.complete
+    ? p.mission.success?"Complete! +150 XP":`${correct}/4 — run it back`
+    : `${correct}/4 correct · ${5-results.length} left`;
+
+  const multiplier=multiplierForStreak(state.streak);
+  $("comboMultiplier").textContent=`×${multiplier.toFixed(2).replace(/0$/,'')}`;
+  $("comboWidget").classList.toggle("hot",multiplier>1);
+  $("achievementList").innerHTML=achievementDefinitions.map(achievement=>{
+    const unlocked=p.achievements.includes(achievement.id);
+    return `<div class="achievement ${unlocked?"unlocked":"locked"}" title="${achievement.description}">
+      <span>${unlocked?achievement.icon:"?"}</span><div><b>${achievement.name}</b><small>${unlocked?achievement.description:"Locked"}</small></div>
+    </div>`;
+  }).join("");
+}
+
+function unlockAchievements() {
+  const p=state.playerProgress;
+  const unlocked=achievementDefinitions.filter(achievement=>
+    !p.achievements.includes(achievement.id)&&achievement.test(p)
+  );
+  unlocked.forEach(achievement=>p.achievements.push(achievement.id));
+  return unlocked;
+}
+
+function awardRound(grade,mode=state.mode) {
+  const correct=grade!=="D";
+  if(correct) state.streak+=1;
+  else state.streak=0;
+
+  const multiplier=correct?multiplierForStreak(state.streak):1;
+  const basePoints=grade==="A"?100:grade==="B"?65:0;
+  const points=correct?Math.round(basePoints*multiplier):-(mode==="quiz"?10:20);
+  const baseXp=grade==="A"?80:grade==="B"?55:15;
+  const xpGain=Math.round(baseXp*({easy:1,medium:1.15,hard:1.3}[state.difficulty]));
+  state.score=Math.max(0,state.score+points);
+
+  const p=state.playerProgress;
+  const previousLevel=Math.floor(p.xp/XP_PER_LEVEL)+1;
+  p.xp+=xpGain;
+  p.bestStreak=Math.max(p.bestStreak,state.streak);
+  p.totals.answers+=1;
+  if(correct)p.totals.correct+=1;
+  p.modes[mode].answers+=1;
+  if(correct)p.modes[mode].correct+=1;
+  p.mission.results.push(correct);
+
+  let missionBonus=0;
+  if(p.mission.results.length===5) {
+    p.mission.complete=true;
+    p.mission.success=p.mission.results.filter(Boolean).length>=4;
+    if(p.mission.success) {
+      missionBonus=150;
+      p.xp+=missionBonus;
+      p.completedMissions+=1;
+    }
+  }
+
+  const unlocked=unlockAchievements();
+  const newLevel=Math.floor(p.xp/XP_PER_LEVEL)+1;
+  savePlayerProgress();
+  renderProgression();
+  if(unlocked.length) {
+    const achievement=unlocked[unlocked.length-1];
+    showGameToast(achievement.icon,"Badge unlocked",achievement.name);
+  } else if(p.mission.complete) {
+    showGameToast(p.mission.success?"★":"↻",p.mission.success?"Mission complete":"Mission missed",p.mission.success?"Four correct answers earned 150 bonus XP.":"Start a fresh five-round run next.");
+  } else if(newLevel>previousLevel) {
+    showGameToast("↑",`Level ${newLevel}`,`New rank progress: ${rankForLevel(newLevel)}.`);
+  }
+  return {grade,points,xp:xpGain,missionBonus,multiplier};
+}
+
+function prepareNextMission() {
+  const mission=state.playerProgress.mission;
+  if(!mission.complete)return;
+  state.playerProgress.mission={results:[],complete:false,success:false};
+  savePlayerProgress();
+  renderProgression();
+}
+
 function gradeResult(isBest,isGood=false) {
-  if(isBest){state.score+=100;state.streak+=1;return "A";}
-  if(isGood){state.score+=65;state.streak+=1;return "B";}
-  state.score=Math.max(0,state.score-20);state.streak=0;return "D";
+  return awardRound(isBest?"A":isGood?"B":"D");
 }
 function updateStats() {
   $("score").textContent=state.score;
   $("streak").textContent=state.streak;
   $("round").textContent=state.round;
+  renderProgression();
 }
 
-function showResult({grade,kicker,title,good,heading1,html1,html2,html3,lesson,bestName,selectedName,containerSelector}) {
+function rewardText(reward) {
+  const scorePart=reward.points>=0?`+${reward.points}`:`${reward.points}`;
+  const combo=reward.multiplier>1?` · ×${reward.multiplier} combo`:"";
+  const mission=reward.missionBonus?` · +${reward.missionBonus} mission XP`:"";
+  return `${scorePart} points · +${reward.xp} XP${combo}${mission}`;
+}
+
+function showResult({grade,reward,kicker,title,good,heading1,html1,html2,html3,lesson,bestName,selectedName,containerSelector}) {
   const panel=$("resultPanel");
   panel.className=`result-panel ${good?"good":"bad"}`;
   $("resultKicker").textContent=kicker;
   $("resultTitle").textContent=title;
   $("resultGrade").textContent=grade;
+  $("resultReward").textContent=rewardText(reward);
   $("explainHeading1").textContent=heading1;
   $("explain1").innerHTML=html1;
   $("explain2").innerHTML=html2;
@@ -454,7 +845,8 @@ function answerComp(name) {
   const best=[...state.choices].sort((a,b)=>b.score-a.score)[0];
   const isBest=selected.champ.name===best.champ.name;
   const isGood=selected.score>=best.score-.5;
-  const grade=gradeResult(isBest,isGood);
+  const reward=gradeResult(isBest,isGood);
+  const grade=reward.grade;
   updateStats();
 
   const selectedEval=scoreChampion(selected.champ,state.scenario);
@@ -462,6 +854,7 @@ function answerComp(name) {
 
   showResult({
     grade,
+    reward,
     kicker:isBest?"BEST ANSWER":isGood?"VIABLE ANSWER":"DRAFT MISMATCH",
     title:isBest?`${name} is the cleanest fit here.`:isGood?`${name} works, but ${best.champ.name} fits a little better.`:`${name} is playable, but the draft needed a different job.`,
     good:isGood,
@@ -482,11 +875,13 @@ function answerCounter(name) {
   const s=state.scenario;
   const isBest=name===s.best;
   // Counter mode deliberately gives only A or D right now so the lesson is clear.
-  const grade=gradeResult(isBest,false);
+  const reward=gradeResult(isBest,false);
+  const grade=reward.grade;
   updateStats();
 
   showResult({
     grade,
+    reward,
     kicker:isBest?"COUNTER FOUND":"NOT THE CLEANEST COUNTER",
     title:isBest?`${name} attacks ${s.enemy}'s core pattern.`:`${name} can be played, but ${s.best} is the cleaner concept counter.`,
     good:isBest,
@@ -501,11 +896,55 @@ function answerCounter(name) {
   });
 }
 
+function answerQuiz(index) {
+  if(state.answered)return;
+  state.answered=true;
+  const q=state.scenario;
+  const selected=state.quizOptions[index];
+  const correct=selected===q.answer;
+  const entry=state.quizProgress.questions[q.id]||{attempts:0,correct:0};
+  entry.attempts+=1;
+  if(correct) entry.correct+=1;
+  state.quizProgress.questions[q.id]=entry;
+
+  const missed=new Set(state.quizProgress.missed);
+  if(correct) {
+    missed.delete(q.id);
+  } else {
+    missed.add(q.id);
+  }
+  state.quizProgress.missed=[...missed];
+  saveAcademyProgress();
+  const reward=awardRound(correct?"A":"D","quiz");
+  updateStats();
+
+  document.querySelectorAll("#quizChoices .quiz-answer").forEach((btn,buttonIndex)=>{
+    btn.disabled=true;
+    const option=state.quizOptions[buttonIndex];
+    if(option===q.answer) btn.classList.add("correct");
+    else if(buttonIndex===index) btn.classList.add("wrong");
+  });
+
+  const feedback=$("quizFeedback");
+  feedback.className=`quiz-feedback ${correct?"good":"bad"}`;
+  $("quizFeedbackMark").textContent=correct?"✓":"!";
+  $("quizFeedbackKicker").textContent=correct?"CORRECT READ":"LEARNING MOMENT";
+  $("quizFeedbackTitle").textContent=correct?"That's the idea.":`The better answer: ${q.answer}`;
+  $("quizExplanation").textContent=q.explanation;
+  $("quizTakeaway").textContent=q.takeaway;
+  $("quizReward").textContent=rewardText(reward);
+  renderMastery();
+  updateReviewButton();
+  feedback.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+
 function newScenario() {
+  prepareNextMission();
   state.answered=false;
   $("resultPanel").className="result-panel hidden";
   if(state.mode==="comp") nextComp();
-  else nextCounter();
+  else if(state.mode==="counter") nextCounter();
+  else nextQuiz();
   updateStats();
 }
 
@@ -514,21 +953,39 @@ function setMode(mode) {
   document.querySelectorAll("#modeControl .segment").forEach(b=>b.classList.toggle("active",b.dataset.mode===mode));
   $("compGame").classList.toggle("hidden",mode!=="comp");
   $("counterGame").classList.toggle("hidden",mode!=="counter");
+  $("quizGame").classList.toggle("hidden",mode!=="quiz");
+  $("newScenarioBtn").textContent=mode==="quiz"?"New lesson":"New scenario";
   state.round=1;
-  state.streak=0;
+  if(mode==="quiz") state.quizQueue=[];
+  difficultyCopy();
   newScenario();
 }
 
 function setDifficulty(difficulty) {
   state.difficulty=difficulty;
   document.querySelectorAll("#difficultyControl .segment").forEach(b=>b.classList.toggle("active",b.dataset.difficulty===difficulty));
+  if(state.mode==="quiz") state.quizQueue=[];
   difficultyCopy();
   newScenario();
 }
 
 document.querySelectorAll("#modeControl .segment").forEach(btn=>btn.addEventListener("click",()=>setMode(btn.dataset.mode)));
 document.querySelectorAll("#difficultyControl .segment").forEach(btn=>btn.addEventListener("click",()=>setDifficulty(btn.dataset.difficulty)));
+document.querySelectorAll("#quizCategoryControl .category-tab").forEach(btn=>btn.addEventListener("click",()=>setQuizCategory(btn.dataset.category)));
 $("newScenarioBtn").addEventListener("click",newScenario);
+$("reviewMissedBtn").addEventListener("click",()=>{
+  if($("reviewMissedBtn").disabled)return;
+  state.quizReview=!state.quizReview;
+  state.quizQueue=[];
+  state.answered=false;
+  nextQuiz();
+});
+$("nextQuizBtn").addEventListener("click",()=>{
+  state.round+=1;
+  state.answered=false;
+  nextQuiz();
+  $("quizGame").scrollIntoView({behavior:"smooth",block:"start"});
+});
 $("nextRoundBtn").addEventListener("click",()=>{
   state.round+=1;
   newScenario();
@@ -536,4 +993,7 @@ $("nextRoundBtn").addEventListener("click",()=>{
 });
 
 difficultyCopy();
+$("quizQuestionCount").textContent=quizQuestions.length;
+renderMastery();
+updateReviewButton();
 newScenario();
