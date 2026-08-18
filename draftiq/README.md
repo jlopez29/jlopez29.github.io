@@ -1,10 +1,21 @@
-# Draft IQ v3
+# Draft IQ v4
 
 Vanilla HTML/CSS/JavaScript League of Legends learning mini-games.
 
-## What's new in v3: League Academy
+## What's new in v4: Minigame hub and champion paths
 
-League Academy is a guided quiz mode with 32 starter lessons across:
+Draft IQ now opens on a dedicated tile-based hub. Team Comp, Counter Pick, and League Academy each have their own entry card and return-to-hub flow instead of being packed into one mode switcher.
+
+League Academy now supports two learning paths:
+
+- **All questions** mixes the entire knowledge library.
+- **Champion main** filters the curriculum to one champion. Akali is the first complete path, with 12 lessons covering matchup plans, starting items and early defensive buys, ability interactions, wave control, roams, and teamfight access.
+
+The library has grown from 32 to 48 lessons, including explicit definitions and applied scenarios for pushing, crashing, freezing, slow pushing, and bouncing waves. Champion paths are data-driven through the optional `focus` field on a quiz question, so additional mains can be added without creating another quiz system.
+
+## League Academy
+
+League Academy is a guided quiz mode with 48 lessons across:
 
 - League terminology
 - Items and build-order decisions
@@ -110,7 +121,7 @@ Then browse to:
 
 - Pull the entire champion roster automatically from Data Dragon.
 - Add Riot role icons.
-- Add champion search / "my champion pool."
+- Expand the champion selector into a searchable "my champion pool."
 - Add a "What is our win condition?" game.
 - Add "Who is the biggest threat?" rounds.
 - Add "Build the last two picks" multi-step draft puzzles.
@@ -119,5 +130,5 @@ Then browse to:
 - Add adaptive difficulty that automatically changes based on weak concepts.
 - Optionally ingest a live-patch matchup data source for a separate **Meta Counter** mode.
 - Split the Academy question library into its own data file as it grows.
-- Add champion and role-specific learning paths.
+- Add more champion and role-specific learning paths beyond Akali.
 - Add current-patch item and rune lessons generated from Riot's static data.

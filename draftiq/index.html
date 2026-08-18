@@ -51,15 +51,49 @@
       <div id="achievementList" class="achievement-list"></div>
     </section>
 
-    <section class="controls">
-      <div class="control-group">
-        <span class="control-label">GAME MODE</span>
-        <div class="segmented" id="modeControl">
-          <button class="segment active" data-mode="comp">Team Comp</button>
-          <button class="segment" data-mode="counter">Counter Pick</button>
-          <button class="segment" data-mode="quiz">League Academy</button>
+    <section id="gameHub" class="game-hub">
+      <div class="hub-heading">
+        <div>
+          <span class="side-label">TRAINING GROUNDS</span>
+          <h2>Choose a minigame</h2>
+          <p>Build a different part of your League IQ in every queue.</p>
         </div>
+        <span class="hub-count">3 games</span>
       </div>
+
+      <div class="hub-grid">
+        <button class="game-tile comp-tile" data-launch-mode="comp">
+          <span class="tile-number">01</span>
+          <span class="tile-icon" aria-hidden="true">5v5</span>
+          <span class="tile-kicker">DRAFT READING</span>
+          <h3>Team Comp</h3>
+          <p>Read both drafts, find the missing job, and make the final lock-in.</p>
+          <span class="tile-meta"><b>8</b> draft scenarios <i>Play →</i></span>
+        </button>
+
+        <button class="game-tile counter-tile" data-launch-mode="counter">
+          <span class="tile-number">02</span>
+          <span class="tile-icon" aria-hidden="true">VS</span>
+          <span class="tile-kicker">MATCHUP KNOWLEDGE</span>
+          <h3>Counter Pick</h3>
+          <p>Identify the mechanic an enemy relies on and choose the cleanest answer.</p>
+          <span class="tile-meta"><b>10</b> matchup scenarios <i>Play →</i></span>
+        </button>
+
+        <button class="game-tile academy-tile" data-launch-mode="quiz">
+          <span class="tile-number">03</span>
+          <span class="tile-new">EXPANDED</span>
+          <span class="tile-icon" aria-hidden="true">IQ</span>
+          <span class="tile-kicker">KNOWLEDGE LIBRARY</span>
+          <h3>League Academy</h3>
+          <p>Train all topics together or follow a focused path for your main champion.</p>
+          <span class="tile-meta"><b id="hubQuizQuestionCount">48</b> quiz lessons <i>Study →</i></span>
+        </button>
+      </div>
+    </section>
+
+    <section id="gameControls" class="controls hidden">
+      <button id="backToHubBtn" class="back-btn">← All minigames</button>
 
       <div class="control-group">
         <span class="control-label">DIFFICULTY</span>
@@ -185,8 +219,39 @@
           <p>Short lessons on the language, builds, champion kits, and map decisions that League expects you to know.</p>
         </div>
         <div class="academy-count">
-          <strong id="quizQuestionCount">32</strong>
-          <span>lessons in the library</span>
+          <strong id="quizQuestionCount">48</strong>
+          <span id="quizQuestionCountLabel">lessons in this path</span>
+        </div>
+      </section>
+
+      <section class="quiz-path-panel" aria-label="Quiz path">
+        <div class="path-heading">
+          <div>
+            <span class="side-label">CHOOSE YOUR PATH</span>
+            <h2>What do you want to train?</h2>
+          </div>
+          <p>Mix the full library or focus every question around one champion.</p>
+        </div>
+        <div class="path-options" id="quizPathControl">
+          <button class="path-option active" data-quiz-path="all">
+            <span class="path-icon">∞</span>
+            <span><b>All questions</b><small>Terminology, builds, kits, waves, and macro</small></span>
+          </button>
+          <button class="path-option" data-quiz-path="champion">
+            <span class="path-icon">★</span>
+            <span><b>Champion main</b><small>Matchups, lane plans, builds, and teamfights</small></span>
+          </button>
+        </div>
+        <div id="championPicker" class="champion-picker hidden">
+          <label for="championSelect">
+            <span class="control-label">YOUR MAIN</span>
+            <select id="championSelect" aria-label="Choose your main champion"></select>
+          </label>
+          <div class="selected-champion">
+            <img id="selectedChampionPortrait" src="" alt="" />
+            <span><b id="selectedChampionName">Akali</b><small id="selectedChampionLessonCount">12 focused lessons</small></span>
+          </div>
+          <p>More champion paths can plug into the same library as they are added.</p>
         </div>
       </section>
 

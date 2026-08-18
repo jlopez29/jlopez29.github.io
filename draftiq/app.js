@@ -275,7 +275,27 @@ const quizQuestions = [
   {id:"macro-split",category:"macro",level:"medium",visual:"1–4",context:"Your Fiora wins side lane, while the other four teammates can safely clear and disengage.",prompt:"What is the core purpose of a 1–4 setup?",options:["Force the enemy to answer the side-lane threat without letting the four-player group be engaged on","Have Fiora join every mid wave and abandon side pressure","Make the four-player group fight 4v5 immediately","Keep all five allies in separate lanes"],answer:"Force the enemy to answer the side-lane threat without letting the four-player group be engaged on",hint:"One player creates pressure; four players must avoid throwing while using it.",explanation:"The side laner pulls a response and creates map pressure. The group of four controls space or an objective but should avoid a losing engage while the split pusher is away.",takeaway:"Split pushing is coordinated pressure, not simply farming alone."},
   {id:"macro-vision",category:"macro",level:"medium",visual:"VISION",context:"Your team arrives first around Baron with control wards and sweepers.",prompt:"Why is denying enemy vision so powerful?",options:["It creates uncertainty: the enemy cannot safely know whether you are starting Baron, setting a trap, or rotating","It makes Baron permanently weaker","It disables every enemy trinket for the full match","It guarantees a win even if your team leaves the area"],answer:"It creates uncertainty: the enemy cannot safely know whether you are starting Baron, setting a trap, or rotating",hint:"Information pressure can force dangerous face-checks.",explanation:"Vision denial hides both your position and your intent. The enemy must spend time checking, give the objective, or enter through controlled choke points.",takeaway:"Objective control is often won through information before combat begins."},
   {id:"macro-death-wave",category:"macro",level:"hard",visual:"WAVE",context:"You can chase a low-health support, but two large enemy waves are about to crash into your side turrets.",prompt:"What is the disciplined macro choice?",options:["Secure the waves first unless the chase is nearly guaranteed and worth more","Chase across the map no matter how long it takes","Let the waves die because minions never matter","Have the whole team wait in a bush with no objective nearby"],answer:"Secure the waves first unless the chase is nearly guaranteed and worth more",hint:"Compare guaranteed gold and experience with uncertain reward and lost time.",explanation:"Large waves are reliable resources and protect turret health. A long chase can lose more guaranteed value than the possible kill provides while also exposing your team to a turn.",takeaway:"Evaluate plays by opportunity cost, not only by whether a kill is possible."},
-  {id:"macro-baron-use",category:"macro",level:"hard",visual:"BUFF",context:"Your team has Baron buff, but the enemy clears mid comfortably under turret.",prompt:"How should you create more pressure?",options:["Use empowered waves in multiple lanes while maintaining safe rotations and matching enemy threats","Send all five players mid for the entire buff regardless of wave states","Farm only your own jungle until the buff expires","Fight under the enemy turret without minions"],answer:"Use empowered waves in multiple lanes while maintaining safe rotations and matching enemy threats",hint:"Baron empowers minions, so make the enemy answer more than one wave.",explanation:"Baron is strongest when coordinated lane pressure stretches the defense. The exact setup depends on engage risk and side-lane matchups, but synchronized waves create harder choices than one predictable lane.",takeaway:"The goal of Baron is usually map progress—turrets, inhibitors, and control—not forcing a fight at any cost."}
+  {id:"macro-baron-use",category:"macro",level:"hard",visual:"BUFF",context:"Your team has Baron buff, but the enemy clears mid comfortably under turret.",prompt:"How should you create more pressure?",options:["Use empowered waves in multiple lanes while maintaining safe rotations and matching enemy threats","Send all five players mid for the entire buff regardless of wave states","Farm only your own jungle until the buff expires","Fight under the enemy turret without minions"],answer:"Use empowered waves in multiple lanes while maintaining safe rotations and matching enemy threats",hint:"Baron empowers minions, so make the enemy answer more than one wave.",explanation:"Baron is strongest when coordinated lane pressure stretches the defense. The exact setup depends on engage risk and side-lane matchups, but synchronized waves create harder choices than one predictable lane.",takeaway:"The goal of Baron is usually map progress—turrets, inhibitors, and control—not forcing a fight at any cost."},
+
+  // WAVE-MANAGEMENT VOCABULARY
+  {id:"term-push-wave",category:"terms",level:"easy",visual:"PUSH",context:"Your jungler pings that they want to contest the next river objective.",prompt:"What does “push the wave” ask you to do?",options:["Kill the enemy minions quickly so your wave advances toward their turret","Only last-hit and keep the wave in the same place","Leave every minion alive and roam immediately","Attack the enemy champion under turret at any cost"],answer:"Kill the enemy minions quickly so your wave advances toward their turret",hint:"The goal is to make the opponent answer minions before they can move.",explanation:"Pushing means clearing the wave so your minions move forward. A successful push can create lane priority, a recall window, turret pressure, or time to roam.",takeaway:"Push with a purpose: know whether the next window is for vision, a reset, a roam, or turret damage."},
+  {id:"term-crash-wave",category:"terms",level:"medium",visual:"CRASH",context:"Your full minion wave reaches the enemy turret and begins dying to it.",prompt:"What does it mean to “crash” a wave?",options:["Get your minions fully under the enemy turret so the turret and defender must clear them","Keep the waves locked outside your own turret","Recall while the enemy wave is pushing toward you","Pull the enemy jungler away from an objective"],answer:"Get your minions fully under the enemy turret so the turret and defender must clear them",hint:"A partial push that stops outside turret is not a clean crash.",explanation:"A crash places the wave under the opposing turret. This makes the opponent spend time collecting it and can create a safer recall, roam, ward, or dive timing.",takeaway:"Finish the crash before leaving when possible; an unfinished push can freeze against you."},
+  {id:"term-slow-push",category:"terms",level:"medium",visual:"SLOW",context:"You want a large side-lane wave to build over the next minute before an objective.",prompt:"How do you usually start a slow push?",options:["Create a small allied minion advantage, then let reinforcement waves stack","Clear every wave instantly from maximum range","Tank the whole enemy wave outside your turret forever","Ignore which side has more minions"],answer:"Create a small allied minion advantage, then let reinforcement waves stack",hint:"You want your side to win gradually, not reach the next turret immediately.",explanation:"A small minion advantage compounds as new waves arrive, creating a larger wave that eventually demands an answer. Timing and map side matter because an enemy can collect or reverse it.",takeaway:"A slow push is delayed pressure: build it before your team wants to act elsewhere."},
+  {id:"term-wave-bounce",category:"terms",level:"hard",visual:"BOUNCE",context:"You crash a large wave into the enemy turret and neither champion touches the next wave immediately.",prompt:"Why is the wave likely to “bounce” back toward you?",options:["Enemy reinforcements arrive sooner and meet your wave closer to their side, creating an enemy minion advantage","Turrets permanently change every minion's damage","The river automatically pulls minions toward your base","A crashed wave always disappears for two minutes"],answer:"Enemy reinforcements arrive sooner and meet your wave closer to their side, creating an enemy minion advantage",hint:"Think about where each new wave enters the fight.",explanation:"After a clean crash, the next enemy wave reaches the meeting point sooner. Unless the opponent changes the wave, that extra time often creates a push back toward your side.",takeaway:"A crash can set up your next safer collection window; wave control is a sequence, not one isolated wave."},
+
+  // AKALI MAIN PATH — durable matchup principles rather than a fixed patch build
+  {id:"akali-passive-ring",category:"abilities",level:"easy",champion:"Akali",focus:["Akali"],context:"You hit an enemy champion with Five Point Strike and a ring appears around them.",prompt:"What is Akali trying to do with Assassin's Mark?",options:["Step outside the ring to empower her next basic attack, then re-enter for the trade","Stand still inside the ring until it disappears","Recall immediately to refresh the passive","Attack a turret to make the ring damage every enemy"],answer:"Step outside the ring to empower her next basic attack, then re-enter for the trade",hint:"The passive rewards crossing the ring boundary after an ability hits.",explanation:"Damaging a champion with an ability creates the ring. Crossing its edge grants movement speed and empowers Akali's next basic attack with extra range and damage.",takeaway:"Akali's lane trades are built around movement: spell, exit the ring, then decide whether it is safe to re-enter."},
+  {id:"akali-shroud-purpose",category:"abilities",level:"easy",champion:"Akali",focus:["Akali"],context:"Akali has spent most of her energy during a lane trade and the opponent wants to retaliate.",prompt:"What does Twilight Shroud give her besides concealment?",options:["An energy restoration and movement window that can extend or safely end the trade","Permanent invulnerability for the rest of the lane","A global teleport to any allied turret","A full reset of her ultimate"],answer:"An energy restoration and movement window that can extend or safely end the trade",hint:"Shroud affects Akali's resources as well as enemy targeting.",explanation:"Twilight Shroud creates obscured space, restores energy, and gives Akali room to reposition. Revealing herself carelessly with attacks can still let the opponent answer.",takeaway:"Treat Shroud as a resource and timing tool, not only an invisibility button."},
+  {id:"akali-ranged-start",category:"items",level:"easy",champion:"Akali",focus:["Akali"],context:"You are Akali into Orianna, who can repeatedly poke you while you walk up for early minions.",prompt:"Which starting purchase is the safest default for surviving repeated ranged poke?",options:["Doran's Shield for lane sustain","A large damage component you cannot afford at level one","Cull to maximize safe ranged farming","No starting item so you can save gold"],answer:"Doran's Shield for lane sustain",hint:"The first job is reaching later levels with enough health to threaten an all-in.",explanation:"Doran's Shield is a common defensive start into repeated poke because its sustain helps Akali absorb early lane pressure. Exact starts can change with balance patches and player confidence.",takeaway:"Choose a starting item for the lane you must survive, not only for the damage you hope to deal later."},
+  {id:"akali-push-roam",category:"macro",level:"easy",champion:"Akali",focus:["Akali"],context:"Bot lane looks gankable, but a full enemy wave is arriving mid.",prompt:"What should Akali usually do before starting the roam?",options:["Push or otherwise secure the mid wave, then move during the window","Abandon every arriving wave as soon as bot lane trades","Wait under her turret until the opportunity disappears","Use both ultimate casts on the minion wave"],answer:"Push or otherwise secure the mid wave, then move during the window",hint:"A roam costs much more when the opposing mid can hold the wave and take plates.",explanation:"Securing the wave makes the enemy mid choose between matching Akali and collecting minions. Some urgent fights justify moving first, but the default roam starts by creating priority.",takeaway:"Good roams are funded by wave control; they are not free trips away from lane."},
+  {id:"akali-zed-first-buy",category:"items",level:"medium",champion:"Akali",focus:["Akali"],context:"You are Akali into Zed. He has an early lead and his physical burst is deciding every trade.",prompt:"Which first defensive component best changes this lane?",options:["Early armor with a path toward stasis, such as Seeker's Armguard","Magic resistance with no other purpose in the matchup","Attack-speed boots for longer basic-attack trades","A support item that only generates wards"],answer:"Early armor with a path toward stasis, such as Seeker's Armguard",hint:"Match the defense to Zed's damage and his committed ultimate window.",explanation:"Early armor reduces Zed's physical burst, while a later stasis active can deny much of his ultimate timing. Item names and exact efficiency move by patch, but the armor-into-stasis decision remains the key idea.",takeaway:"The best first buy is sometimes the component that removes the opponent's kill window."},
+  {id:"akali-yasuo-wall",category:"abilities",level:"medium",champion:"Akali",focus:["Akali"],context:"Yasuo still has Wind Wall available and Akali wants to commit with Shuriken Flip.",prompt:"What interaction should Akali respect?",options:["Wind Wall can block the E projectile, so bait it or find an angle before committing","Wind Wall removes Twilight Shroud from the ground","Wind Wall makes Yasuo immune to Akali's ultimate","Wind Wall reflects Akali's passive attack across the map"],answer:"Wind Wall can block the E projectile, so bait it or find an angle before committing",hint:"Ask which part of Akali's engage begins as a projectile.",explanation:"The first cast of Shuriken Flip is a projectile and can be stopped by Wind Wall. If E is central to Akali's all-in, tracking Wind Wall prevents a high-cost failed commit.",takeaway:"Matchup knowledge means tracking the specific defensive cooldown that interrupts your sequence."},
+  {id:"akali-freeze-melee",category:"terms",level:"easy",champion:"Akali",focus:["Akali"],context:"Akali is ahead of a melee opponent with no Teleport. The enemy wave is just outside Akali's turret and her jungler is nearby.",prompt:"Why might holding a freeze be stronger than instantly pushing?",options:["It forces the opponent to walk into a long, dangerous lane to collect farm","It guarantees Akali a turret without attacking it","It makes Akali invisible to enemy wards","It permanently stops every neutral objective"],answer:"It forces the opponent to walk into a long, dangerous lane to collect farm",hint:"Use your lead to control where the opponent is allowed to stand.",explanation:"A stable freeze near Akali's side can deny minions and expose a melee opponent to an all-in or gank. It is only useful while the wider map does not require Akali to create priority elsewhere.",takeaway:"Freeze to deny and threaten; push when you need tempo somewhere else."},
+  {id:"akali-galio-plan",category:"macro",level:"medium",champion:"Akali",focus:["Akali"],context:"Galio is hard for Akali to burst and can answer fights with Hero's Entrance.",prompt:"What is the more reliable mid-game plan?",options:["Manage the wave, track his ultimate, and create pressure where he cannot answer for free","Force the same all-in on Galio every time he returns to lane","Ignore side waves and wait permanently in mid","Build only armor because Galio deals physical damage"],answer:"Manage the wave, track his ultimate, and create pressure where he cannot answer for free",hint:"You do not have to win by repeatedly killing your lane opponent.",explanation:"A durable anti-magic champion can deny Akali's preferred lane kills. Wave timing, side pressure, vision denial, and tracking Galio's global response create better openings than forcing his strongest kind of fight.",takeaway:"A difficult matchup changes the route to your win condition, not the existence of one."},
+  {id:"akali-mr-pen",category:"items",level:"hard",champion:"Akali",focus:["Akali"],context:"You are Akali with core damage completed, but three enemies now have substantial magic resistance.",prompt:"What should rise in priority before another purely raw-AP luxury item?",options:["Percentage magic penetration","Critical-strike chance","Mana regeneration despite Akali using energy","Armor with no physical threat on the enemy team"],answer:"Percentage magic penetration",hint:"The enemy has invested in the defense that directly reduces your damage.",explanation:"Percentage magic penetration scales against larger magic-resistance totals. The exact item choice depends on the patch and whether utility or haste matters, but ignoring widespread MR makes raw ability power less efficient.",takeaway:"Re-check enemy inventories before every major purchase; your build should answer what changed."},
+  {id:"akali-e-mark",category:"abilities",level:"hard",champion:"Akali",focus:["Akali"],context:"Akali marks an enemy carry with Shuriken Flip, but the carry retreats under turret while teammates collapse.",prompt:"What is the disciplined decision before recasting E?",options:["Re-evaluate the landing position, enemy cooldowns, and available exits before following","Always recast because a landed mark guarantees a kill","Recast only to restore health, regardless of position","Wait for the mark to teleport the enemy back to Akali"],answer:"Re-evaluate the landing position, enemy cooldowns, and available exits before following",hint:"Landing E creates an option, not an obligation.",explanation:"The recast carries Akali to the marked target's current position. During that delay, the target can move into turret range or toward teammates, turning a good hit into a losing follow.",takeaway:"Mechanical consistency includes declining a flashy recast when the destination has become bad."},
+  {id:"akali-teamfight-flank",category:"macro",level:"hard",champion:"Akali",focus:["Akali"],context:"A five-on-five objective fight is starting. The enemy frontline is grouped in front of two protected carries.",prompt:"Which setup best supports Akali's assassin job?",options:["Approach from fog or a side angle after key control spells are tracked","Stand directly in front and attack the tank before the fight starts","Reveal on the wave and use Shroud before anyone engages","Enter alone while every enemy cooldown is available"],answer:"Approach from fog or a side angle after key control spells are tracked",hint:"Akali wants access and uncertainty more than a fair front-to-back entrance.",explanation:"A flank or fog angle stretches the enemy formation and shortens Akali's route to a carry. Waiting for important crowd control also lowers the cost of committing into the backline.",takeaway:"Assassins often win the fight with position and timing before they win it with damage."},
+  {id:"akali-bounce-reset",category:"terms",level:"hard",champion:"Akali",focus:["Akali"],context:"Akali crashes a large wave, recalls, and expects the lane to push back toward her.",prompt:"Why is this reset especially useful for a short-range assassin?",options:["She can return with spent gold to a longer lane where the opponent must walk forward","It permanently removes the enemy turret's protection","It guarantees every minion will wait at the river","It prevents the opposing mid from ever roaming"],answer:"She can return with spent gold to a longer lane where the opponent must walk forward",hint:"Combine the item advantage from resetting with the position created by the bounce.",explanation:"The crash buys Akali recall time, and the bounce can bring the next waves toward her side. Returning stronger to an extended lane creates more room to trade, chase, or threaten a gank.",takeaway:"Wave sequences can manufacture the space an assassin needs; do not treat every wave as an isolated shove."}
 ];
 
 const labels = {
@@ -291,6 +311,9 @@ const quizCategories = {
   items:{label:"Items & builds",short:"BUILD",icon:"◆"},
   abilities:{label:"Champion abilities",short:"KITS",icon:"QWER"},
   macro:{label:"Macro & objectives",short:"MAP",icon:"⌖"}
+};
+const championPaths = {
+  Akali:{role:"Mid / Top",description:"Matchups, lane states, builds, combos, and teamfight access."}
 };
 const difficultyRank = {easy:1,medium:2,hard:3};
 const XP_PER_LEVEL = 500;
@@ -349,7 +372,7 @@ function loadPlayerProgress() {
 const savedPlayerProgress=loadPlayerProgress();
 
 let state = {
-  mode:"comp",
+  mode:"hub",
   difficulty:"easy",
   score:savedPlayerProgress.score,
   streak:0,
@@ -357,6 +380,8 @@ let state = {
   compIndex:-1,
   counterIndex:-1,
   quizCategory:"all",
+  quizPath:"all",
+  quizChampion:"Akali",
   quizReview:false,
   quizQueue:[],
   quizCycleTotal:0,
@@ -403,11 +428,16 @@ function saveAcademyProgress() {
   catch(error) { /* Progress still works for this session when storage is unavailable. */ }
 }
 
+function questionMatchesQuizPath(question) {
+  return state.quizPath==="all" || question.focus?.includes(state.quizChampion);
+}
+
 function eligibleQuizQuestions() {
   const missed=new Set(state.quizProgress.missed);
   let pool=quizQuestions.filter(q=>
     difficultyRank[q.level]<=difficultyRank[state.difficulty] &&
-    (state.quizCategory==="all"||q.category===state.quizCategory)
+    (state.quizCategory==="all"||q.category===state.quizCategory) &&
+    questionMatchesQuizPath(q)
   );
   if(state.quizReview) pool=pool.filter(q=>missed.has(q.id));
   return pool;
@@ -442,7 +472,7 @@ function renderMastery() {
   const progress=state.quizProgress.questions;
   let totalAttempts=0,totalCorrect=0;
   $("masteryGrid").innerHTML=Object.entries(quizCategories).map(([key,category])=>{
-    const ids=quizQuestions.filter(q=>q.category===key).map(q=>q.id);
+    const ids=quizQuestions.filter(q=>q.category===key&&questionMatchesQuizPath(q)).map(q=>q.id);
     const stats=ids.reduce((sum,id)=>{
       const entry=progress[id]||{attempts:0,correct:0};
       sum.attempts+=entry.attempts;
@@ -469,7 +499,7 @@ function renderMastery() {
 function updateReviewButton() {
   const count=state.quizProgress.missed.filter(id=>{
     const q=quizQuestions.find(question=>question.id===id);
-    return q&&(state.quizCategory==="all"||q.category===state.quizCategory)&&difficultyRank[q.level]<=difficultyRank[state.difficulty];
+    return q&&(state.quizCategory==="all"||q.category===state.quizCategory)&&questionMatchesQuizPath(q)&&difficultyRank[q.level]<=difficultyRank[state.difficulty];
   }).length;
   $("missedCount").textContent=count;
   $("reviewMissedBtn").disabled=!count;
@@ -530,6 +560,41 @@ function setQuizCategory(category) {
   state.quizQueue=[];
   state.answered=false;
   nextQuiz();
+}
+
+function updateQuizPathUI() {
+  document.querySelectorAll("#quizPathControl .path-option").forEach(btn=>btn.classList.toggle("active",btn.dataset.quizPath===state.quizPath));
+  $("championPicker").classList.toggle("hidden",state.quizPath!=="champion");
+  $("championSelect").value=state.quizChampion;
+  $("selectedChampionPortrait").src=portrait(state.quizChampion);
+  $("selectedChampionPortrait").alt=`${state.quizChampion} portrait`;
+  $("selectedChampionName").textContent=state.quizChampion;
+  const pathCount=quizQuestions.filter(q=>q.focus?.includes(state.quizChampion)).length;
+  $("selectedChampionLessonCount").textContent=`${pathCount} focused lessons · ${championPaths[state.quizChampion].role}`;
+  $("quizQuestionCount").textContent=state.quizPath==="all"?quizQuestions.length:pathCount;
+  $("quizQuestionCountLabel").textContent=state.quizPath==="all"?"lessons in the full library":`${state.quizChampion} lessons in this path`;
+}
+
+function resetQuizPath() {
+  state.quizReview=false;
+  state.quizQueue=[];
+  state.answered=false;
+  updateQuizPathUI();
+  nextQuiz();
+}
+
+function setQuizPath(path) {
+  if(path===state.quizPath)return;
+  state.quizPath=path;
+  resetQuizPath();
+}
+
+function populateChampionPicker() {
+  $("championSelect").innerHTML=Object.entries(championPaths).map(([name,path])=>
+    `<option value="${name}">${name} · ${path.role}</option>`
+  ).join("");
+  $("hubQuizQuestionCount").textContent=quizQuestions.length;
+  updateQuizPathUI();
 }
 
 function champCard(name) {
@@ -950,7 +1015,9 @@ function newScenario() {
 
 function setMode(mode) {
   state.mode=mode;
-  document.querySelectorAll("#modeControl .segment").forEach(b=>b.classList.toggle("active",b.dataset.mode===mode));
+  $("gameHub").classList.add("hidden");
+  $("gameControls").classList.remove("hidden");
+  $("difficultyInfo").classList.remove("hidden");
   $("compGame").classList.toggle("hidden",mode!=="comp");
   $("counterGame").classList.toggle("hidden",mode!=="counter");
   $("quizGame").classList.toggle("hidden",mode!=="quiz");
@@ -961,6 +1028,19 @@ function setMode(mode) {
   newScenario();
 }
 
+function showHub() {
+  state.mode="hub";
+  state.answered=false;
+  $("gameHub").classList.remove("hidden");
+  $("gameControls").classList.add("hidden");
+  $("difficultyInfo").classList.add("hidden");
+  $("compGame").classList.add("hidden");
+  $("counterGame").classList.add("hidden");
+  $("quizGame").classList.add("hidden");
+  $("resultPanel").className="result-panel hidden";
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
 function setDifficulty(difficulty) {
   state.difficulty=difficulty;
   document.querySelectorAll("#difficultyControl .segment").forEach(b=>b.classList.toggle("active",b.dataset.difficulty===difficulty));
@@ -969,9 +1049,15 @@ function setDifficulty(difficulty) {
   newScenario();
 }
 
-document.querySelectorAll("#modeControl .segment").forEach(btn=>btn.addEventListener("click",()=>setMode(btn.dataset.mode)));
+document.querySelectorAll("[data-launch-mode]").forEach(btn=>btn.addEventListener("click",()=>setMode(btn.dataset.launchMode)));
 document.querySelectorAll("#difficultyControl .segment").forEach(btn=>btn.addEventListener("click",()=>setDifficulty(btn.dataset.difficulty)));
 document.querySelectorAll("#quizCategoryControl .category-tab").forEach(btn=>btn.addEventListener("click",()=>setQuizCategory(btn.dataset.category)));
+document.querySelectorAll("#quizPathControl .path-option").forEach(btn=>btn.addEventListener("click",()=>setQuizPath(btn.dataset.quizPath)));
+$("championSelect").addEventListener("change",event=>{
+  state.quizChampion=event.target.value;
+  resetQuizPath();
+});
+$("backToHubBtn").addEventListener("click",showHub);
 $("newScenarioBtn").addEventListener("click",newScenario);
 $("reviewMissedBtn").addEventListener("click",()=>{
   if($("reviewMissedBtn").disabled)return;
@@ -992,8 +1078,8 @@ $("nextRoundBtn").addEventListener("click",()=>{
   window.scrollTo({top:0,behavior:"smooth"});
 });
 
-difficultyCopy();
-$("quizQuestionCount").textContent=quizQuestions.length;
+populateChampionPicker();
 renderMastery();
 updateReviewButton();
-newScenario();
+updateStats();
+showHub();
