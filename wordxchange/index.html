@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#100d20">
+    <meta name="description" content="WordXchange — build a word chain by changing, adding, or removing one letter at a time.">
+    <title>WordXchange</title>
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="back-link" href="../" aria-label="Back to Jesse Lopez's portfolio">
+        <span aria-hidden="true">←</span>
+        <span>Portfolio</span>
+      </a>
+      <button class="rules-button" id="rules-button" type="button">How to play</button>
+    </header>
+
+    <main class="app-shell">
+      <section class="screen menu-screen is-active" id="menu-screen" aria-labelledby="game-title">
+        <div class="wordmark" aria-hidden="true">
+          <span>W</span><span class="wordmark-x">X</span>
+        </div>
+        <p class="eyebrow">ONE MOVE. ENDLESS WORDS.</p>
+        <h1 id="game-title">Word<span>X</span>change</h1>
+        <p class="intro">
+          Change, add, or remove a single letter to make a new word before the clock runs out.
+          Keep the chain alive.
+        </p>
+
+        <div class="rule-preview" aria-label="Example word change">
+          <span>S</span><span>T</span><span>O</span><span>N</span><span>E</span>
+          <i aria-hidden="true">→</i>
+          <span class="changed">A</span><span>T</span><span>O</span><span>N</span><span>E</span>
+        </div>
+
+        <button class="primary-button" id="start-button" type="button">
+          <span>Start a chain</span><span aria-hidden="true">→</span>
+        </button>
+        <p class="dictionary-status" id="dictionary-status" role="status">Built-in word library ready</p>
+      </section>
+
+      <section class="screen game-screen" id="game-screen" aria-label="WordXchange game">
+        <div class="game-header">
+          <div class="stat">
+            <span class="stat-label">Score</span>
+            <strong id="score">0</strong>
+          </div>
+          <div class="timer-wrap" id="timer-wrap">
+            <svg class="timer-ring" viewBox="0 0 48 48" aria-hidden="true">
+              <circle class="timer-track" cx="24" cy="24" r="20"></circle>
+              <circle class="timer-progress" id="timer-progress" cx="24" cy="24" r="20"></circle>
+            </svg>
+            <strong id="timer">30</strong>
+            <span class="sr-only">seconds remaining</span>
+          </div>
+          <div class="stat stat-right">
+            <span class="stat-label">Best</span>
+            <strong id="best-score">0</strong>
+          </div>
+        </div>
+
+        <div class="round-copy">
+          <p class="eyebrow">CURRENT WORD</p>
+          <p id="instruction">Choose a letter to replace, or a gap to add one.</p>
+        </div>
+
+        <div class="word-board" id="word-board" aria-label="Current word"></div>
+
+        <div class="edit-actions">
+          <button id="delete-button" class="secondary-button" type="button" disabled>
+            <span aria-hidden="true">−</span> Remove selected letter
+          </button>
+        </div>
+
+        <p class="feedback" id="feedback" role="status" aria-live="polite"></p>
+
+        <div class="keyboard" id="keyboard" aria-label="Letter keyboard"></div>
+
+        <div class="chain-panel">
+          <div class="chain-heading">
+            <span>Your chain</span>
+            <span id="chain-count">1 word</span>
+          </div>
+          <div class="chain-list" id="chain-list"></div>
+        </div>
+      </section>
+
+      <section class="screen game-over-screen" id="game-over-screen" aria-labelledby="game-over-title">
+        <p class="eyebrow">TIME'S UP</p>
+        <h2 id="game-over-title">Chain complete.</h2>
+        <div class="final-score">
+          <span>Final score</span>
+          <strong id="final-score">0</strong>
+        </div>
+        <p id="result-copy">You built a chain of one word.</p>
+        <div class="final-chain" id="final-chain"></div>
+        <button class="primary-button" id="replay-button" type="button">
+          <span>Play again</span><span aria-hidden="true">↻</span>
+        </button>
+        <button class="text-button" id="menu-button" type="button">Back to title</button>
+      </section>
+    </main>
+
+    <dialog class="rules-dialog" id="rules-dialog">
+      <button class="dialog-close" id="dialog-close" type="button" aria-label="Close instructions">×</button>
+      <p class="eyebrow">HOW TO PLAY</p>
+      <h2>Keep the word moving.</h2>
+      <ol>
+        <li><b>Replace</b> one letter by selecting it, then choosing a new letter.</li>
+        <li><b>Add</b> one letter by selecting a plus sign between letters.</li>
+        <li><b>Remove</b> one letter by selecting it and using the remove button.</li>
+      </ol>
+      <p>Every move must make a real, unused word. A valid move scores one point and resets the 30-second clock.</p>
+      <button class="primary-button dialog-action" id="dialog-action" type="button">Got it</button>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>

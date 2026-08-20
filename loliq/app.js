@@ -1,7 +1,8 @@
 // Riot Data Dragon static assets.
 // 16.16.1 was the current Data Dragon release when this prototype was generated.
-const DDRAGON_VERSION = "16.16.1";
-const DDRAGON_BASE = `https://ddragon.leagueoflegends.com/cdn/${DDRAGON_VERSION}/img/champion/`;
+let DDRAGON_VERSION = "16.16.1";
+let DDRAGON_BASE = `https://ddragon.leagueoflegends.com/cdn/${DDRAGON_VERSION}/img/champion/`;
+const CURRICULUM_META = window.LOLIQ_EXPANSION || {reviewedPatch:"26.16",questions:[],teamScenarios:[],counterScenarios:[]};
 
 const idOverrides = {
   "Jarvan IV":"JarvanIV",
@@ -17,6 +18,34 @@ function champId(name) {
 }
 function portrait(name) {
   return `${DDRAGON_BASE}${champId(name)}.png`;
+}
+
+function renderPatchStatus(syncFailed=false) {
+  const reviewed=CURRICULUM_META.reviewedPatch;
+  const status=syncFailed
+    ? `Using Riot data ${DDRAGON_VERSION} · lessons reviewed ${reviewed}`
+    : `Riot game data ${DDRAGON_VERSION} · lessons reviewed ${reviewed}`;
+  const source=` <a href="${CURRICULUM_META.riotPatchNotes}" target="_blank" rel="noreferrer">Patch notes ↗</a>`;
+  const hubStatus=document.getElementById("hubPatchStatus");
+  const setupStatus=document.getElementById("setupFreshness");
+  if(hubStatus)hubStatus.innerHTML=status+source;
+  if(setupStatus)setupStatus.innerHTML=status+source;
+}
+
+async function syncLatestDataDragon() {
+  try {
+    const response=await fetch(CURRICULUM_META.dataDragonVersions||"https://ddragon.leagueoflegends.com/api/versions.json");
+    if(!response.ok)throw new Error("Riot version request failed");
+    const versions=await response.json();
+    if(Array.isArray(versions)&&/^\d+\.\d+\.\d+$/.test(versions[0])) {
+      DDRAGON_VERSION=versions[0];
+      DDRAGON_BASE=`https://ddragon.leagueoflegends.com/cdn/${DDRAGON_VERSION}/img/champion/`;
+      if(document.getElementById("championSelect"))updateQuizPathUI();
+    }
+    renderPatchStatus(false);
+  } catch(error) {
+    renderPatchStatus(true);
+  }
 }
 
 const champions = [
@@ -46,6 +75,7 @@ const champions = [
   // MID
   {name:"Orianna",role:"MID",damage:"AP",tags:["AP","teamfight","scaling","utility"],desc:"Balanced AP control mage with excellent grouped fighting."},
   {name:"Ahri",role:"MID",damage:"AP",tags:["AP","pick","mobility","early"],desc:"Safe mobility and pick creation around objectives."},
+  {name:"Akali",role:"MID",damage:"AP",tags:["AP","dive","mobility","sideline"],desc:"Mobile AP assassin with side-lane threat and backline access."},
   {name:"Viktor",role:"MID",damage:"AP",tags:["AP","scaling","zone","dps"],desc:"Scaling control mage with strong zone control and DPS."},
   {name:"Galio",role:"MID",damage:"AP",tags:["AP","frontline","peel","antiDive","engage"],desc:"Anti-dive protection with secondary engage."},
   {name:"Yasuo",role:"MID",damage:"AD",tags:["AD","dps","dive","combo"],desc:"Melee AD carry that loves knock-up engage."},
@@ -87,6 +117,7 @@ const teamScenarios = [
   {role:"SUPPORT",ally:["Ornn","Lillia","Jayce","Ezreal"],enemy:["Fiora","Vi","Ahri","Kai'Sa","Nautilus"],priorities:["peel","range","antiDive"],threats:["pick","dive"],teaching:"A poke composition wants to preserve distance. Your support should help Jayce and Ezreal keep that spacing instead of constantly dragging the team into short-range fights."},
   {role:"JUNGLE",ally:["Shen","Orianna","Jinx","Milio"],enemy:["Gwen","Lillia","Jayce","Ezreal","Zyra"],priorities:["engage","AD","pick"],threats:["poke","range","zone"],teaching:"Against long-range poke, reliable initiation gives your team a way to cross the gap before objective setup becomes impossible."}
 ];
+teamScenarios.push(...(CURRICULUM_META.teamScenarios||[]));
 
 // These are concept-counter scenarios, intentionally explained through mechanics.
 // They are not presented as live-patch matchup win-rate rankings.
@@ -232,6 +263,7 @@ const counterScenarios = [
     lesson:"Engage champions pay a cost when they go in: they commit their position. Disengage champions counter that by denying the follow-up after the commitment has already happened."
   }
 ];
+counterScenarios.push(...(CURRICULUM_META.counterScenarios||[]));
 
 // The Academy library favors durable concepts over patch-specific stat trivia.
 // Item questions teach a decision process; a real build should still react to the
@@ -297,6 +329,7 @@ const quizQuestions = [
   {id:"akali-teamfight-flank",category:"macro",level:"hard",champion:"Akali",focus:["Akali"],context:"A five-on-five objective fight is starting. The enemy frontline is grouped in front of two protected carries.",prompt:"Which setup best supports Akali's assassin job?",options:["Approach from fog or a side angle after key control spells are tracked","Stand directly in front and attack the tank before the fight starts","Reveal on the wave and use Shroud before anyone engages","Enter alone while every enemy cooldown is available"],answer:"Approach from fog or a side angle after key control spells are tracked",hint:"Akali wants access and uncertainty more than a fair front-to-back entrance.",explanation:"A flank or fog angle stretches the enemy formation and shortens Akali's route to a carry. Waiting for important crowd control also lowers the cost of committing into the backline.",takeaway:"Assassins often win the fight with position and timing before they win it with damage."},
   {id:"akali-bounce-reset",category:"terms",level:"hard",champion:"Akali",focus:["Akali"],context:"Akali crashes a large wave, recalls, and expects the lane to push back toward her.",prompt:"Why is this reset especially useful for a short-range assassin?",options:["She can return with spent gold to a longer lane where the opponent must walk forward","It permanently removes the enemy turret's protection","It guarantees every minion will wait at the river","It prevents the opposing mid from ever roaming"],answer:"She can return with spent gold to a longer lane where the opponent must walk forward",hint:"Combine the item advantage from resetting with the position created by the bounce.",explanation:"The crash buys Akali recall time, and the bounce can bring the next waves toward her side. Returning stronger to an extended lane creates more room to trade, chase, or threaten a gank.",takeaway:"Wave sequences can manufacture the space an assassin needs; do not treat every wave as an isolated shove."}
 ];
+quizQuestions.push(...(CURRICULUM_META.questions||[]));
 
 const labels = {
   AP:"Magic damage",AD:"Physical damage",frontline:"Frontline",engage:"Engage",peel:"Peel",
@@ -310,10 +343,12 @@ const quizCategories = {
   terms:{label:"Terminology",short:"WORDS",icon:"Aa"},
   items:{label:"Items & builds",short:"BUILD",icon:"◆"},
   abilities:{label:"Champion abilities",short:"KITS",icon:"QWER"},
-  macro:{label:"Macro & objectives",short:"MAP",icon:"⌖"}
+  macro:{label:"Macro & objectives",short:"MAP",icon:"⌖"},
+  matchups:{label:"Runes & matchups",short:"VERSUS",icon:"VS"}
 };
 const championPaths = {
-  Akali:{role:"Mid / Top",description:"Matchups, lane states, builds, combos, and teamfight access."}
+  Akali:{role:"Mid / Top",description:"Matchups, lane states, builds, combos, and teamfight access."},
+  Ahri:{role:"Mid",description:"Lane spacing, matchup plans, rune logic, pick angles, and adaptive builds."}
 };
 const difficultyRank = {easy:1,medium:2,hard:3};
 const XP_PER_LEVEL = 500;
@@ -332,7 +367,7 @@ const getChampion = name => champions.find(c => c.name === name);
 
 function loadAcademyProgress() {
   try {
-    const saved=JSON.parse(localStorage.getItem("draftIqAcademyProgress"));
+    const saved=JSON.parse(localStorage.getItem("lolIqAcademyProgress"));
     return saved&&saved.questions&&Array.isArray(saved.missed) ? saved : {questions:{},missed:[]};
   } catch(error) {
     return {questions:{},missed:[]};
@@ -351,7 +386,7 @@ function freshPlayerProgress() {
 function loadPlayerProgress() {
   const fallback=freshPlayerProgress();
   try {
-    const saved=JSON.parse(localStorage.getItem("draftIqPlayerProgress"));
+    const saved=JSON.parse(localStorage.getItem("lolIqPlayerProgress"));
     if(!saved) return fallback;
     return {
       ...fallback,...saved,
@@ -372,7 +407,9 @@ function loadPlayerProgress() {
 const savedPlayerProgress=loadPlayerProgress();
 
 let state = {
+  view:"hub",
   mode:"hub",
+  pendingMode:"comp",
   difficulty:"easy",
   score:savedPlayerProgress.score,
   streak:0,
@@ -394,6 +431,24 @@ let state = {
   quizOptions:[]
 };
 
+const modeDetails = {
+  comp:{
+    title:"Team Comp",kicker:"DRAFT READING",glyph:"5v5",
+    description:"Read both drafts, find the missing job, and make the final lock-in.",
+    skills:["Damage profile","Engage","Peel","Win condition"]
+  },
+  counter:{
+    title:"Counter Pick",kicker:"MATCHUP KNOWLEDGE",glyph:"VS",
+    description:"Identify the mechanic an enemy relies on and choose the cleanest answer.",
+    skills:["Kit knowledge","Counterplay","Lane patterns","Adaptation"]
+  },
+  quiz:{
+    title:"League Academy",kicker:"KNOWLEDGE LIBRARY",glyph:"IQ",
+    description:"Build instinct through fast lessons on terminology, builds, champion kits, waves, and macro.",
+    skills:["Vocabulary","Build logic","Champion kits","Macro"]
+  }
+};
+
 function shuffle(arr) {
   const a=[...arr];
   for(let i=a.length-1;i>0;i--){
@@ -406,25 +461,30 @@ function shuffle(arr) {
 function labelForTag(tag) { return labels[tag] || tag.replace(/([A-Z])/g," $1"); }
 
 function difficultyCopy() {
-  if(state.mode==="quiz") {
+  const configuredMode=state.view==="setup"?state.pendingMode:state.mode;
+  let copy;
+  if(configuredMode==="quiz") {
     const quizCopy = {
       easy:"<strong>Easy:</strong> Foundation lessons include a direct hint and three answer choices.",
       medium:"<strong>Medium:</strong> Foundation and applied lessons use all four choices with a lighter clue.",
       hard:"<strong>Hard:</strong> The full curriculum is unlocked, including expert decision-making questions with no hints."
     };
-    $("difficultyInfo").innerHTML = quizCopy[state.difficulty];
-    return;
+    copy=quizCopy[state.difficulty];
+  } else {
+    const draftCopy = {
+      easy:"<strong>Easy:</strong> Draft needs, enemy threats and champion descriptions are shown.",
+      medium:"<strong>Medium:</strong> Need tags and choice descriptions are hidden, with one directional clue.",
+      hard:"<strong>Hard:</strong> No hints or need tags. Read the champions and solve the draft yourself."
+    };
+    copy=draftCopy[state.difficulty];
   }
-  const copy = {
-    easy:"<strong>Easy:</strong> Draft needs, enemy threats and champion descriptions are shown. Focus on learning the concepts.",
-    medium:"<strong>Medium:</strong> Explicit need/threat tags disappear and choice descriptions are hidden. You still get one directional hint.",
-    hard:"<strong>Hard:</strong> No draft hints, no need tags and no choice descriptions. Read the champions and solve the draft yourself."
-  };
-  $("difficultyInfo").innerHTML = copy[state.difficulty];
+  $("difficultyInfo").innerHTML=copy;
+  $("drawerDifficultyInfo").textContent=$("difficultyInfo").textContent;
+  $("setupDifficultySummary").textContent={easy:"Guided clues · fewer choices",medium:"Light clues · full choices",hard:"No clues · expert pool"}[state.difficulty];
 }
 
 function saveAcademyProgress() {
-  try { localStorage.setItem("draftIqAcademyProgress",JSON.stringify(state.quizProgress)); }
+  try { localStorage.setItem("lolIqAcademyProgress",JSON.stringify(state.quizProgress)); }
   catch(error) { /* Progress still works for this session when storage is unavailable. */ }
 }
 
@@ -513,6 +573,9 @@ function renderQuizQuestion() {
   $("quizCategoryBadge").textContent=category.label.toUpperCase();
   $("quizLevelBadge").textContent=quizLevelLabel(q.level).toUpperCase();
   $("quizLevelBadge").className=`quiz-level ${q.level}`;
+  const patchSensitive=q.freshness==="patch";
+  $("quizFreshnessBadge").textContent=patchSensitive?`REVIEWED ${CURRICULUM_META.reviewedPatch}`:"CORE CONCEPT";
+  $("quizFreshnessBadge").className=`quiz-freshness ${patchSensitive?"current":"durable"}`;
   $("quizContext").textContent=q.context;
   $("quizQuestion").textContent=q.prompt;
   $("quizProgressText").textContent=`Lesson ${state.quizCyclePosition} of ${state.quizCycleTotal}${state.quizReview?" · review":""}`;
@@ -556,23 +619,32 @@ function nextQuiz() {
 function setQuizCategory(category) {
   state.quizCategory=category;
   state.quizReview=false;
-  document.querySelectorAll("#quizCategoryControl .category-tab").forEach(btn=>btn.classList.toggle("active",btn.dataset.category===category));
+  document.querySelectorAll("[data-category]").forEach(btn=>btn.classList.toggle("active",btn.dataset.category===category));
   state.quizQueue=[];
   state.answered=false;
-  nextQuiz();
+  renderMastery();
+  updateReviewButton();
+  updateLoadoutSummary();
+  if(state.view==="play"&&state.mode==="quiz") {
+    nextQuiz();
+    closeSettings();
+    animateRound($("quizGame"));
+  }
 }
 
 function updateQuizPathUI() {
-  document.querySelectorAll("#quizPathControl .path-option").forEach(btn=>btn.classList.toggle("active",btn.dataset.quizPath===state.quizPath));
+  document.querySelectorAll("[data-quiz-path]").forEach(btn=>btn.classList.toggle("active",btn.dataset.quizPath===state.quizPath));
   $("championPicker").classList.toggle("hidden",state.quizPath!=="champion");
+  $("drawerChampionPicker").classList.toggle("hidden",state.quizPath!=="champion");
   $("championSelect").value=state.quizChampion;
+  $("settingsChampionSelect").value=state.quizChampion;
   $("selectedChampionPortrait").src=portrait(state.quizChampion);
   $("selectedChampionPortrait").alt=`${state.quizChampion} portrait`;
   $("selectedChampionName").textContent=state.quizChampion;
   const pathCount=quizQuestions.filter(q=>q.focus?.includes(state.quizChampion)).length;
   $("selectedChampionLessonCount").textContent=`${pathCount} focused lessons · ${championPaths[state.quizChampion].role}`;
-  $("quizQuestionCount").textContent=state.quizPath==="all"?quizQuestions.length:pathCount;
-  $("quizQuestionCountLabel").textContent=state.quizPath==="all"?"lessons in the full library":`${state.quizChampion} lessons in this path`;
+  $("quizQuestionCountLabel").textContent=state.quizPath==="all"?`${quizQuestions.length} lessons available`:`${pathCount} ${state.quizChampion} lessons`;
+  updateLoadoutSummary();
 }
 
 function resetQuizPath() {
@@ -580,7 +652,13 @@ function resetQuizPath() {
   state.quizQueue=[];
   state.answered=false;
   updateQuizPathUI();
-  nextQuiz();
+  renderMastery();
+  updateReviewButton();
+  if(state.view==="play"&&state.mode==="quiz") {
+    nextQuiz();
+    closeSettings();
+    animateRound($("quizGame"));
+  }
 }
 
 function setQuizPath(path) {
@@ -590,9 +668,11 @@ function setQuizPath(path) {
 }
 
 function populateChampionPicker() {
-  $("championSelect").innerHTML=Object.entries(championPaths).map(([name,path])=>
+  const options=Object.entries(championPaths).map(([name,path])=>
     `<option value="${name}">${name} · ${path.role}</option>`
   ).join("");
+  $("championSelect").innerHTML=options;
+  $("settingsChampionSelect").innerHTML=options;
   $("hubQuizQuestionCount").textContent=quizQuestions.length;
   updateQuizPathUI();
 }
@@ -738,7 +818,7 @@ function nextCounter() {
 
 function savePlayerProgress() {
   state.playerProgress.score=state.score;
-  try { localStorage.setItem("draftIqPlayerProgress",JSON.stringify(state.playerProgress)); }
+  try { localStorage.setItem("lolIqPlayerProgress",JSON.stringify(state.playerProgress)); }
   catch(error) { /* Keep session progression when persistent storage is unavailable. */ }
 }
 
@@ -747,11 +827,11 @@ function playerLevel() {
 }
 
 function rankForLevel(level) {
-  if(level>=12)return "Draft Master";
+  if(level>=12)return "League Master";
   if(level>=8)return "Team Captain";
   if(level>=5)return "Shotcaller";
-  if(level>=3)return "Draft Analyst";
-  return "Draft Recruit";
+  if(level>=3)return "Game Analyst";
+  return "Rift Recruit";
 }
 
 function multiplierForStreak(streak) {
@@ -885,6 +965,7 @@ function rewardText(reward) {
 function showResult({grade,reward,kicker,title,good,heading1,html1,html2,html3,lesson,bestName,selectedName,containerSelector}) {
   const panel=$("resultPanel");
   panel.className=`result-panel ${good?"good":"bad"}`;
+  animateRound(panel,"result-reveal");
   $("resultKicker").textContent=kicker;
   $("resultTitle").textContent=title;
   $("resultGrade").textContent=grade;
@@ -998,12 +1079,79 @@ function answerQuiz(index) {
   $("quizExplanation").textContent=q.explanation;
   $("quizTakeaway").textContent=q.takeaway;
   $("quizReward").textContent=rewardText(reward);
+  $("quizFreshnessNote").textContent=q.freshness==="patch"
+    ? `Matchup guidance reviewed for patch ${CURRICULUM_META.reviewedPatch}. Re-check after champion, rune, or item changes.`
+    : "This lesson teaches a patch-resilient concept rather than a live win-rate claim.";
   renderMastery();
   updateReviewButton();
   feedback.scrollIntoView({behavior:"smooth",block:"nearest"});
 }
 
+function animateRound(element,className="round-enter") {
+  if(!element)return;
+  element.classList.remove(className);
+  void element.offsetWidth;
+  element.classList.add(className);
+}
+
+function setVisible(id,visible,animate=false) {
+  const element=$(id);
+  element.classList.toggle("hidden",!visible);
+  if(visible&&animate) animateRound(element,"view-enter");
+}
+
+function syncGameUrl(mode) {
+  try {
+    const url=new URL(window.location.href);
+    if(mode)url.searchParams.set("game",mode);
+    else url.searchParams.delete("game");
+    window.history.replaceState({},"",url);
+  } catch(error) {
+    // Deep links still open correctly when history updates are unavailable.
+  }
+}
+
+function updateLoadoutSummary() {
+  const mode=state.view==="setup"?state.pendingMode:state.mode;
+  const details=modeDetails[mode]||modeDetails.comp;
+  $("loadoutMode").textContent=details.title;
+  $("loadoutDifficulty").textContent=state.difficulty[0].toUpperCase()+state.difficulty.slice(1);
+  $("loadoutPath").textContent=state.quizPath==="all"?"Full library":state.quizChampion;
+  $("loadoutTopic").textContent=state.quizCategory==="all"?"All topics":quizCategories[state.quizCategory].label;
+}
+
+function configureSetup(mode) {
+  const details=modeDetails[mode];
+  state.pendingMode=mode;
+  $("setupGlyph").textContent=details.glyph;
+  $("setupGlyph").className=`setup-glyph ${mode}`;
+  $("setupKicker").textContent=details.kicker;
+  $("setupTitle").textContent=details.title;
+  $("setupDescription").textContent=details.description;
+  $("setupSkills").innerHTML=details.skills.map(skill=>`<span>${skill}</span>`).join("");
+  $("academySetup").classList.toggle("hidden",mode!=="quiz");
+  $("loadoutPathRow").classList.toggle("hidden",mode!=="quiz");
+  $("loadoutTopicRow").classList.toggle("hidden",mode!=="quiz");
+  updateLoadoutSummary();
+  difficultyCopy();
+}
+
+function showSetup(mode) {
+  closeSettings();
+  state.view="setup";
+  document.body.dataset.view="setup";
+  syncGameUrl(mode);
+  configureSetup(mode);
+  ["appHeader","homeProgression","achievementShelf","gameHub","gameControls","compGame","counterGame","quizGame"].forEach(id=>setVisible(id,false));
+  document.querySelector("footer").classList.add("hidden");
+  $("resultPanel").className="result-panel hidden";
+  setVisible("gameSetup",true,true);
+  delete document.documentElement.dataset.directEntry;
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
 function newScenario() {
+  if(state.view!=="play")return;
   prepareNextMission();
   state.answered=false;
   $("resultPanel").className="result-panel hidden";
@@ -1011,75 +1159,128 @@ function newScenario() {
   else if(state.mode==="counter") nextCounter();
   else nextQuiz();
   updateStats();
+  animateRound($(`${state.mode}Game`));
 }
 
 function setMode(mode) {
+  const details=modeDetails[mode];
   state.mode=mode;
-  $("gameHub").classList.add("hidden");
-  $("gameControls").classList.remove("hidden");
-  $("difficultyInfo").classList.remove("hidden");
+  state.view="play";
+  document.body.dataset.view="play";
+  closeSettings();
+  ["appHeader","homeProgression","achievementShelf","gameHub","gameSetup"].forEach(id=>setVisible(id,false));
+  document.querySelector("footer").classList.add("hidden");
+  setVisible("gameControls",true,true);
   $("compGame").classList.toggle("hidden",mode!=="comp");
   $("counterGame").classList.toggle("hidden",mode!=="counter");
   $("quizGame").classList.toggle("hidden",mode!=="quiz");
-  $("newScenarioBtn").textContent=mode==="quiz"?"New lesson":"New scenario";
+  $("activeModeKicker").textContent=details.kicker;
+  $("activeModeTitle").textContent=details.title;
+  $("drawerAcademySettings").classList.toggle("hidden",mode!=="quiz");
+  $("newScenarioBtn").textContent=mode==="quiz"?"Skip to a new lesson":"Skip to a new scenario";
   state.round=1;
-  if(mode==="quiz") state.quizQueue=[];
+  if(mode==="quiz")state.quizQueue=[];
   difficultyCopy();
   newScenario();
-}
-
-function showHub() {
-  state.mode="hub";
-  state.answered=false;
-  $("gameHub").classList.remove("hidden");
-  $("gameControls").classList.add("hidden");
-  $("difficultyInfo").classList.add("hidden");
-  $("compGame").classList.add("hidden");
-  $("counterGame").classList.add("hidden");
-  $("quizGame").classList.add("hidden");
-  $("resultPanel").className="result-panel hidden";
   window.scrollTo({top:0,behavior:"smooth"});
 }
 
-function setDifficulty(difficulty) {
-  state.difficulty=difficulty;
-  document.querySelectorAll("#difficultyControl .segment").forEach(b=>b.classList.toggle("active",b.dataset.difficulty===difficulty));
-  if(state.mode==="quiz") state.quizQueue=[];
-  difficultyCopy();
-  newScenario();
+function showHub() {
+  closeSettings();
+  state.view="hub";
+  state.mode="hub";
+  state.answered=false;
+  document.body.dataset.view="hub";
+  syncGameUrl(null);
+  ["gameSetup","gameControls","compGame","counterGame","quizGame"].forEach(id=>setVisible(id,false));
+  $("resultPanel").className="result-panel hidden";
+  ["appHeader","homeProgression","achievementShelf","gameHub"].forEach(id=>setVisible(id,true,id==="gameHub"));
+  document.querySelector("footer").classList.remove("hidden");
+  window.scrollTo({top:0,behavior:"smooth"});
 }
 
-document.querySelectorAll("[data-launch-mode]").forEach(btn=>btn.addEventListener("click",()=>setMode(btn.dataset.launchMode)));
-document.querySelectorAll("#difficultyControl .segment").forEach(btn=>btn.addEventListener("click",()=>setDifficulty(btn.dataset.difficulty)));
-document.querySelectorAll("#quizCategoryControl .category-tab").forEach(btn=>btn.addEventListener("click",()=>setQuizCategory(btn.dataset.category)));
-document.querySelectorAll("#quizPathControl .path-option").forEach(btn=>btn.addEventListener("click",()=>setQuizPath(btn.dataset.quizPath)));
-$("championSelect").addEventListener("change",event=>{
+function openSettings() {
+  if(state.view!=="play")return;
+  const layer=$("settingsLayer");
+  layer.classList.remove("hidden");
+  requestAnimationFrame(()=>layer.classList.add("open"));
+  document.body.classList.add("drawer-open");
+  $("closeSettingsBtn").focus();
+}
+
+function closeSettings() {
+  const layer=$("settingsLayer");
+  if(!layer)return;
+  layer.classList.remove("open");
+  document.body.classList.remove("drawer-open");
+  window.setTimeout(()=>{
+    if(!layer.classList.contains("open"))layer.classList.add("hidden");
+  },260);
+}
+
+function setDifficulty(difficulty) {
+  const changed=state.difficulty!==difficulty;
+  state.difficulty=difficulty;
+  document.querySelectorAll("[data-difficulty]").forEach(button=>button.classList.toggle("active",button.dataset.difficulty===difficulty));
+  if(state.mode==="quiz")state.quizQueue=[];
+  difficultyCopy();
+  updateLoadoutSummary();
+  if(changed&&state.view==="play") {
+    newScenario();
+    closeSettings();
+    showGameToast("↻","Loadout updated",`${difficulty[0].toUpperCase()+difficulty.slice(1)} difficulty is active.`);
+  }
+}
+
+document.querySelectorAll("[data-launch-mode]").forEach(btn=>btn.addEventListener("click",()=>showSetup(btn.dataset.launchMode)));
+document.querySelectorAll("[data-difficulty]").forEach(btn=>btn.addEventListener("click",()=>setDifficulty(btn.dataset.difficulty)));
+document.querySelectorAll("[data-category]").forEach(btn=>btn.addEventListener("click",()=>setQuizCategory(btn.dataset.category)));
+document.querySelectorAll("[data-quiz-path]").forEach(btn=>btn.addEventListener("click",()=>setQuizPath(btn.dataset.quizPath)));
+[$("championSelect"),$("settingsChampionSelect")].forEach(select=>select.addEventListener("change",event=>{
   state.quizChampion=event.target.value;
   resetQuizPath();
-});
+}));
+$("setupBackBtn").addEventListener("click",showHub);
+$("startGameBtn").addEventListener("click",()=>setMode(state.pendingMode));
 $("backToHubBtn").addEventListener("click",showHub);
-$("newScenarioBtn").addEventListener("click",newScenario);
+$("drawerHubBtn").addEventListener("click",showHub);
+$("settingsBtn").addEventListener("click",openSettings);
+$("settingsBackdrop").addEventListener("click",closeSettings);
+$("closeSettingsBtn").addEventListener("click",closeSettings);
+$("newScenarioBtn").addEventListener("click",()=>{
+  newScenario();
+  closeSettings();
+});
 $("reviewMissedBtn").addEventListener("click",()=>{
   if($("reviewMissedBtn").disabled)return;
   state.quizReview=!state.quizReview;
   state.quizQueue=[];
   state.answered=false;
-  nextQuiz();
+  updateReviewButton();
 });
 $("nextQuizBtn").addEventListener("click",()=>{
   state.round+=1;
   state.answered=false;
   nextQuiz();
-  $("quizGame").scrollIntoView({behavior:"smooth",block:"start"});
+  updateStats();
+  animateRound($("quizGame"));
+  window.scrollTo({top:0,behavior:"smooth"});
 });
 $("nextRoundBtn").addEventListener("click",()=>{
   state.round+=1;
   newScenario();
   window.scrollTo({top:0,behavior:"smooth"});
 });
+document.addEventListener("keydown",event=>{
+  if(event.key==="Escape"&&$("settingsLayer").classList.contains("open"))closeSettings();
+});
 
 populateChampionPicker();
+renderPatchStatus(false);
 renderMastery();
 updateReviewButton();
 updateStats();
-showHub();
+const requestedMode=new URLSearchParams(window.location.search).get("game");
+if(modeDetails[requestedMode])showSetup(requestedMode);
+else showHub();
+syncLatestDataDragon();

@@ -140,38 +140,35 @@
       </div>
 
       <div class="project-grid">
-        <a class="project-card draftiq-card" href="draftiq/">
-          <div class="project-visual">
+        <article class="project-card loliq-card">
+          <div class="project-visual loliq-visual">
             <div class="project-brand-row">
-              <div class="project-icon">DIQ</div>
+              <a class="project-icon" href="loliq/" aria-label="Open the LoL IQ training hub">IQ</a>
 
-              <span class="open-icon" aria-hidden="true">
+              <a class="open-icon" href="loliq/" aria-label="Open the LoL IQ training hub">
                 ↗
-              </span>
+              </a>
             </div>
 
-            <div class="draft-preview" aria-hidden="true">
-              <div class="team-block">
-                <span>YOUR TEAM</span>
-                <div class="champ-row">
-                  <i>O</i>
-                  <i>J4</i>
-                  <i>JX</i>
-                  <i>LU</i>
-                </div>
-              </div>
-
-              <strong>VS</strong>
-
-              <div class="team-block enemy">
-                <span>ENEMY TEAM</span>
-                <div class="champ-row">
-                  <i>R</i>
-                  <i>VI</i>
-                  <i>AH</i>
-                  <i>K</i>
-                </div>
-              </div>
+            <div class="game-launch-grid" aria-label="Launch a LoL IQ game">
+              <a class="game-launch comp-launch" href="loliq/?game=comp">
+                <span class="game-launch-number">01</span>
+                <span class="game-launch-glyph">5v5</span>
+                <span class="game-launch-copy"><b>Team Comp</b><small>Complete the draft</small></span>
+                <i>→</i>
+              </a>
+              <a class="game-launch counter-launch" href="loliq/?game=counter">
+                <span class="game-launch-number">02</span>
+                <span class="game-launch-glyph">VS</span>
+                <span class="game-launch-copy"><b>Counter Pick</b><small>Read the matchup</small></span>
+                <i>→</i>
+              </a>
+              <a class="game-launch academy-launch" href="loliq/?game=quiz">
+                <span class="game-launch-number">03</span>
+                <span class="game-launch-glyph">IQ</span>
+                <span class="game-launch-copy"><b>League Academy</b><small>Train your knowledge</small></span>
+                <i>→</i>
+              </a>
             </div>
           </div>
 
@@ -181,20 +178,64 @@
               <span>HTML · CSS · JAVASCRIPT</span>
             </div>
 
-            <h3>Draft IQ</h3>
+            <h3>LoL IQ</h3>
 
             <p>
-              An interactive League of Legends learning application focused on
-              team composition, counter-picking, draft strategy, and the
-              reasoning behind champion selection.
+              A League of Legends learning suite for team composition,
+              counter-picking, terminology, runes, builds, champion matchups,
+              wave control, and macro decisions.
             </p>
 
-            <div class="project-action">
-              Launch application
+            <a class="project-action" href="loliq/">
+              Explore the full training hub
               <span>→</span>
-            </div>
+            </a>
           </div>
-        </a>
+        </article>
+
+        <article class="project-card wordxchange-card">
+          <a class="project-visual wordxchange-visual" href="wordxchange/" aria-label="Play WordXchange">
+            <div class="project-brand-row">
+              <span class="project-icon wordxchange-icon" aria-hidden="true">WX</span>
+              <span class="open-icon" aria-hidden="true">↗</span>
+            </div>
+
+            <div class="wordxchange-preview" aria-hidden="true">
+              <div class="wx-status">
+                <span>SCORE <b>07</b></span>
+                <span class="wx-clock">30</span>
+                <span>CHAIN <b>08</b></span>
+              </div>
+              <div class="wx-word">
+                <span>S</span><span>T</span><span>O</span><span>N</span><span>E</span>
+              </div>
+              <div class="wx-exchange"><i>↓</i><small>CHANGE ONE LETTER</small></div>
+              <div class="wx-word wx-word-result">
+                <span class="wx-changed">A</span><span>T</span><span>O</span><span>N</span><span>E</span>
+              </div>
+            </div>
+          </a>
+
+          <div class="project-content">
+            <div class="project-meta">
+              <span>WORD GAME</span>
+              <span>HTML · CSS · JAVASCRIPT</span>
+            </div>
+
+            <h3>WordXchange</h3>
+
+            <p>
+              A fast word-chain challenge where every move changes, adds, or
+              removes exactly one letter. Find a valid word before the clock
+              runs out and see how long you can keep the chain alive.
+            </p>
+
+            <a class="project-action" href="wordxchange/">
+              Play WordXchange
+              <span>→</span>
+            </a>
+          </div>
+        </article>
       </div>
     </section>
   </main>
