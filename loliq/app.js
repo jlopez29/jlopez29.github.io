@@ -1177,7 +1177,7 @@ function awardRound(grade,mode=state.mode) {
 
   const multiplier=correct?multiplierForStreak(state.streak):1;
   const basePoints=grade==="A"?100:grade==="B"?65:0;
-  const points=correct?Math.round(basePoints*multiplier):-(mode==="quiz"?10:20);
+  const points=correct?Math.round(basePoints*multiplier):-(["quiz","matchup"].includes(mode)?10:20);
   const baseXp=grade==="A"?80:grade==="B"?55:15;
   const xpGain=Math.round(baseXp*({easy:1,medium:1.15,hard:1.3}[state.difficulty]));
   state.score=Math.max(0,state.score+points);
