@@ -350,6 +350,12 @@ const championPaths = {
   Akali:{role:"Mid / Top",description:"Matchups, lane states, builds, combos, and teamfight access."},
   Ahri:{role:"Mid",description:"Lane spacing, matchup plans, rune logic, pick angles, and adaptive builds."}
 };
+const matchupCategories = {
+  abilities:{label:"Passive + QWER",short:"ABILITY"},
+  threats:{label:"What to expect",short:"THREAT"},
+  counterplay:{label:"How to respond",short:"RESPONSE"},
+  builds:{label:"Build adaptation",short:"BUILD"}
+};
 const difficultyRank = {easy:1,medium:2,hard:3};
 const XP_PER_LEVEL = 500;
 const achievementDefinitions = [
@@ -359,6 +365,7 @@ const achievementDefinitions = [
   {id:"draft-reader",icon:"◈",name:"Draft Reader",description:"Get 5 Team Comp answers right.",test:p=>p.modes.comp.correct>=5},
   {id:"counter-pro",icon:"⚔",name:"Counter Pro",description:"Find 5 clean counter picks.",test:p=>p.modes.counter.correct>=5},
   {id:"academy-scholar",icon:"◆",name:"Academy Scholar",description:"Get 10 Academy lessons right.",test:p=>p.modes.quiz.correct>=10},
+  {id:"enemy-scout",icon:"◎",name:"Enemy Scout",description:"Get 10 Matchup Lab reads right.",test:p=>p.modes.matchup.correct>=10},
   {id:"mission-clear",icon:"★",name:"Mission Clear",description:"Complete a five-round mission.",test:p=>p.completedMissions>=1},
   {id:"shotcaller",icon:"♛",name:"Shotcaller",description:"Reach level 5.",test:p=>Math.floor(p.xp/XP_PER_LEVEL)+1>=5}
 ];
@@ -374,11 +381,20 @@ function loadAcademyProgress() {
   }
 }
 
+function loadMatchupProgress() {
+  try {
+    const saved=JSON.parse(localStorage.getItem("lolIqMatchupProgress"));
+    return saved&&saved.questions&&saved.champions ? saved : {questions:{},champions:{},missed:[]};
+  } catch(error) {
+    return {questions:{},champions:{},missed:[]};
+  }
+}
+
 function freshPlayerProgress() {
   return {
     xp:0,score:0,bestStreak:0,completedMissions:0,achievements:[],
     totals:{answers:0,correct:0},
-    modes:{comp:{answers:0,correct:0},counter:{answers:0,correct:0},quiz:{answers:0,correct:0}},
+    modes:{comp:{answers:0,correct:0},counter:{answers:0,correct:0},quiz:{answers:0,correct:0},matchup:{answers:0,correct:0}},
     mission:{results:[],complete:false,success:false}
   };
 }
@@ -394,7 +410,8 @@ function loadPlayerProgress() {
       modes:{
         comp:{...fallback.modes.comp,...saved.modes?.comp},
         counter:{...fallback.modes.counter,...saved.modes?.counter},
-        quiz:{...fallback.modes.quiz,...saved.modes?.quiz}
+        quiz:{...fallback.modes.quiz,...saved.modes?.quiz},
+        matchup:{...fallback.modes.matchup,...saved.modes?.matchup}
       },
       mission:{...fallback.mission,...saved.mission,results:Array.isArray(saved.mission?.results)?saved.mission.results:[]},
       achievements:Array.isArray(saved.achievements)?saved.achievements:[]
@@ -424,11 +441,23 @@ let state = {
   quizCycleTotal:0,
   quizCyclePosition:0,
   quizProgress:loadAcademyProgress(),
+  matchupScope:"all",
+  matchupCategory:"all",
+  matchupChampion:"Akali",
+  matchupRoster:[],
+  matchupQueue:[],
+  matchupCyclePosition:0,
+  matchupCurrentChampion:null,
+  matchupCurrentData:null,
+  matchupLastChampion:null,
+  matchupProgress:loadMatchupProgress(),
+  matchupLoading:false,
   playerProgress:savedPlayerProgress,
   answered:false,
   scenario:null,
   choices:[],
   quizOptions:[]
+  ,matchupOptions:[]
 };
 
 const modeDetails = {
@@ -446,6 +475,11 @@ const modeDetails = {
     title:"League Academy",kicker:"KNOWLEDGE LIBRARY",glyph:"IQ",
     description:"Build instinct through fast lessons on terminology, builds, champion kits, waves, and macro.",
     skills:["Vocabulary","Build logic","Champion kits","Macro"]
+  },
+  matchup:{
+    title:"Matchup Lab",kicker:"ENEMY SCOUTING",glyph:"1v1",
+    description:"Scout every champion's passive, Q/W/E/R, threat pattern, counterplay windows, and adaptive defensive build logic.",
+    skills:["Every ability","Threat recognition","Counterplay","Adaptive builds"]
   }
 };
 
@@ -463,7 +497,7 @@ function labelForTag(tag) { return labels[tag] || tag.replace(/([A-Z])/g," $1");
 function difficultyCopy() {
   const configuredMode=state.view==="setup"?state.pendingMode:state.mode;
   let copy;
-  if(configuredMode==="quiz") {
+  if(configuredMode==="quiz"||configuredMode==="matchup") {
     const quizCopy = {
       easy:"<strong>Easy:</strong> Foundation lessons include a direct hint and three answer choices.",
       medium:"<strong>Medium:</strong> Foundation and applied lessons use all four choices with a lighter clue.",
@@ -675,6 +709,253 @@ function populateChampionPicker() {
   $("settingsChampionSelect").innerHTML=options;
   $("hubQuizQuestionCount").textContent=quizQuestions.length;
   updateQuizPathUI();
+}
+
+function saveMatchupProgress() {
+  try { localStorage.setItem("lolIqMatchupProgress",JSON.stringify(state.matchupProgress)); }
+  catch(error) { /* Keep session progress when storage is unavailable. */ }
+}
+
+function matchupCategoryLabel(category) {
+  return category==="all" ? "All topics" : matchupCategories[category]?.label || category;
+}
+
+function populateMatchupPicker() {
+  const options=state.matchupRoster.map(champion=>`<option value="${champion.id}">${champion.name} · ${(champion.tags||[]).join(" / ")}</option>`).join("");
+  $("matchupChampionSelect").innerHTML=options;
+  $("settingsMatchupChampionSelect").innerHTML=options;
+  if(!state.matchupRoster.some(champion=>champion.id===state.matchupChampion)) {
+    state.matchupChampion=state.matchupRoster.find(champion=>champion.id==="Akali")?.id||state.matchupRoster[0]?.id||"Akali";
+  }
+  $("matchupChampionSelect").value=state.matchupChampion;
+  $("settingsMatchupChampionSelect").value=state.matchupChampion;
+  $("hubMatchupChampionCount").textContent=state.matchupRoster.length||"All";
+  $("matchupRosterStatus").textContent=state.matchupRoster.length
+    ? `${state.matchupRoster.length} champions · 5 abilities each · live Riot data`
+    : "Champion roster unavailable";
+  $("matchupCoverageTitle").textContent=state.matchupRoster.length
+    ? `${state.matchupRoster.length} champions. ${state.matchupRoster.length*5} ability cards.`
+    : "Every champion. Every ability.";
+}
+
+async function ensureMatchupRoster() {
+  if(state.matchupRoster.length)return state.matchupRoster;
+  $("matchupRosterStatus").textContent="Loading Riot's champion roster…";
+  try {
+    state.matchupRoster=await window.MatchupLab.loadRoster(DDRAGON_VERSION);
+    populateMatchupPicker();
+    updateMatchupControls();
+    return state.matchupRoster;
+  } catch(error) {
+    $("matchupRosterStatus").textContent="Could not reach Riot data · retry by reopening Matchup Lab";
+    throw error;
+  }
+}
+
+function updateMatchupControls() {
+  document.querySelectorAll("[data-matchup-scope]").forEach(button=>button.classList.toggle("active",button.dataset.matchupScope===state.matchupScope));
+  document.querySelectorAll("[data-matchup-category]").forEach(button=>button.classList.toggle("active",button.dataset.matchupCategory===state.matchupCategory));
+  $("matchupChampionPicker").classList.toggle("hidden",state.matchupScope!=="focus");
+  $("drawerMatchupChampionPicker").classList.toggle("hidden",state.matchupScope!=="focus");
+  if(state.matchupRoster.length) {
+    $("matchupChampionSelect").value=state.matchupChampion;
+    $("settingsMatchupChampionSelect").value=state.matchupChampion;
+  }
+  updateLoadoutSummary();
+}
+
+function eligibleMatchupQuestions(questions) {
+  return questions.filter(question=>
+    difficultyRank[question.level]<=difficultyRank[state.difficulty] &&
+    (state.matchupCategory==="all"||question.category===state.matchupCategory)
+  );
+}
+
+function orderMatchupQuestions(questions) {
+  const missed=new Set(state.matchupProgress.missed);
+  const unseen=shuffle(questions.filter(question=>!state.matchupProgress.questions[question.id]));
+  const review=shuffle(questions.filter(question=>state.matchupProgress.questions[question.id]&&missed.has(question.id)));
+  const learned=shuffle(questions.filter(question=>state.matchupProgress.questions[question.id]&&!missed.has(question.id)));
+  return [...unseen,...review,...learned];
+}
+
+function buildMatchupOptions(question) {
+  if(state.difficulty!=="easy")return shuffle(question.options);
+  return shuffle([question.answer,...shuffle(question.options.filter(option=>option!==question.answer)).slice(0,2)]);
+}
+
+function renderMatchupLoading() {
+  $("matchupChampionName").textContent="Scouting…";
+  $("matchupChampionTitle").textContent="Loading current champion definitions";
+  $("matchupChampionTags").innerHTML="";
+  $("matchupPortrait").removeAttribute("src");
+  $("matchupContext").textContent="Contacting Riot Data Dragon…";
+  $("matchupQuestion").textContent="Preparing your next opponent.";
+  $("matchupChoices").innerHTML="<div class=\"matchup-loader\"><span></span><b>Building scouting report</b></div>";
+  $("matchupHint").classList.add("hidden");
+  $("matchupFeedback").className="matchup-feedback hidden";
+}
+
+function renderMatchupError() {
+  $("matchupChampionName").textContent="Data unavailable";
+  $("matchupChampionTitle").textContent="The Riot static-data request did not complete";
+  $("matchupContext").textContent="Matchup Lab needs the current champion file to keep ability lessons accurate.";
+  $("matchupQuestion").textContent="Check your connection, then retry.";
+  $("matchupChoices").innerHTML="<button id=\"retryMatchupBtn\" class=\"primary-btn\">Retry Riot data →</button>";
+  $("retryMatchupBtn").addEventListener("click",nextMatchup);
+}
+
+function matchupSpellIcon(image) {
+  return `https://ddragon.leagueoflegends.com/cdn/${window.MatchupLab.getVersion()}/img/${image.group}/${image.file}`;
+}
+
+function renderMatchupReport(champion) {
+  const profile=window.MatchupLab.tacticalProfile(champion);
+  $("matchupTacticalReport").innerHTML=`
+    <article><span>FIGHT RANGE</span><b>${profile.range.label}</b><p>${profile.range.detail}</p></article>
+    <article><span>DAMAGE READ</span><b>${profile.damage.label}</b><p>${profile.damage.defense}</p></article>
+    <article><span>CORE PLAN</span><b>${profile.threats.join(" · ")}</b><p>${profile.plan}</p></article>`;
+  const abilities=[
+    {slot:"P",name:champion.passive.name,description:champion.passive.description,image:{group:"passive",file:champion.passive.image.full}},
+    ...champion.spells.map((spell,index)=>({slot:["Q","W","E","R"][index],name:spell.name,description:spell.description,image:{group:"spell",file:spell.image.full},cooldown:spell.cooldownBurn,cost:spell.resource}))
+  ];
+  $("matchupAbilityReport").innerHTML=abilities.map(ability=>`<article class="ability-card">
+    <div class="ability-card-heading"><img src="${matchupSpellIcon(ability.image)}" alt=""><span>${ability.slot}</span><b>${ability.name}</b></div>
+    <p>${window.MatchupLab.clean(ability.description)}</p>
+    ${ability.cooldown?`<small>Base cooldown: ${window.MatchupLab.clean(ability.cooldown)}s${ability.cost?` · ${window.MatchupLab.clean(ability.cost)}`:""}</small>`:""}
+  </article>`).join("");
+}
+
+function renderMatchupQuestion() {
+  const question=state.scenario;
+  const champion=state.matchupCurrentData;
+  const category=matchupCategories[question.category];
+  state.matchupOptions=buildMatchupOptions(question);
+  $("matchupCategoryBadge").textContent=(category?.short||"MATCHUP").toUpperCase();
+  $("matchupLevelBadge").textContent=quizLevelLabel(question.level).toUpperCase();
+  $("matchupLevelBadge").className=`quiz-level ${question.level}`;
+  $("matchupDataBadge").textContent=question.freshness==="patch"?`PATCH ${CURRICULUM_META.reviewedPatch}`:`RIOT ${window.MatchupLab.getVersion()}`;
+  $("matchupDataBadge").className=`quiz-freshness ${question.freshness==="patch"?"current":"durable"}`;
+  $("matchupProgressText").textContent=state.matchupScope==="focus"
+    ? `${champion.name} drill · ${state.matchupCyclePosition}/${state.matchupCyclePosition+state.matchupQueue.length}`
+    : `${Object.keys(state.matchupProgress.champions).length}/${state.matchupRoster.length} champions studied`;
+  $("matchupProgressBar").style.width=state.matchupScope==="focus"
+    ? `${Math.max(5,(state.matchupCyclePosition/(state.matchupCyclePosition+state.matchupQueue.length))*100)}%`
+    : `${Math.max(3,(Object.keys(state.matchupProgress.champions).length/Math.max(1,state.matchupRoster.length))*100)}%`;
+  $("matchupPortrait").src=portrait(champion.name);
+  $("matchupPortrait").alt=`${champion.name} portrait`;
+  $("matchupChampionName").textContent=champion.name;
+  $("matchupChampionTitle").textContent=champion.title;
+  $("matchupChampionTags").innerHTML=(champion.tags||[]).map(tag=>`<span>${tag}</span>`).join("");
+  $("changeMatchupChampionBtn").classList.toggle("hidden",state.matchupScope!=="focus");
+  $("matchupAbilitySlot").textContent=question.abilitySlot||category?.short?.slice(0,2)||"VS";
+  $("matchupContext").textContent=question.context;
+  $("matchupQuestion").textContent=question.prompt;
+  if(state.difficulty==="hard") $("matchupHint").classList.add("hidden");
+  else {
+    $("matchupHint").classList.remove("hidden");
+    $("matchupHint").innerHTML=`<b>${state.difficulty==="easy"?"Learning clue":"Think about"}:</b> ${question.hint}`;
+  }
+  $("matchupChoices").innerHTML=state.matchupOptions.map((option,index)=>`<button class="quiz-answer" data-index="${index}"><span>${String.fromCharCode(65+index)}</span><b>${option}</b></button>`).join("");
+  document.querySelectorAll("#matchupChoices .quiz-answer").forEach(button=>button.addEventListener("click",()=>answerMatchup(Number(button.dataset.index))));
+  $("matchupFeedback").className="matchup-feedback hidden";
+}
+
+async function nextMatchup() {
+  if(state.matchupLoading)return;
+  state.matchupLoading=true;
+  prepareNextMission();
+  state.answered=false;
+  renderMatchupLoading();
+  try {
+    await ensureMatchupRoster();
+    let summary;
+    if(state.matchupScope==="focus") {
+      summary=state.matchupRoster.find(champion=>champion.id===state.matchupChampion)||state.matchupRoster[0];
+    } else {
+      const choices=state.matchupRoster.filter(champion=>champion.id!==state.matchupLastChampion);
+      summary=choices[Math.floor(Math.random()*choices.length)]||state.matchupRoster[0];
+    }
+    const changed=state.matchupCurrentChampion!==summary.id;
+    state.matchupCurrentChampion=summary.id;
+    state.matchupLastChampion=summary.id;
+    state.matchupCurrentData=await window.MatchupLab.loadChampion(summary.id,DDRAGON_VERSION);
+    if(changed||!state.matchupQueue.length) {
+      const questions=eligibleMatchupQuestions(window.MatchupLab.makeQuestions(state.matchupCurrentData));
+      state.matchupQueue=orderMatchupQuestions(questions);
+      state.matchupCyclePosition=0;
+    }
+    if(!state.matchupQueue.length)throw new Error("No questions match this loadout");
+    state.scenario=state.matchupQueue.shift();
+    state.matchupCyclePosition+=1;
+    renderMatchupQuestion();
+  } catch(error) {
+    renderMatchupError();
+  } finally {
+    state.matchupLoading=false;
+  }
+}
+
+function answerMatchup(index) {
+  if(state.answered)return;
+  state.answered=true;
+  const question=state.scenario;
+  const selected=state.matchupOptions[index];
+  const correct=selected===question.answer;
+  const entry=state.matchupProgress.questions[question.id]||{attempts:0,correct:0};
+  entry.attempts+=1;
+  if(correct)entry.correct+=1;
+  state.matchupProgress.questions[question.id]=entry;
+  const championEntry=state.matchupProgress.champions[state.matchupCurrentChampion]||{attempts:0,correct:0};
+  championEntry.attempts+=1;
+  if(correct)championEntry.correct+=1;
+  state.matchupProgress.champions[state.matchupCurrentChampion]=championEntry;
+  const missed=new Set(state.matchupProgress.missed);
+  if(correct)missed.delete(question.id); else missed.add(question.id);
+  state.matchupProgress.missed=[...missed];
+  saveMatchupProgress();
+  const reward=awardRound(correct?"A":"D","matchup");
+  updateStats();
+  document.querySelectorAll("#matchupChoices .quiz-answer").forEach((button,buttonIndex)=>{
+    button.disabled=true;
+    const option=state.matchupOptions[buttonIndex];
+    if(option===question.answer)button.classList.add("correct");
+    else if(buttonIndex===index)button.classList.add("wrong");
+  });
+  $("matchupFeedback").className=`matchup-feedback ${correct?"good":"bad"}`;
+  $("matchupFeedbackMark").textContent=correct?"✓":"!";
+  $("matchupFeedbackKicker").textContent=correct?"CORRECT READ":"SCOUTING UPDATE";
+  $("matchupFeedbackTitle").textContent=correct?"You read the matchup.":`Better answer: ${question.answer}`;
+  $("matchupExplanation").textContent=question.explanation;
+  $("matchupTakeaway").textContent=question.takeaway;
+  $("matchupReward").textContent=rewardText(reward);
+  $("matchupFreshnessNote").textContent=question.freshness==="patch"
+    ? `Strategy guidance reviewed for patch ${CURRICULUM_META.reviewedPatch}; re-check after rune, item, or champion changes.`
+    : `Ability definitions loaded from Riot Data Dragon ${window.MatchupLab.getVersion()}. Tactical summaries are decision frameworks, not live win-rate claims.`;
+  renderMatchupReport(state.matchupCurrentData);
+  $("matchupFeedback").scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+
+function resetMatchupRun() {
+  state.matchupQueue=[];
+  state.matchupCurrentChampion=null;
+  state.answered=false;
+  updateMatchupControls();
+  if(state.view==="play"&&state.mode==="matchup") {
+    nextMatchup();
+    closeSettings();
+    animateRound($("matchupGame"));
+  }
+}
+
+function setMatchupScope(scope) {
+  state.matchupScope=scope;
+  resetMatchupRun();
+}
+
+function setMatchupCategory(category) {
+  state.matchupCategory=category;
+  resetMatchupRun();
 }
 
 function champCard(name) {

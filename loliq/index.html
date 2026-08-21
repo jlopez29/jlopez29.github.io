@@ -7,7 +7,7 @@
   <script>
     (() => {
       const mode = new URLSearchParams(window.location.search).get("game");
-      if (["comp", "counter", "quiz"].includes(mode)) {
+      if (["comp", "counter", "quiz", "matchup"].includes(mode)) {
         document.documentElement.dataset.directEntry = mode;
       }
     })();
@@ -68,7 +68,7 @@
           <h2>Choose your queue</h2>
           <p>Pick a skill, set your challenge, then drop straight into the game.</p>
         </div>
-        <span class="hub-count">3 games</span>
+        <span class="hub-count">4 games</span>
       </div>
 
       <div class="hub-grid">
@@ -98,6 +98,16 @@
           <h3>League Academy</h3>
           <p>Train all topics together or follow a focused path for your main champion.</p>
           <span class="tile-meta"><b id="hubQuizQuestionCount">48</b> quiz lessons <i>Configure →</i></span>
+        </button>
+
+        <button class="game-tile matchup-tile" data-launch-mode="matchup">
+          <span class="tile-number">04</span>
+          <span class="tile-new">NEW</span>
+          <span class="tile-icon" aria-hidden="true">1v1</span>
+          <span class="tile-kicker">ENEMY SCOUTING</span>
+          <h3>Matchup Lab</h3>
+          <p>Learn every champion's passive, Q/W/E/R, threat pattern, counterplay, and adaptive build logic.</p>
+          <span class="tile-meta"><b id="hubMatchupChampionCount">All</b> champions <i>Configure →</i></span>
         </button>
       </div>
     </section>
@@ -176,6 +186,49 @@
               <div id="masteryGrid" class="mastery-grid"></div>
             </details>
           </div>
+
+          <div id="matchupSetup" class="academy-setup hidden">
+            <div class="setup-block">
+              <div class="setup-block-heading">
+                <span><b>02</b> Choose your opponents</span>
+                <small id="matchupRosterStatus">Loading Riot's champion roster…</small>
+              </div>
+              <div class="path-options">
+                <button class="path-option active" data-matchup-scope="all">
+                  <span class="path-icon">∞</span>
+                  <span><b>Full roster</b><small>Meet a different enemy every round</small></span>
+                </button>
+                <button class="path-option" data-matchup-scope="focus">
+                  <span class="path-icon">VS</span>
+                  <span><b>Focus one</b><small>Drill one champion in depth</small></span>
+                </button>
+              </div>
+              <label id="matchupChampionPicker" class="matchup-champion-picker hidden" for="matchupChampionSelect">
+                <span class="control-label">ENEMY CHAMPION</span>
+                <select id="matchupChampionSelect" aria-label="Choose an enemy champion"></select>
+              </label>
+            </div>
+
+            <div class="setup-block">
+              <div class="setup-block-heading">
+                <span><b>03</b> Pick a lesson type</span>
+                <small>All topics builds a complete scouting report</small>
+              </div>
+              <div class="category-tabs" id="matchupCategoryControl">
+                <button class="category-tab active" data-matchup-category="all">All topics</button>
+                <button class="category-tab" data-matchup-category="abilities">Passive + QWER</button>
+                <button class="category-tab" data-matchup-category="threats">What to expect</button>
+                <button class="category-tab" data-matchup-category="counterplay">How to respond</button>
+                <button class="category-tab" data-matchup-category="builds">Build adaptation</button>
+              </div>
+            </div>
+
+            <div class="coverage-callout">
+              <span>LIVE CURRICULUM</span>
+              <strong id="matchupCoverageTitle">Every champion. Every ability.</strong>
+              <p id="matchupCoverageCopy">Ability lessons are generated from Riot's current static data. Tactical lessons teach decision rules and flag patch-sensitive guidance.</p>
+            </div>
+          </div>
         </div>
 
         <aside class="setup-briefing">
@@ -183,8 +236,8 @@
           <h3>Ready check</h3>
           <div class="loadout-row"><span>Mode</span><strong id="loadoutMode">Team Comp</strong></div>
           <div class="loadout-row"><span>Difficulty</span><strong id="loadoutDifficulty">Easy</strong></div>
-          <div id="loadoutPathRow" class="loadout-row hidden"><span>Path</span><strong id="loadoutPath">Full library</strong></div>
-          <div id="loadoutTopicRow" class="loadout-row hidden"><span>Topic</span><strong id="loadoutTopic">All topics</strong></div>
+          <div id="loadoutPathRow" class="loadout-row hidden"><span id="loadoutPathLabel">Path</span><strong id="loadoutPath">Full library</strong></div>
+          <div id="loadoutTopicRow" class="loadout-row hidden"><span id="loadoutTopicLabel">Topic</span><strong id="loadoutTopic">All topics</strong></div>
           <div class="setup-skills">
             <span>SKILLS IN THIS RUN</span>
             <div id="setupSkills"></div>
@@ -348,6 +401,65 @@
       </section>
     </div>
 
+    <!-- MATCHUP LAB MODE -->
+    <div id="matchupGame" class="hidden">
+      <section class="matchup-stage">
+        <div class="quiz-progress" aria-hidden="true"><span id="matchupProgressBar"></span></div>
+        <div class="matchup-meta">
+          <span id="matchupCategoryBadge" class="quiz-badge">ABILITY SCOUT</span>
+          <span id="matchupLevelBadge" class="quiz-level easy">FOUNDATION</span>
+          <span id="matchupDataBadge" class="quiz-freshness current">RIOT DATA</span>
+          <span id="matchupProgressText">Loading roster…</span>
+        </div>
+
+        <div class="matchup-question-layout">
+          <aside class="enemy-dossier">
+            <div class="dossier-portrait-wrap">
+              <img id="matchupPortrait" src="" alt="" />
+              <span>ENEMY LOCKED</span>
+            </div>
+            <h2 id="matchupChampionName">Scouting…</h2>
+            <p id="matchupChampionTitle"></p>
+            <div id="matchupChampionTags" class="dossier-tags"></div>
+            <button id="changeMatchupChampionBtn" class="text-btn hidden">Change opponent</button>
+          </aside>
+
+          <div class="matchup-question-copy">
+            <span id="matchupAbilitySlot" class="ability-slot">?</span>
+            <p id="matchupContext" class="quiz-context">Loading Riot's current champion data…</p>
+            <h2 id="matchupQuestion">Preparing your scouting report.</h2>
+            <div id="matchupHint" class="quiz-hint hidden"></div>
+            <div id="matchupChoices" class="quiz-choices"></div>
+          </div>
+        </div>
+
+        <div id="matchupFeedback" class="matchup-feedback hidden" aria-live="polite">
+          <div class="matchup-feedback-heading">
+            <div class="feedback-mark" id="matchupFeedbackMark">✓</div>
+            <div>
+              <span id="matchupFeedbackKicker">CORRECT READ</span>
+              <h3 id="matchupFeedbackTitle">You read the matchup.</h3>
+              <p id="matchupExplanation"></p>
+            </div>
+            <div id="matchupReward" class="reward-chip">+100 · +80 XP</div>
+          </div>
+
+          <div class="matchup-takeaway"><b>In game:</b> <span id="matchupTakeaway"></span></div>
+
+          <details class="scouting-report" open>
+            <summary><span><b>Full scouting report</b><small>Passive, Q/W/E/R, threat profile, and build logic</small></span><i>Toggle</i></summary>
+            <div id="matchupTacticalReport" class="tactical-report"></div>
+            <div id="matchupAbilityReport" class="ability-report"></div>
+          </details>
+
+          <div class="matchup-feedback-actions">
+            <small id="matchupFreshnessNote">Definitions loaded from Riot Data Dragon.</small>
+            <button id="nextMatchupBtn" class="primary-btn">Next opponent →</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
     <section id="resultPanel" class="result-panel hidden">
       <div class="result-header">
         <div>
@@ -434,6 +546,30 @@
         </div>
       </div>
 
+      <div id="drawerMatchupSettings" class="drawer-academy hidden">
+        <div class="drawer-section">
+          <span class="control-label">OPPONENT POOL</span>
+          <div class="drawer-options">
+            <button class="drawer-option active" data-matchup-scope="all"><span>∞</span><b>Full roster</b></button>
+            <button class="drawer-option" data-matchup-scope="focus"><span>VS</span><b>Focus one</b></button>
+          </div>
+          <label id="drawerMatchupChampionPicker" class="drawer-select hidden" for="settingsMatchupChampionSelect">
+            <span class="control-label">ENEMY CHAMPION</span>
+            <select id="settingsMatchupChampionSelect" aria-label="Choose an enemy champion"></select>
+          </label>
+        </div>
+        <div class="drawer-section">
+          <span class="control-label">LESSON TYPE</span>
+          <div class="drawer-topics">
+            <button class="drawer-topic active" data-matchup-category="all">All</button>
+            <button class="drawer-topic" data-matchup-category="abilities">QWER</button>
+            <button class="drawer-topic" data-matchup-category="threats">Threats</button>
+            <button class="drawer-topic" data-matchup-category="counterplay">Response</button>
+            <button class="drawer-topic" data-matchup-category="builds">Builds</button>
+          </div>
+        </div>
+      </div>
+
       <div class="drawer-actions">
         <button id="newScenarioBtn" class="secondary-btn">Skip to a new scenario</button>
         <button id="drawerHubBtn" class="text-btn">Exit to training grounds</button>
@@ -445,6 +581,7 @@
   <div id="gameToast" class="game-toast" role="status" aria-live="polite"></div>
 
   <script src="curriculum-expansion.js"></script>
+  <script src="matchup-lab.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
