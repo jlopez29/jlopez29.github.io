@@ -38,9 +38,15 @@ async function syncLatestDataDragon() {
     if(!response.ok)throw new Error("Riot version request failed");
     const versions=await response.json();
     if(Array.isArray(versions)&&/^\d+\.\d+\.\d+$/.test(versions[0])) {
+      const previousVersion=DDRAGON_VERSION;
       DDRAGON_VERSION=versions[0];
       DDRAGON_BASE=`https://ddragon.leagueoflegends.com/cdn/${DDRAGON_VERSION}/img/champion/`;
       if(document.getElementById("championSelect"))updateQuizPathUI();
+      if(previousVersion!==DDRAGON_VERSION&&state?.matchupRoster?.length) {
+        state.matchupRoster=[];
+        state.matchupQueue=[];
+        ensureMatchupRoster().catch(()=>{});
+      }
     }
     renderPatchStatus(false);
   } catch(error) {
@@ -456,8 +462,8 @@ let state = {
   answered:false,
   scenario:null,
   choices:[],
-  quizOptions:[]
-  ,matchupOptions:[]
+  quizOptions:[],
+  matchupOptions:[]
 };
 
 const modeDetails = {
@@ -809,6 +815,12 @@ function matchupSpellIcon(image) {
   return `https://ddragon.leagueoflegends.com/cdn/${window.MatchupLab.getVersion()}/img/${image.group}/${image.file}`;
 }
 
+function matchupPortrait(champion) {
+  return champion.image?.full
+    ? `https://ddragon.leagueoflegends.com/cdn/${window.MatchupLab.getVersion()}/img/champion/${champion.image.full}`
+    : portrait(champion.name);
+}
+
 function renderMatchupReport(champion) {
   const profile=window.MatchupLab.tacticalProfile(champion);
   $("matchupTacticalReport").innerHTML=`
@@ -817,7 +829,7 @@ function renderMatchupReport(champion) {
     <article><span>CORE PLAN</span><b>${profile.threats.join(" · ")}</b><p>${profile.plan}</p></article>`;
   const abilities=[
     {slot:"P",name:champion.passive.name,description:champion.passive.description,image:{group:"passive",file:champion.passive.image.full}},
-    ...champion.spells.map((spell,index)=>({slot:["Q","W","E","R"][index],name:spell.name,description:spell.description,image:{group:"spell",file:spell.image.full},cooldown:spell.cooldownBurn,cost:spell.resource}))
+    ...champion.spells.map((spell,index)=>({slot:["Q","W","E","R"][index],name:spell.name,description:spell.description,image:{group:"spell",file:spell.image.full},cooldown:spell.cooldownBurn,cost:String(spell.resource||"").replace(/\{\{\s*cost\s*\}\}/gi,spell.costBurn||"cost")}))
   ];
   $("matchupAbilityReport").innerHTML=abilities.map(ability=>`<article class="ability-card">
     <div class="ability-card-heading"><img src="${matchupSpellIcon(ability.image)}" alt=""><span>${ability.slot}</span><b>${ability.name}</b></div>
@@ -842,7 +854,7 @@ function renderMatchupQuestion() {
   $("matchupProgressBar").style.width=state.matchupScope==="focus"
     ? `${Math.max(5,(state.matchupCyclePosition/(state.matchupCyclePosition+state.matchupQueue.length))*100)}%`
     : `${Math.max(3,(Object.keys(state.matchupProgress.champions).length/Math.max(1,state.matchupRoster.length))*100)}%`;
-  $("matchupPortrait").src=portrait(champion.name);
+  $("matchupPortrait").src=matchupPortrait(champion);
   $("matchupPortrait").alt=`${champion.name} portrait`;
   $("matchupChampionName").textContent=champion.name;
   $("matchupChampionTitle").textContent=champion.title;
@@ -1397,8 +1409,18 @@ function updateLoadoutSummary() {
   const details=modeDetails[mode]||modeDetails.comp;
   $("loadoutMode").textContent=details.title;
   $("loadoutDifficulty").textContent=state.difficulty[0].toUpperCase()+state.difficulty.slice(1);
-  $("loadoutPath").textContent=state.quizPath==="all"?"Full library":state.quizChampion;
-  $("loadoutTopic").textContent=state.quizCategory==="all"?"All topics":quizCategories[state.quizCategory].label;
+  if(mode==="matchup") {
+    const champion=state.matchupRoster.find(item=>item.id===state.matchupChampion);
+    $("loadoutPathLabel").textContent="Opponents";
+    $("loadoutTopicLabel").textContent="Lesson type";
+    $("loadoutPath").textContent=state.matchupScope==="all"?"Full roster":champion?.name||state.matchupChampion;
+    $("loadoutTopic").textContent=matchupCategoryLabel(state.matchupCategory);
+  } else {
+    $("loadoutPathLabel").textContent="Path";
+    $("loadoutTopicLabel").textContent="Topic";
+    $("loadoutPath").textContent=state.quizPath==="all"?"Full library":state.quizChampion;
+    $("loadoutTopic").textContent=state.quizCategory==="all"?"All topics":quizCategories[state.quizCategory].label;
+  }
 }
 
 function configureSetup(mode) {
@@ -1411,8 +1433,10 @@ function configureSetup(mode) {
   $("setupDescription").textContent=details.description;
   $("setupSkills").innerHTML=details.skills.map(skill=>`<span>${skill}</span>`).join("");
   $("academySetup").classList.toggle("hidden",mode!=="quiz");
-  $("loadoutPathRow").classList.toggle("hidden",mode!=="quiz");
-  $("loadoutTopicRow").classList.toggle("hidden",mode!=="quiz");
+  $("matchupSetup").classList.toggle("hidden",mode!=="matchup");
+  $("loadoutPathRow").classList.toggle("hidden",!["quiz","matchup"].includes(mode));
+  $("loadoutTopicRow").classList.toggle("hidden",!["quiz","matchup"].includes(mode));
+  if(mode==="matchup")ensureMatchupRoster().catch(()=>{});
   updateLoadoutSummary();
   difficultyCopy();
 }
@@ -1423,7 +1447,7 @@ function showSetup(mode) {
   document.body.dataset.view="setup";
   syncGameUrl(mode);
   configureSetup(mode);
-  ["appHeader","homeProgression","achievementShelf","gameHub","gameControls","compGame","counterGame","quizGame"].forEach(id=>setVisible(id,false));
+  ["appHeader","homeProgression","achievementShelf","gameHub","gameControls","compGame","counterGame","quizGame","matchupGame"].forEach(id=>setVisible(id,false));
   document.querySelector("footer").classList.add("hidden");
   $("resultPanel").className="result-panel hidden";
   setVisible("gameSetup",true,true);
@@ -1438,7 +1462,8 @@ function newScenario() {
   $("resultPanel").className="result-panel hidden";
   if(state.mode==="comp") nextComp();
   else if(state.mode==="counter") nextCounter();
-  else nextQuiz();
+  else if(state.mode==="quiz") nextQuiz();
+  else nextMatchup();
   updateStats();
   animateRound($(`${state.mode}Game`));
 }
@@ -1455,12 +1480,15 @@ function setMode(mode) {
   $("compGame").classList.toggle("hidden",mode!=="comp");
   $("counterGame").classList.toggle("hidden",mode!=="counter");
   $("quizGame").classList.toggle("hidden",mode!=="quiz");
+  $("matchupGame").classList.toggle("hidden",mode!=="matchup");
   $("activeModeKicker").textContent=details.kicker;
   $("activeModeTitle").textContent=details.title;
   $("drawerAcademySettings").classList.toggle("hidden",mode!=="quiz");
-  $("newScenarioBtn").textContent=mode==="quiz"?"Skip to a new lesson":"Skip to a new scenario";
+  $("drawerMatchupSettings").classList.toggle("hidden",mode!=="matchup");
+  $("newScenarioBtn").textContent=["quiz","matchup"].includes(mode)?"Skip to a new lesson":"Skip to a new scenario";
   state.round=1;
   if(mode==="quiz")state.quizQueue=[];
+  if(mode==="matchup")state.matchupQueue=[];
   difficultyCopy();
   newScenario();
   window.scrollTo({top:0,behavior:"smooth"});
@@ -1473,7 +1501,7 @@ function showHub() {
   state.answered=false;
   document.body.dataset.view="hub";
   syncGameUrl(null);
-  ["gameSetup","gameControls","compGame","counterGame","quizGame"].forEach(id=>setVisible(id,false));
+  ["gameSetup","gameControls","compGame","counterGame","quizGame","matchupGame"].forEach(id=>setVisible(id,false));
   $("resultPanel").className="result-panel hidden";
   ["appHeader","homeProgression","achievementShelf","gameHub"].forEach(id=>setVisible(id,true,id==="gameHub"));
   document.querySelector("footer").classList.remove("hidden");
@@ -1504,6 +1532,7 @@ function setDifficulty(difficulty) {
   state.difficulty=difficulty;
   document.querySelectorAll("[data-difficulty]").forEach(button=>button.classList.toggle("active",button.dataset.difficulty===difficulty));
   if(state.mode==="quiz")state.quizQueue=[];
+  if(state.mode==="matchup")state.matchupQueue=[];
   difficultyCopy();
   updateLoadoutSummary();
   if(changed&&state.view==="play") {
@@ -1517,9 +1546,15 @@ document.querySelectorAll("[data-launch-mode]").forEach(btn=>btn.addEventListene
 document.querySelectorAll("[data-difficulty]").forEach(btn=>btn.addEventListener("click",()=>setDifficulty(btn.dataset.difficulty)));
 document.querySelectorAll("[data-category]").forEach(btn=>btn.addEventListener("click",()=>setQuizCategory(btn.dataset.category)));
 document.querySelectorAll("[data-quiz-path]").forEach(btn=>btn.addEventListener("click",()=>setQuizPath(btn.dataset.quizPath)));
+document.querySelectorAll("[data-matchup-scope]").forEach(btn=>btn.addEventListener("click",()=>setMatchupScope(btn.dataset.matchupScope)));
+document.querySelectorAll("[data-matchup-category]").forEach(btn=>btn.addEventListener("click",()=>setMatchupCategory(btn.dataset.matchupCategory)));
 [$("championSelect"),$("settingsChampionSelect")].forEach(select=>select.addEventListener("change",event=>{
   state.quizChampion=event.target.value;
   resetQuizPath();
+}));
+[$("matchupChampionSelect"),$("settingsMatchupChampionSelect")].forEach(select=>select.addEventListener("change",event=>{
+  state.matchupChampion=event.target.value;
+  resetMatchupRun();
 }));
 $("setupBackBtn").addEventListener("click",showHub);
 $("startGameBtn").addEventListener("click",()=>setMode(state.pendingMode));
@@ -1547,6 +1582,15 @@ $("nextQuizBtn").addEventListener("click",()=>{
   animateRound($("quizGame"));
   window.scrollTo({top:0,behavior:"smooth"});
 });
+$("nextMatchupBtn").addEventListener("click",()=>{
+  state.round+=1;
+  state.answered=false;
+  nextMatchup();
+  updateStats();
+  animateRound($("matchupGame"));
+  window.scrollTo({top:0,behavior:"smooth"});
+});
+$("changeMatchupChampionBtn").addEventListener("click",openSettings);
 $("nextRoundBtn").addEventListener("click",()=>{
   state.round+=1;
   newScenario();

@@ -1,6 +1,21 @@
-# LoL IQ v5.1
+# LoL IQ v6
 
 Vanilla HTML/CSS/JavaScript League of Legends learning mini-games.
+
+## What's new in v6: Matchup Lab
+
+Matchup Lab is a separate enemy-scouting game covering the complete current champion roster. It loads Riot's versioned champion definitions and generates a deep lesson deck for every champion:
+
+- passive, Q, W, E, and R recognition;
+- ability-slot, resource, and base-cooldown recall;
+- melee, short-range, and ranged threat expectations;
+- crowd-control, mobility, sustain, shielding, and stealth reads;
+- counterplay plans based on the opponent's actual kit and archetype;
+- adaptive armor, magic resistance, health, anti-heal, tenacity, cleanse, spell-shield, and stasis logic.
+
+Players can rotate through the full roster or focus one opponent, filter by lesson type, and choose guided, applied, or expert difficulty. Every answer unlocks a full scouting report with all five ability cards and a tactical summary. Per-question and per-champion progress is saved locally and Matchup Lab contributes to the shared score, streak, XP, missions, and badges.
+
+Akali's Fleet Footwork lane intent and Nasus's stacking/ultimate windows are included as reviewed spotlight scenarios. Build prompts teach conditional decisions rather than fixed six-item prescriptions, and patch-sensitive strategy is labeled separately from live Riot ability data.
 
 ## What's new in v5: Focused game flow
 
@@ -141,6 +156,7 @@ Each ready-check can also be opened directly:
 - `http://localhost:8080/loliq/?game=comp`
 - `http://localhost:8080/loliq/?game=counter`
 - `http://localhost:8080/loliq/?game=quiz`
+- `http://localhost:8080/loliq/?game=matchup`
 
 ## Suggested next ideas
 

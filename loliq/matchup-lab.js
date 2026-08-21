@@ -232,7 +232,7 @@
         takeaway:"Knowing that CC exists is step one; next learn its range, condition, and cooldown."
       }),
       question({
-        id:`${champion.id}-mobility-profile`, champion:champion.name, category:"counterplay", level:"medium",
+        id:`${champion.id}-mobility-profile`, champion:champion.name, category:"counterplay", level:"easy",
         context:`You are planning your escape before committing onto ${champion.name}.`,
         prompt:"Does the current kit text identify a mobility or gap-closing tool?",
         options:shuffle([mobilityAnswer,"They always have three untargetable dashes","They can teleport to any champion at level one","Movement tools never change a matchup"]),
@@ -252,7 +252,7 @@
         takeaway:"Use class as a first read, then refine the plan from the actual kit and build."
       }),
       question({
-        id:`${champion.id}-damage-build`, champion:champion.name, category:"builds", level:"medium",
+        id:`${champion.id}-damage-build`, champion:champion.name, category:"builds", level:"easy",
         context:`${champion.name} is the enemy carrying the fight. You need one defensive direction, not a copied full build.`,
         prompt:`Which adaptation best matches the detected ${profile.damage.label.toLowerCase()} profile?`,
         options:shuffle([profile.damage.defense,"Buy only damage because defensive components never change a duel","Choose resistance based only on your lane, even if another enemy is fed","Complete the same six items every match without checking inventories"]),
