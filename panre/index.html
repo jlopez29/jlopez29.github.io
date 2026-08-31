@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A gamified, blueprint-aligned PANRE-LA practice studio with questions, flashcards, mock quarters, and performance insights.">
+  <meta name="theme-color" content="#f5f0e7">
+  <title>ReCert Ready — PANRE-LA Practice Studio</title>
+  <script>
+    (() => {
+      try {
+        const saved = localStorage.getItem("recert-theme");
+        document.documentElement.dataset.theme = saved || "light";
+      } catch (error) {
+        document.documentElement.dataset.theme = "light";
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page-grain" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="wordmark" href="#" data-route="dashboard" aria-label="ReCert Ready dashboard">
+      <span class="wordmark-mark" aria-hidden="true"><i></i><i></i></span>
+      <span><b>ReCert</b> Ready</span>
+    </a>
+    <nav class="desktop-nav" aria-label="Main navigation">
+      <button class="nav-link is-active" type="button" data-route="dashboard">Home</button>
+      <button class="nav-link" type="button" data-route="practice">Practice</button>
+      <button class="nav-link" type="button" data-route="flashcards">Flashcards</button>
+      <button class="nav-link" type="button" data-route="insights">Insights</button>
+    </nav>
+    <div class="topbar-actions">
+      <div class="streak-pill" title="Consecutive study days"><span aria-hidden="true">◆</span><b id="headerStreak">0</b><small>day streak</small></div>
+      <button class="icon-button" id="themeToggle" type="button" aria-label="Switch to dark theme" title="Switch theme">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.64 5.64l1.42 1.42m9.88 9.88 1.42 1.42m0-12.72-1.42 1.42M7.06 16.94l-1.42 1.42M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"/></svg>
+      </button>
+      <a class="portfolio-link" href="../" aria-label="Back to Jesse Lopez portfolio">JL <span>↗</span></a>
+    </div>
+  </header>
+
+  <main id="app" tabindex="-1">
+    <section class="view is-active" id="dashboardView" data-view="dashboard">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="kicker">YOUR PERSONAL STUDY PATH</p>
+          <h1>Build clinical confidence,<br><em>one case at a time.</em></h1>
+          <p class="hero-lede">Blueprint-aligned practice that learns where you need support and turns every missed question into the next smart review.</p>
+          <div class="hero-actions">
+            <button class="primary-button" type="button" data-action="smart-session">Start smart session <span>→</span></button>
+            <button class="text-button" type="button" data-route="insights">View my progress</button>
+          </div>
+          <div class="mini-proof">
+            <span class="avatar-stack" aria-hidden="true"><i>CV</i><i>GI</i><i>PU</i></span>
+            <span><b id="questionCount">0 original questions</b><small>Designed around the NCCPA blueprint</small></span>
+          </div>
+        </div>
+
+        <div class="hero-art" role="img" aria-label="Study progress preview">
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="medical-cross" aria-hidden="true"><i></i><i></i></div>
+          <div class="floating-card float-progress">
+            <span>THIS WEEK</span>
+            <strong id="heroWeekly">0</strong>
+            <small>questions answered</small>
+            <div class="micro-bars" id="weeklyBars" aria-hidden="true"></div>
+          </div>
+          <div class="floating-card float-mastery">
+            <div class="ring" id="heroRing"><span id="heroAccuracy">—</span></div>
+            <div><span>MASTERY</span><strong id="heroMastery">Start learning</strong><small>Overall accuracy</small></div>
+          </div>
+          <div class="floating-card float-focus">
+            <span>NEXT FOCUS</span>
+            <strong id="heroFocus">Cardiovascular</strong>
+            <small id="heroFocusReason">Highest blueprint weight</small>
+          </div>
+        </div>
+      </div>
+
+      <section class="dashboard-section" aria-labelledby="continueHeading">
+        <div class="section-heading">
+          <div><p class="kicker">KEEP YOUR MOMENTUM</p><h2 id="continueHeading">Choose your next move</h2></div>
+          <p>Short sessions compound. Pick the format that fits the time and energy you have today.</p>
+        </div>
+        <div class="mode-grid">
+          <article class="mode-card mode-practice">
+            <div class="mode-icon" aria-hidden="true">01</div>
+            <span class="mode-time">10–20 MIN</span>
+            <h3>Smart practice</h3>
+            <p>Adaptive cases prioritize weak areas while preserving the official category balance.</p>
+            <button type="button" data-action="smart-session">Start a session <span>→</span></button>
+          </article>
+          <article class="mode-card mode-cards">
+            <div class="mode-icon" aria-hidden="true">02</div>
+            <span class="mode-time">5–10 MIN</span>
+            <h3>Flashcard rounds</h3>
+            <p>Active recall with simple confidence grading and a built-in review schedule.</p>
+            <button type="button" data-route="flashcards">Review due cards <span id="dueCount">0 due</span></button>
+          </article>
+          <article class="mode-card mode-sprint">
+            <div class="mode-icon" aria-hidden="true">03</div>
+            <span class="mode-time">3 MIN</span>
+            <h3>Clinical sprint</h3>
+            <p>Race through rapid pattern-recognition prompts and build a combo streak.</p>
+            <button type="button" data-action="sprint">Play sprint <span>→</span></button>
+          </article>
+          <article class="mode-card mode-mock">
+            <div class="mode-icon" aria-hidden="true">04</div>
+            <span class="mode-time">UP TO 125 MIN</span>
+            <h3>Mock quarter</h3>
+            <p>25 blueprint-weighted cases, five minutes per item, followed by a full readiness report.</p>
+            <button type="button" data-action="mock">Set up mock <span>→</span></button>
+          </article>
+        </div>
+      </section>
+
+      <section class="blueprint-section" aria-labelledby="blueprintHeading">
+        <div class="section-heading compact-heading">
+          <div><p class="kicker">OFFICIAL CONTENT MIX</p><h2 id="blueprintHeading">Know the blueprint</h2></div>
+          <a href="https://www.nccpa.net/resources/panre-panre-la-content-blueprint/" target="_blank" rel="noreferrer">NCCPA source ↗</a>
+        </div>
+        <div class="blueprint-layout">
+          <div class="blueprint-donut" id="blueprintDonut" role="img" aria-label="PANRE-LA category weight chart"><div><strong>15</strong><span>content<br>areas</span></div></div>
+          <div class="blueprint-list" id="blueprintList"></div>
+        </div>
+        <div class="curriculum-stats" id="curriculumStats"></div>
+        <details class="reference-library">
+          <summary><span>Clinical reference library</span><small>15 specialty-society sources +</small></summary>
+          <div id="referenceLibrary"></div>
+        </details>
+        <p class="blueprint-note">Allocations are approximate and may vary slightly by exam. Blueprint effective January 2023.</p>
+      </section>
+    </section>
+
+    <section class="view" id="practiceView" data-view="practice">
+      <div class="inner-page-head">
+        <div><p class="kicker">QUESTION LAB</p><h1>Practice with purpose.</h1><p>Build a custom set or let the adaptive engine choose the right mix.</p></div>
+        <div class="bank-stat"><strong id="bankCount">0</strong><span>original clinical<br>questions</span></div>
+      </div>
+      <div class="practice-builder">
+        <section class="builder-panel">
+          <div class="panel-label"><span>01</span><div><h2>Choose a focus</h2><p>All categories follows the NCCPA blueprint mix.</p></div></div>
+          <div class="category-picker" id="categoryPicker"></div>
+        </section>
+        <section class="builder-panel">
+          <div class="panel-label"><span>02</span><div><h2>Set your session</h2><p>Feedback appears after every answer.</p></div></div>
+          <div class="length-picker" role="group" aria-label="Session length">
+            <button type="button" aria-pressed="true" class="is-selected" data-length="5"><b>5</b><small>Quick set</small></button>
+            <button type="button" aria-pressed="false" data-length="10"><b>10</b><small>Core set</small></button>
+            <button type="button" aria-pressed="false" data-length="25"><b>25</b><small>Full quarter</small></button>
+          </div>
+          <button class="primary-button wide" type="button" data-action="custom-practice">Begin practice <span>→</span></button>
+        </section>
+      </div>
+      <section class="recent-panel">
+        <div class="section-heading compact-heading"><div><p class="kicker">RECENT WORK</p><h2>Session history</h2></div></div>
+        <div id="sessionHistory" class="session-history"></div>
+      </section>
+    </section>
+
+    <section class="view" id="flashcardsView" data-view="flashcards">
+      <div class="inner-page-head">
+        <div><p class="kicker">ACTIVE RECALL</p><h1>Make it stick.</h1><p>Reveal the answer, rate the effort, and let the deck schedule what comes next.</p></div>
+        <div class="bank-stat accent"><strong id="flashDueHead">0</strong><span>cards due<br>today</span></div>
+      </div>
+      <div class="flash-layout">
+        <aside class="deck-panel" aria-label="Flashcard deck filters">
+          <p class="kicker">DECK FILTER</p>
+          <div id="deckFilters" class="deck-filters"></div>
+          <div class="deck-progress"><div><span>Deck mastery</span><b id="deckMastery">0%</b></div><i><span id="deckMasteryBar"></span></i></div>
+        </aside>
+        <section class="flash-stage" aria-label="Current flashcard">
+          <div class="flash-toolbar"><span id="flashCounter">Card 1</span><button type="button" id="shuffleCards">Shuffle deck ↻</button></div>
+          <button class="flashcard" id="flashcard" type="button" aria-label="Reveal flashcard answer">
+            <span class="flash-category" id="flashCategory">Cardiovascular</span>
+            <span class="flash-side">PROMPT</span>
+            <strong id="flashPrompt">Loading your deck…</strong>
+            <span class="flash-answer" id="flashAnswer"></span>
+            <small id="flashHint">Tap the card to reveal the answer</small>
+          </button>
+          <a class="flash-source" id="flashSource" href="#" target="_blank" rel="noreferrer">Review category reference ↗</a>
+          <div class="confidence-controls" id="confidenceControls" hidden>
+            <p>How well did you know it?</p>
+            <div><button type="button" data-confidence="again">Again <small>&lt; 1 min</small></button><button type="button" data-confidence="hard">Hard <small>Tomorrow</small></button><button type="button" data-confidence="got">Got it <small>3 days</small></button></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="view" id="insightsView" data-view="insights">
+      <div class="inner-page-head">
+        <div><p class="kicker">PERFORMANCE LAB</p><h1>Turn results into a plan.</h1><p>Your private, on-device learning record highlights durable strengths and the next best area to train.</p></div>
+        <button class="outline-button" type="button" id="resetProgress">Reset progress</button>
+      </div>
+      <div class="insight-summary" id="insightSummary"></div>
+      <div class="insight-grid">
+        <section class="analytics-card category-analysis">
+          <div class="card-heading"><div><p class="kicker">CATEGORY MASTERY</p><h2>Strength map</h2></div><span>Accuracy / attempts</span></div>
+          <div id="strengthMap"></div>
+        </section>
+        <aside class="analytics-card next-plan" id="nextPlan" aria-label="Recommended study plan"></aside>
+      </div>
+      <section class="analytics-card trend-card">
+        <div class="card-heading"><div><p class="kicker">RECENT MOMENTUM</p><h2>Last 14 study days</h2></div><span id="trendLabel">No sessions yet</span></div>
+        <div class="trend-chart" id="trendChart"></div>
+      </section>
+    </section>
+
+    <section class="view session-view" id="sessionView" data-view="session">
+      <div id="sessionShell"></div>
+    </section>
+  </main>
+
+  <nav class="mobile-nav" aria-label="Mobile navigation">
+    <button class="is-active" type="button" data-route="dashboard"><span>⌂</span>Home</button>
+    <button type="button" data-route="practice"><span>◎</span>Practice</button>
+    <button type="button" data-route="flashcards"><span>▱</span>Cards</button>
+    <button type="button" data-route="insights"><span>⌁</span>Insights</button>
+  </nav>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <footer>
+    <div><b>ReCert Ready</b><span>Independent educational practice · Not affiliated with or endorsed by NCCPA</span></div>
+    <p>Practice content is for learning only and is not medical advice. Verify management decisions with current clinical guidance.</p>
+  </footer>
+
+  <script src="questions.js"></script>
+  <script src="curriculum-expansion.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

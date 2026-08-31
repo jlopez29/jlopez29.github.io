@@ -314,6 +314,7 @@ html[data-theme="dark"] .sun-icon { display: block; }
 .loliq-card { grid-column: 1 / -1; min-height: 570px; }
 .loliq-card:hover { transform: none; }
 .wordxchange-card { grid-column: 1 / -1; min-height: 570px; }
+.recert-card { grid-column: 1 / -1; min-height: 570px; }
 
 .project-visual {
   min-height: 280px;
@@ -387,6 +388,47 @@ html[data-theme="dark"] .sun-icon { display: block; }
     radial-gradient(circle at 85% 88%, rgba(224, 83, 167, .22), transparent 38%),
     #181326;
 }
+.recert-visual {
+  position:relative;
+  min-height:360px;
+  display:block;
+  overflow:hidden;
+  color:#173b37;
+  background:
+    radial-gradient(circle at 12% 15%,rgba(255,255,255,.9),transparent 29%),
+    radial-gradient(circle at 88% 84%,rgba(222,130,104,.22),transparent 36%),
+    #dbeae4;
+}
+.recert-visual::before { position:absolute; inset:0; content:""; opacity:.2; background-image:radial-gradient(#1d5d55 .7px,transparent .7px); background-size:11px 11px; mask-image:linear-gradient(135deg,#000,transparent 70%); }
+.recert-visual .project-brand-row { position:relative; z-index:2; }
+.recert-visual .open-icon { color:#356e67; }
+.recert-icon { position:relative; border-color:rgba(15,95,85,.28); background:#0d6b62; }
+.recert-icon i { position:absolute; inset:23px 12px; border-radius:2px; background:#fff; }
+.recert-icon i:last-child { inset:12px 23px; }
+.recert-preview { position:relative; z-index:1; width:min(100%,760px); margin:15px auto 0; padding:18px 22px 22px; border:1px solid rgba(24,82,75,.15); border-radius:20px; background:rgba(255,253,248,.78); box-shadow:0 25px 55px rgba(27,71,64,.12); backdrop-filter:blur(10px); }
+.recert-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; padding-bottom:14px; border-bottom:1px solid rgba(24,82,75,.13); }
+.recert-heading span { color:#4c7771; font-size:7px; font-weight:900; letter-spacing:.16em; }
+.recert-heading b { font-family:Georgia,serif; font-size:19px; font-weight:500; letter-spacing:-.03em; }
+.recert-dashboard { display:grid; grid-template-columns:100px 1fr 125px; align-items:center; gap:24px; padding-top:17px; }
+.recert-ring { width:88px; aspect-ratio:1; display:grid; place-items:center; border-radius:50%; background:conic-gradient(#0d6b62 0 38%,#dc745f 38% 58%,#c89b46 58% 77%,#537f99 77% 100%); }
+.recert-ring::before { width:61px; aspect-ratio:1; grid-area:1/1; border-radius:50%; content:""; background:#f9f6ef; }
+.recert-ring span { z-index:1; grid-area:1/1; text-align:center; }
+.recert-ring b,.recert-ring small { display:block; }
+.recert-ring b { font-family:Georgia,serif; font-size:22px; font-weight:500; }
+.recert-ring small { color:#65827e; font-size:5px; font-weight:900; letter-spacing:.13em; }
+.recert-bars { display:grid; gap:8px; }
+.recert-bars span { position:relative; height:22px; display:grid; grid-template-columns:1fr auto; align-items:start; gap:10px; }
+.recert-bars span::before { position:absolute; left:0; right:0; bottom:0; height:4px; border-radius:4px; content:""; background:#dbe3dd; }
+.recert-bars i { position:absolute; left:0; bottom:0; width:var(--score); height:4px; z-index:1; border-radius:4px; background:#0d6b62; }
+.recert-bars span:nth-child(2) i { background:#dc745f; }
+.recert-bars span:nth-child(3) i { background:#c89b46; }
+.recert-bars span:nth-child(4) i { background:#537f99; }
+.recert-bars b { font-size:7px; }
+.recert-bars small { color:#68837e; font-size:6px; }
+.recert-next { min-height:105px; display:flex; flex-direction:column; padding:14px; border-radius:13px; color:#fff; background:#0c514b; }
+.recert-next small { color:#9bc8bf; font-size:6px; font-weight:900; letter-spacing:.14em; }
+.recert-next b { margin-top:6px; font-family:Georgia,serif; font-size:17px; font-weight:500; line-height:1.05; }
+.recert-next span { margin-top:auto; color:#f1a08b; font-size:6px; font-weight:900; letter-spacing:.1em; }
 .wordxchange-visual::before {
   content: "";
   position: absolute;
@@ -441,6 +483,7 @@ html[data-theme="dark"] .sun-icon { display: block; }
   .project-grid { grid-template-columns: 1fr; }
   .loliq-card { grid-column: auto; }
   .wordxchange-card { grid-column: auto; }
+  .recert-card { grid-column: auto; }
 }
 
 @media (max-width: 700px) {
@@ -483,6 +526,13 @@ html[data-theme="dark"] .sun-icon { display: block; }
   .project-card { min-height: auto; border-radius: 16px; }
   .project-visual { min-height: auto; padding: 19px; }
   .wordxchange-visual { min-height:330px; }
+  .recert-visual { min-height:350px; }
+  .recert-preview { margin-top:22px; padding:15px; }
+  .recert-heading b { font-size:15px; }
+  .recert-dashboard { grid-template-columns:75px 1fr; gap:15px; }
+  .recert-ring { width:70px; }
+  .recert-ring::before { width:48px; }
+  .recert-next { display:none; }
   .wordxchange-preview { margin-top:24px; padding:16px 12px 21px; }
   .wx-word span { width:38px; height:47px; }
   .game-launch-grid { grid-template-columns:1fr; margin-top:28px; }
