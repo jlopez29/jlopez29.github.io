@@ -113,6 +113,31 @@ const champions = [
   {name:"Janna",role:"SUPPORT",damage:"AP",tags:["peel","antiDive","disengage","enchanter"],desc:"Disengage specialist who can interrupt and reset enemy all-ins."}
 ];
 
+// A compact, intentionally curated role pool for Match the Champ. These are
+// common positions rather than live pick-rate claims, and flexible champions
+// accept every role listed here.
+const flexibleChampionRoles = {
+  "Gwen":["TOP","JUNGLE"],
+  "Shen":["TOP","SUPPORT"],
+  "Renekton":["TOP","MID"],
+  "Sett":["TOP","SUPPORT"],
+  "Sejuani":["JUNGLE","TOP"],
+  "Lillia":["JUNGLE","TOP"],
+  "Poppy":["JUNGLE","TOP","SUPPORT"],
+  "Akali":["MID","TOP"],
+  "Galio":["MID","SUPPORT"],
+  "Yasuo":["MID","TOP","ADC"],
+  "Jayce":["MID","TOP"],
+  "Ashe":["ADC","SUPPORT"],
+  "Zyra":["SUPPORT","MID"],
+  "Morgana":["SUPPORT","MID"]
+};
+const roleChallengeChampions = champions.map(champion=>({
+  ...champion,
+  roles:flexibleChampionRoles[champion.name]||[champion.role]
+}));
+const roleOrder = ["TOP","JUNGLE","MID","ADC","SUPPORT"];
+
 const teamScenarios = [
   {role:"MID",ally:["Ornn","Jarvan IV","Jinx","Lulu"],enemy:["Renekton","Vi","Ahri","Kai'Sa","Nautilus"],priorities:["AP","antiDive","teamfight"],threats:["dive","engage"],teaching:"Your team already has engage and a physical carry. Mid should balance the damage profile and make front-to-back fights easier for Jinx rather than adding redundant dive."},
   {role:"SUPPORT",ally:["Gwen","Kindred","Viktor","Jinx"],enemy:["Malphite","Jarvan IV","Yasuo","Samira","Rakan"],priorities:["peel","frontline","antiDive"],threats:["dive","combo","engage"],teaching:"Four damage dealers do not automatically make a good composition. When the enemy has multiple ways to dive your carries, defensive utility can be worth more than another damage source."},
@@ -372,6 +397,7 @@ const achievementDefinitions = [
   {id:"counter-pro",icon:"⚔",name:"Counter Pro",description:"Find 5 clean counter picks.",test:p=>p.modes.counter.correct>=5},
   {id:"academy-scholar",icon:"◆",name:"Academy Scholar",description:"Get 10 Academy lessons right.",test:p=>p.modes.quiz.correct>=10},
   {id:"enemy-scout",icon:"◎",name:"Enemy Scout",description:"Get 10 Matchup Lab reads right.",test:p=>p.modes.matchup.correct>=10},
+  {id:"role-reader",icon:"◉",name:"Role Reader",description:"Place 10 champions correctly.",test:p=>p.modes.roles.correct>=10},
   {id:"mission-clear",icon:"★",name:"Mission Clear",description:"Complete a five-round mission.",test:p=>p.completedMissions>=1},
   {id:"shotcaller",icon:"♛",name:"Shotcaller",description:"Reach level 5.",test:p=>Math.floor(p.xp/XP_PER_LEVEL)+1>=5}
 ];
@@ -400,7 +426,7 @@ function freshPlayerProgress() {
   return {
     xp:0,score:0,bestStreak:0,completedMissions:0,achievements:[],
     totals:{answers:0,correct:0},
-    modes:{comp:{answers:0,correct:0},counter:{answers:0,correct:0},quiz:{answers:0,correct:0},matchup:{answers:0,correct:0}},
+    modes:{comp:{answers:0,correct:0},counter:{answers:0,correct:0},quiz:{answers:0,correct:0},matchup:{answers:0,correct:0},roles:{answers:0,correct:0}},
     mission:{results:[],complete:false,success:false}
   };
 }
@@ -417,7 +443,8 @@ function loadPlayerProgress() {
         comp:{...fallback.modes.comp,...saved.modes?.comp},
         counter:{...fallback.modes.counter,...saved.modes?.counter},
         quiz:{...fallback.modes.quiz,...saved.modes?.quiz},
-        matchup:{...fallback.modes.matchup,...saved.modes?.matchup}
+        matchup:{...fallback.modes.matchup,...saved.modes?.matchup},
+        roles:{...fallback.modes.roles,...saved.modes?.roles}
       },
       mission:{...fallback.mission,...saved.mission,results:Array.isArray(saved.mission?.results)?saved.mission.results:[]},
       achievements:Array.isArray(saved.achievements)?saved.achievements:[]
@@ -458,6 +485,9 @@ let state = {
   matchupLastChampion:null,
   matchupProgress:loadMatchupProgress(),
   matchupLoading:false,
+  roleIndex:-1,
+  roleOptions:[],
+  roleChampion:null,
   playerProgress:savedPlayerProgress,
   answered:false,
   scenario:null,
@@ -486,6 +516,11 @@ const modeDetails = {
     title:"Matchup Lab",kicker:"ENEMY SCOUTING",glyph:"1v1",
     description:"Scout every champion's passive, Q/W/E/R, threat pattern, counterplay windows, and adaptive defensive build logic.",
     skills:["Every ability","Threat recognition","Counterplay","Adaptive builds"]
+  },
+  roles:{
+    title:"Match the Champ",kicker:"ROLE RECOGNITION",glyph:"POS",
+    description:"Place each champion into one of four possible roles. Flexible champions accept every common role shown for them.",
+    skills:["Champion roles","Flex picks","Draft recognition","Position knowledge"]
   }
 };
 
@@ -503,7 +538,14 @@ function labelForTag(tag) { return labels[tag] || tag.replace(/([A-Z])/g," $1");
 function difficultyCopy() {
   const configuredMode=state.view==="setup"?state.pendingMode:state.mode;
   let copy;
-  if(configuredMode==="quiz"||configuredMode==="matchup") {
+  if(configuredMode==="roles") {
+    const roleCopy = {
+      easy:"<strong>Easy:</strong> See the champion's playstyle tags and how many roles are accepted.",
+      medium:"<strong>Medium:</strong> Role-count guidance stays visible, but playstyle clues are hidden.",
+      hard:"<strong>Hard:</strong> No role-count or playstyle hints. Place the champion from memory."
+    };
+    copy=roleCopy[state.difficulty];
+  } else if(configuredMode==="quiz"||configuredMode==="matchup") {
     const quizCopy = {
       easy:"<strong>Easy:</strong> Foundation lessons include a direct hint and three answer choices.",
       medium:"<strong>Medium:</strong> Foundation and applied lessons use all four choices with a lighter clue.",
@@ -1109,6 +1151,124 @@ function nextCounter() {
   renderCounterScenario();
 }
 
+const roleDescriptions = {
+  TOP:"Solo side lane",
+  JUNGLE:"Camps and map pressure",
+  MID:"Central solo lane",
+  ADC:"Bot-lane carry",
+  SUPPORT:"Bot-lane utility"
+};
+
+function roleList(roles) {
+  return roles.map(role=>roleNames[role]).join(roles.length>1?" or ":"");
+}
+
+function renderRoleRound() {
+  const champion=state.roleChampion;
+  const validRoles=champion.roles;
+  const distractors=shuffle(roleOrder.filter(role=>!validRoles.includes(role)));
+  state.roleOptions=shuffle([...validRoles,...distractors.slice(0,4-validRoles.length)]);
+
+  $("roleChampionPortrait").src=portrait(champion.name);
+  $("roleChampionPortrait").alt=`${champion.name} portrait`;
+  $("roleChampionName").textContent=champion.name;
+  $("roleChampionTags").textContent=state.difficulty==="easy"
+    ? champion.tags.slice(0,3).map(labelForTag).join(" · ")
+    : "";
+  $("rolesHint").textContent=state.difficulty==="hard"
+    ? "Drag the champion into a role, or tap a role to place it. No hints this round."
+    : `${validRoles.length} accepted role${validRoles.length===1?"":"s"} this round. Drag the card or tap a role to place it.`;
+  $("roleLiveStatus").textContent=`${champion.name} is ready to place.`;
+  $("roleChampionCard").disabled=false;
+  $("roleChampionCard").classList.remove("dragging");
+
+  $("roleDropZones").innerHTML=state.roleOptions.map(role=>`
+    <button class="role-zone" type="button" data-name="${role}" aria-label="Place ${champion.name} in ${roleNames[role]}">
+      <span class="role-zone-icon" aria-hidden="true">${role==="JUNGLE"?"JNG":role==="SUPPORT"?"SUP":role==="ADC"?"BOT":role}</span>
+      <span class="role-zone-copy"><span>DROP ZONE</span><strong>${roleNames[role]}</strong><small>${roleDescriptions[role]}</small></span>
+    </button>`).join("");
+
+  document.querySelectorAll("#roleDropZones .role-zone").forEach(zone=>{
+    zone.addEventListener("click",()=>answerRole(zone.dataset.name));
+    zone.addEventListener("dragover",event=>{
+      if(state.answered)return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect="move";
+      zone.classList.add("drag-over");
+    });
+    zone.addEventListener("dragleave",()=>zone.classList.remove("drag-over"));
+    zone.addEventListener("drop",event=>{
+      event.preventDefault();
+      zone.classList.remove("drag-over");
+      answerRole(zone.dataset.name);
+    });
+  });
+
+  const card=$("roleChampionCard");
+  card.ondragstart=event=>{
+    if(state.answered) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.effectAllowed="move";
+    event.dataTransfer.setData("text/plain",champion.name);
+    card.classList.add("dragging");
+    $("roleLiveStatus").textContent=`Dragging ${champion.name}. Choose one of four roles.`;
+  };
+  card.ondragend=()=>{
+    card.classList.remove("dragging");
+    document.querySelectorAll("#roleDropZones .role-zone").forEach(zone=>zone.classList.remove("drag-over"));
+  };
+}
+
+function nextRoleRound() {
+  let idx;
+  do { idx=Math.floor(Math.random()*roleChallengeChampions.length); }
+  while(roleChallengeChampions.length>1&&idx===state.roleIndex);
+  state.roleIndex=idx;
+  state.roleChampion=roleChallengeChampions[idx];
+  state.scenario=state.roleChampion;
+  renderRoleRound();
+}
+
+function answerRole(role) {
+  if(state.answered)return;
+  state.answered=true;
+  const champion=state.roleChampion;
+  const correct=champion.roles.includes(role);
+  const reward=awardRound(correct?"A":"D","roles");
+  updateStats();
+
+  const acceptedInRound=champion.roles.filter(item=>state.roleOptions.includes(item));
+  const bestRole=acceptedInRound[0];
+  const acceptedNames=roleList(champion.roles);
+  showResult({
+    grade:reward.grade,
+    reward,
+    kicker:correct?"ROLE MATCHED":"POSITION CHECK",
+    title:correct?`${champion.name} fits ${roleNames[role]}.`:`${champion.name} is not commonly placed in ${roleNames[role]} in this drill.`,
+    good:correct,
+    heading1:"Accepted roles",
+    html1:`<p><strong>${acceptedNames}</strong>${champion.roles.length>1?" are all accepted for this flexible champion.":" is the champion's common position in this pool."}</p>`,
+    html2:`<p>You chose <strong>${roleNames[role]}</strong>.</p><p class="${correct?"good-text":"bad-text"}">${correct?"✓ Valid placement":"✕ Try one of the highlighted roles"}</p>`,
+    html3:`<p><strong>${acceptedNames}</strong></p><p class="good-text">✓ Every listed position scores as correct, even when it is not the champion's primary role.</p>`,
+    lesson:champion.roles.length>1
+      ? "Flex picks can appear in more than one position. In draft, wait for more information before assuming which matchup they will enter."
+      : "Recognizing a champion's likely position helps you read lane matchups and complete the rest of a draft.",
+    bestName:bestRole,
+    selectedName:role,
+    containerSelector:"#roleDropZones",
+    choiceSelector:".role-zone"
+  });
+  document.querySelectorAll("#roleDropZones .role-zone").forEach(zone=>{
+    if(champion.roles.includes(zone.dataset.name))zone.classList.add("correct");
+  });
+  $("roleChampionCard").disabled=true;
+  $("roleLiveStatus").textContent=correct
+    ? `Correct. ${champion.name} can play ${acceptedNames}.`
+    : `Not quite. ${champion.name} can play ${acceptedNames}.`;
+}
+
 function savePlayerProgress() {
   state.playerProgress.score=state.score;
   try { localStorage.setItem("lolIqPlayerProgress",JSON.stringify(state.playerProgress)); }
@@ -1189,7 +1349,7 @@ function awardRound(grade,mode=state.mode) {
 
   const multiplier=correct?multiplierForStreak(state.streak):1;
   const basePoints=grade==="A"?100:grade==="B"?65:0;
-  const points=correct?Math.round(basePoints*multiplier):-(["quiz","matchup"].includes(mode)?10:20);
+  const points=correct?Math.round(basePoints*multiplier):-(["quiz","matchup","roles"].includes(mode)?10:20);
   const baseXp=grade==="A"?80:grade==="B"?55:15;
   const xpGain=Math.round(baseXp*({easy:1,medium:1.15,hard:1.3}[state.difficulty]));
   state.score=Math.max(0,state.score+points);
@@ -1255,7 +1415,7 @@ function rewardText(reward) {
   return `${scorePart} points · +${reward.xp} XP${combo}${mission}`;
 }
 
-function showResult({grade,reward,kicker,title,good,heading1,html1,html2,html3,lesson,bestName,selectedName,containerSelector}) {
+function showResult({grade,reward,kicker,title,good,heading1,html1,html2,html3,lesson,bestName,selectedName,containerSelector,choiceSelector=".choice"}) {
   const panel=$("resultPanel");
   panel.className=`result-panel ${good?"good":"bad"}`;
   animateRound(panel,"result-reveal");
@@ -1269,7 +1429,7 @@ function showResult({grade,reward,kicker,title,good,heading1,html1,html2,html3,l
   $("explain3").innerHTML=html3;
   $("teachingPoint").textContent=lesson;
 
-  document.querySelectorAll(`${containerSelector} .choice`).forEach(btn=>{
+  document.querySelectorAll(`${containerSelector} ${choiceSelector}`).forEach(btn=>{
     btn.disabled=true;
     if(btn.dataset.name===selectedName) btn.classList.add(good?"correct":"wrong");
     if(btn.dataset.name===bestName) btn.classList.add("correct");
@@ -1447,7 +1607,7 @@ function showSetup(mode) {
   document.body.dataset.view="setup";
   syncGameUrl(mode);
   configureSetup(mode);
-  ["appHeader","homeProgression","achievementShelf","gameHub","gameControls","compGame","counterGame","quizGame","matchupGame"].forEach(id=>setVisible(id,false));
+  ["appHeader","homeProgression","achievementShelf","gameHub","gameControls","compGame","counterGame","quizGame","matchupGame","rolesGame"].forEach(id=>setVisible(id,false));
   document.querySelector("footer").classList.add("hidden");
   $("resultPanel").className="result-panel hidden";
   setVisible("gameSetup",true,true);
@@ -1463,7 +1623,8 @@ function newScenario() {
   if(state.mode==="comp") nextComp();
   else if(state.mode==="counter") nextCounter();
   else if(state.mode==="quiz") nextQuiz();
-  else nextMatchup();
+  else if(state.mode==="matchup") nextMatchup();
+  else nextRoleRound();
   updateStats();
   animateRound($(`${state.mode}Game`));
 }
@@ -1481,11 +1642,12 @@ function setMode(mode) {
   $("counterGame").classList.toggle("hidden",mode!=="counter");
   $("quizGame").classList.toggle("hidden",mode!=="quiz");
   $("matchupGame").classList.toggle("hidden",mode!=="matchup");
+  $("rolesGame").classList.toggle("hidden",mode!=="roles");
   $("activeModeKicker").textContent=details.kicker;
   $("activeModeTitle").textContent=details.title;
   $("drawerAcademySettings").classList.toggle("hidden",mode!=="quiz");
   $("drawerMatchupSettings").classList.toggle("hidden",mode!=="matchup");
-  $("newScenarioBtn").textContent=["quiz","matchup"].includes(mode)?"Skip to a new lesson":"Skip to a new scenario";
+  $("newScenarioBtn").textContent=["quiz","matchup"].includes(mode)?"Skip to a new lesson":mode==="roles"?"Skip to a new champion":"Skip to a new scenario";
   state.round=1;
   if(mode==="quiz")state.quizQueue=[];
   if(mode==="matchup")state.matchupQueue=[];
@@ -1501,7 +1663,7 @@ function showHub() {
   state.answered=false;
   document.body.dataset.view="hub";
   syncGameUrl(null);
-  ["gameSetup","gameControls","compGame","counterGame","quizGame","matchupGame"].forEach(id=>setVisible(id,false));
+  ["gameSetup","gameControls","compGame","counterGame","quizGame","matchupGame","rolesGame"].forEach(id=>setVisible(id,false));
   $("resultPanel").className="result-panel hidden";
   ["appHeader","homeProgression","achievementShelf","gameHub"].forEach(id=>setVisible(id,true,id==="gameHub"));
   document.querySelector("footer").classList.remove("hidden");

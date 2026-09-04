@@ -7,7 +7,7 @@
   <script>
     (() => {
       const mode = new URLSearchParams(window.location.search).get("game");
-      if (["comp", "counter", "quiz", "matchup"].includes(mode)) {
+      if (["comp", "counter", "quiz", "matchup", "roles"].includes(mode)) {
         document.documentElement.dataset.directEntry = mode;
       }
     })();
@@ -68,7 +68,7 @@
           <h2>Choose your queue</h2>
           <p>Pick a skill, set your challenge, then drop straight into the game.</p>
         </div>
-        <span class="hub-count">4 games</span>
+        <span class="hub-count">5 games</span>
       </div>
 
       <div class="hub-grid">
@@ -108,6 +108,16 @@
           <h3>Matchup Lab</h3>
           <p>Learn every champion's passive, Q/W/E/R, threat pattern, counterplay, and adaptive build logic.</p>
           <span class="tile-meta"><b id="hubMatchupChampionCount">All</b> champions <i>Configure →</i></span>
+        </button>
+
+        <button class="game-tile roles-tile" data-launch-mode="roles">
+          <span class="tile-number">05</span>
+          <span class="tile-new">NEW</span>
+          <span class="tile-icon" aria-hidden="true">POS</span>
+          <span class="tile-kicker">ROLE RECOGNITION</span>
+          <h3>Match the Champ</h3>
+          <p>Drag each champion into a role they play. Flex picks can have more than one correct answer.</p>
+          <span class="tile-meta"><b>47</b> champions <i>Configure →</i></span>
         </button>
       </div>
     </section>
@@ -460,6 +470,38 @@
       </section>
     </div>
 
+    <!-- MATCH THE CHAMP MODE -->
+    <div id="rolesGame" class="hidden">
+      <section class="roles-stage" aria-labelledby="rolesQuestion">
+        <div class="roles-stage-heading">
+          <div>
+            <span class="side-label">MATCH THE CHAMP</span>
+            <h2 id="rolesQuestion">Where does this champion play?</h2>
+            <p id="rolesHint">Drag the champion card into a role, or tap a role to place it.</p>
+          </div>
+          <span class="role-patch-note">COMMON ROLES · FLEX PICKS ACCEPTED</span>
+        </div>
+
+        <div class="roles-board">
+          <div class="champion-drag-area">
+            <button id="roleChampionCard" class="role-champion-card" type="button" draggable="true" aria-describedby="rolesHint">
+              <span class="drag-handle" aria-hidden="true">⠇⠇</span>
+              <img id="roleChampionPortrait" src="" alt="" />
+              <span class="role-champion-copy">
+                <small>DRAG THIS CHAMPION</small>
+                <strong id="roleChampionName">Champion</strong>
+                <span id="roleChampionTags"></span>
+              </span>
+            </button>
+          </div>
+
+          <div id="roleDropZones" class="role-drop-zones" aria-label="Choose a role"></div>
+        </div>
+
+        <div id="roleLiveStatus" class="sr-only" aria-live="polite"></div>
+      </section>
+    </div>
+
     <section id="resultPanel" class="result-panel hidden">
       <div class="result-header">
         <div>
@@ -496,7 +538,7 @@
     </section>
 
     <footer>
-      <p>Champion artwork is loaded from Riot Games' Data Dragon static asset CDN. LoL IQ lessons are simplified educational scenarios, not live-patch win-rate claims.</p>
+      <p>Champion artwork is loaded from Riot Games' Data Dragon static asset CDN. LoL IQ lessons and role classifications are simplified educational scenarios, not live-patch win-rate claims.</p>
       <p>LoL IQ is not endorsed by Riot Games and does not reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games and all associated properties are trademarks or registered trademarks of Riot Games, Inc.</p>
     </footer>
   </main>

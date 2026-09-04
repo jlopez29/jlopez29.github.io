@@ -348,7 +348,7 @@ html[data-theme="dark"] .sun-icon { display: block; }
 .project-icon:focus-visible,.open-icon:focus-visible { outline: 2px solid var(--visual-soft); outline-offset: 3px; }
 
 .loliq-visual { min-height: 340px; }
-.game-launch-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin-top: 38px; }
+.game-launch-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin-top: 38px; }
 .game-launch {
   position: relative;
   min-height: 205px;
@@ -367,10 +367,12 @@ html[data-theme="dark"] .sun-icon { display: block; }
 .game-launch:hover::after,.game-launch:focus-visible::after { opacity:1; }
 .counter-launch { border-color:rgba(205,133,216,.28); }
 .academy-launch { border-color:rgba(222,187,96,.34); background:rgba(205,169,78,.065); }
+.matchup-launch { border-color:rgba(96,211,165,.34); background:rgba(44,139,102,.065); }
 .game-launch-number { position:absolute; top:18px; right:18px; color:#7e91af; font-size:8px; font-weight:900; letter-spacing:.14em; }
 .game-launch-glyph { width:54px; height:54px; display:grid; place-items:center; border:1px solid rgba(141,177,230,.35); border-radius:14px; color:#9fc8ff; background:rgba(55,89,139,.25); font-size:13px; font-weight:900; }
 .counter-launch .game-launch-glyph { color:#e8a9ee; border-color:rgba(205,133,216,.35); background:rgba(112,64,129,.22); }
 .academy-launch .game-launch-glyph { color:#e5c56d; border-color:rgba(222,187,96,.38); background:rgba(122,96,32,.2); }
+.matchup-launch .game-launch-glyph { color:#8de4bd; border-color:rgba(96,211,165,.38); background:rgba(32,121,87,.2); }
 .game-launch-copy { margin-top:auto; }
 .game-launch-copy b,.game-launch-copy small { display:block; }
 .game-launch-copy b { color:#fff; font-size:18px; letter-spacing:-.02em; }
