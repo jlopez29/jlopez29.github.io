@@ -9,7 +9,7 @@ import { FormsModule } from '@angular/forms';
 import { PoolService } from '../../services/pool.service';
 import { GameService } from '../../services/game.service';
 import { AuthService } from '../../services/auth.service';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { DataService } from '../../services/data.service';
 import { Pool } from '../../models/pool.model';
 import { appSettings } from '../../app-settings';
@@ -33,6 +33,7 @@ export class HomeComponent {
   gameService: GameService = inject(GameService);
   authService: AuthService = inject(AuthService);
   private router: Router = inject(Router);
+  private route: ActivatedRoute = inject(ActivatedRoute);
   private dataService: DataService = inject(DataService);
 
   // Guest sign-in
@@ -42,6 +43,7 @@ export class HomeComponent {
 
   // Joining a pool
   joinIdentifier = signal('');
+  inviteCode = signal('');
   joinError = signal<string | null>(null);
   joinIdentifierError = signal<string | null>(null);
   isFindingOrJoining = signal(false);
@@ -54,6 +56,9 @@ export class HomeComponent {
   // General state
   joinedPools = signal<JoinedPool[]>([]);
   isInitializing = signal(true);
+  isPrimaryPoolMember = computed(() =>
+    this.joinedPools().some(pool => pool.id === this.settings.primaryPoolId)
+  );
 
   canCreatePool = computed(() => {
     if (!this.settings.allowPoolCreation) {
@@ -79,6 +84,9 @@ export class HomeComponent {
   });
 
   constructor() {
+    const inviteFromLink = this.route.snapshot.queryParamMap.get('invite');
+    if (inviteFromLink) this.inviteCode.set(inviteFromLink);
+
     // Effect to react to user logging in/out
     effect(() => {
       if (!this.authService.authReady()) {
@@ -157,17 +165,29 @@ export class HomeComponent {
     this.joinError.set(null);
     try {
       const poolId = this.settings.primaryPoolId;
-      const pool = await this.dataService.getPool(poolId);
-      if (pool) {
-        await this.poolService.joinPool(pool);
+      if (this.isPrimaryPoolMember()) {
+        this.navigateToPool(poolId);
+        return;
+      }
+
+      const inviteCode = this.inviteCode().trim();
+      if (!inviteCode) throw new Error('Enter the AFCU invite code.');
+
+      if (await this.dataService.doesPoolExist(poolId)) {
+        await this.poolService.joinPool({ id: poolId, name: poolId }, inviteCode);
         return;
       }
 
       this.router.navigate(['/pool', 'new'], {
-        state: { poolName: poolId },
+        state: { poolName: poolId, inviteCode },
       });
     } catch (error) {
-      this.joinError.set((error as Error).message || 'Could not open the AFCU pool.');
+      const code = (error as { code?: string }).code ?? '';
+      this.joinError.set(
+        code.includes('permission-denied')
+          ? 'That invite code is not valid.'
+          : ((error as Error).message || 'Could not open the AFCU pool.'),
+      );
     } finally {
       this.isFindingOrJoining.set(false);
     }
@@ -191,7 +211,7 @@ export class HomeComponent {
         throw new Error('Pool not found. Please check the name and try again.');
       }
 
-      await this.poolService.joinPool(pool);
+      await this.poolService.joinPool(pool, this.inviteCode().trim());
       
     } catch (error) {
       const errorMessage = (error as Error).message;

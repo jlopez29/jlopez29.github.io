@@ -27,6 +27,10 @@ export class LocalStorageDataStore implements DataStore {
     return id;
   }
 
+  async joinPool(_poolId: string, _poolName: string, _user: User, _inviteCode: string): Promise<void> {
+    // The local demo adapter has no remote membership boundary.
+  }
+
   async getPool(id: string): Promise<Pool | null> {
     const pool = this.readRecord<Pool>(POOLS_KEY)[id];
     return pool ? this.clone(pool) : null;

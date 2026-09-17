@@ -18,6 +18,46 @@ service cloud.firestore {
       return signedIn() && poolAfter(poolId).data.ownerId == request.auth.uid;
     }
 
+    function isExistingPoolOwner(poolId) {
+      return signedIn() && get(
+        /databases/$(database)/documents/pools/$(poolId)
+      ).data.ownerId == request.auth.uid;
+    }
+
+    function isPoolMember(poolId) {
+      return signedIn() && exists(
+        /databases/$(database)/documents/pools/$(poolId)/members/$(request.auth.uid)
+      );
+    }
+
+    function isPoolMemberAfter(poolId) {
+      return signedIn() && getAfter(
+        /databases/$(database)/documents/pools/$(poolId)/members/$(request.auth.uid)
+      ).data.userId == request.auth.uid;
+    }
+
+    function hasValidInvite(poolId, inviteCode) {
+      return inviteCode is string
+        && inviteCode.size() >= 12
+        && inviteCode.size() <= 128
+        && exists(/databases/$(database)/documents/poolInvites/$(inviteCode))
+        && get(
+          /databases/$(database)/documents/poolInvites/$(inviteCode)
+        ).data.poolId == poolId
+        && get(
+          /databases/$(database)/documents/poolInvites/$(inviteCode)
+        ).data.active == true;
+    }
+
+    function creatorHasValidInvite(poolId) {
+      return hasValidInvite(
+        poolId,
+        getAfter(
+          /databases/$(database)/documents/pools/$(poolId)/members/$(request.auth.uid)
+        ).data.inviteCode
+      );
+    }
+
     function weekAfter(poolId, weekId) {
       return getAfter(/databases/$(database)/documents/pools/$(poolId)/weeks/$(weekId));
     }
@@ -66,7 +106,8 @@ service cloud.firestore {
 
     function validMember(userId, data) {
       return data.keys().hasOnly([
-          'userId', 'displayName', 'photoUrl', 'poolName', 'role', 'joinedAt'
+          'userId', 'displayName', 'photoUrl', 'poolName', 'role',
+          'inviteCode', 'joinedAt'
         ])
         && data.userId == userId
         && data.displayName is string
@@ -75,6 +116,9 @@ service cloud.firestore {
         && data.photoUrl is string
         && data.photoUrl.size() <= 20000
         && data.get('poolName', '') is string
+        && data.inviteCode is string
+        && data.inviteCode.size() >= 12
+        && data.inviteCode.size() <= 128
         && data.get('role', 'member') in ['owner', 'member'];
     }
 
@@ -121,7 +165,8 @@ service cloud.firestore {
       // poolId check while retaining owner validation and add abuse controls.
       allow create: if signedIn()
         && poolId == 'AFCU'
-        && validPool(poolId, request.resource.data);
+        && validPool(poolId, request.resource.data)
+        && creatorHasValidInvite(poolId);
 
       allow update: if isPoolOwner(poolId)
         && validPool(poolId, request.resource.data)
@@ -131,24 +176,33 @@ service cloud.firestore {
       allow delete: if isPoolOwner(poolId);
 
       match /members/{userId} {
-        allow read: if signedIn();
-        allow create, update: if isSelf(userId)
+        allow read: if isSelf(userId) || isExistingPoolOwner(poolId);
+        allow create: if isSelf(userId)
           && validMember(userId, request.resource.data)
+          && hasValidInvite(poolId, request.resource.data.inviteCode)
           && request.resource.data.get('role', 'member') ==
             (isPoolOwner(poolId) ? 'owner' : 'member');
-        allow delete: if isSelf(userId) || isPoolOwner(poolId);
+        allow update: if isSelf(userId)
+          && validMember(userId, request.resource.data)
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.inviteCode == resource.data.inviteCode
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['displayName', 'photoUrl', 'poolName']);
+        allow delete: if isSelf(userId) || isExistingPoolOwner(poolId);
       }
 
       match /weeks/{weekId} {
-        allow read: if signedIn();
+        allow read: if isPoolMember(poolId);
         allow create, update: if isPoolOwner(poolId)
           && validWeek(request.resource.data);
         allow delete: if isPoolOwner(poolId);
 
         match /submissions/{userId} {
-          allow read: if isSelf(userId)
-            || (signedIn() && deadlinePassed(poolId, weekId));
+          allow read: if (isSelf(userId) && isPoolMember(poolId))
+            || (isPoolMember(poolId) && deadlinePassed(poolId, weekId));
           allow create, update: if isSelf(userId)
+            && isPoolMemberAfter(poolId)
             && validSubmission(userId, request.resource.data)
             && (beforeDeadline(poolId, weekId)
               || (resource != null
@@ -158,6 +212,12 @@ service cloud.firestore {
             || (isSelf(userId) && beforeDeadline(poolId, weekId));
         }
       }
+    }
+
+    // Invite documents are capabilities used only by the rules engine. Clients
+    // cannot read, list, create, update, or delete them.
+    match /poolInvites/{inviteCode} {
+      allow read, write: if false;
     }
 
     match /{document=**} {

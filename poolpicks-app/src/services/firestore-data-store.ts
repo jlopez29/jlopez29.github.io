@@ -47,6 +47,7 @@ export class FirestoreDataStore implements DataStore {
       displayName: participant.displayName,
       photoUrl: participant.photoUrl,
       role: 'owner',
+      inviteCode: data.inviteCode.trim(),
       joinedAt: serverTimestamp(),
     });
     batch.set(doc(firestore, 'pools', poolId, 'weeks', weekId), {
@@ -62,6 +63,21 @@ export class FirestoreDataStore implements DataStore {
     );
     await batch.commit();
     return poolId;
+  }
+
+  async joinPool(poolId: string, poolName: string, user: User, inviteCode: string): Promise<void> {
+    const authUser = this.requireAuth();
+    if (authUser.uid !== user.uid) throw new Error('You may only join a pool as yourself.');
+
+    await setDoc(doc(firestore, 'pools', this.normalizePoolId(poolId), 'members', user.uid), {
+      userId: user.uid,
+      displayName: user.displayName.trim(),
+      photoUrl: user.photoUrl,
+      poolName,
+      role: 'member',
+      inviteCode: inviteCode.trim(),
+      joinedAt: serverTimestamp(),
+    });
   }
 
   async getPool(id: string): Promise<Pool | null> {
@@ -146,20 +162,11 @@ export class FirestoreDataStore implements DataStore {
     const pool = await this.getPool(poolId);
     if (!pool) throw new Error('Pool not found.');
 
-    const batch = writeBatch(firestore);
-    batch.set(doc(firestore, 'pools', pool.id, 'members', authUser.uid), {
-      userId: authUser.uid,
-      displayName: participant.displayName,
-      photoUrl: participant.photoUrl,
-      role: pool.ownerId === authUser.uid ? 'owner' : 'member',
-      joinedAt: serverTimestamp(),
-    }, { merge: true });
-    batch.set(
+    await setDoc(
       doc(firestore, 'pools', pool.id, 'weeks', this.weekId(pool.year, pool.week), 'submissions', authUser.uid),
       this.toSubmission(participant),
       { merge: true },
     );
-    await batch.commit();
   }
 
   async archiveAndAdvanceWeek(poolId: string, currentPool: Pool, newWeek: number, lockAt: string): Promise<void> {
@@ -238,18 +245,7 @@ export class FirestoreDataStore implements DataStore {
     const authUser = this.requireAuth();
     if (authUser.uid !== user.uid) throw new Error('You may only update your own profile.');
 
-    const batch = writeBatch(firestore);
-    batch.set(doc(firestore, 'users', user.uid), user, { merge: true });
-    for (const [poolId, poolName] of Object.entries(user.joinedPools ?? {})) {
-      batch.set(doc(firestore, 'pools', poolId, 'members', user.uid), {
-        userId: user.uid,
-        displayName: user.displayName,
-        photoUrl: user.photoUrl,
-        poolName,
-        joinedAt: serverTimestamp(),
-      }, { merge: true });
-    }
-    await batch.commit();
+    await setDoc(doc(firestore, 'users', user.uid), user, { merge: true });
   }
 
   async logError(component: string, errorData: unknown): Promise<void> {

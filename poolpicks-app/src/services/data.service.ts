@@ -9,6 +9,7 @@ export class DataService implements DataStore {
   private readonly store = inject(DATA_STORE);
 
   createPool(data: CreatePoolData) { return this.store.createPool(data); }
+  joinPool(poolId: string, poolName: string, user: User, inviteCode: string) { return this.store.joinPool(poolId, poolName, user, inviteCode); }
   getPool(id: string) { return this.store.getPool(id); }
   doesPoolExist(id: string) { return this.store.doesPoolExist(id); }
   getCreatePoolOverride() { return this.store.getCreatePoolOverride(); }

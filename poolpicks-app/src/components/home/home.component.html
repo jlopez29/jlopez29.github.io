@@ -1,10 +1,4 @@
 <div style="view-transition-name: home-content" class="flex flex-col gap-8 max-w-4xl mx-auto">
-  <div class="rounded-xl border border-cyan-400/30 bg-cyan-950/40 px-4 py-3 text-sm text-cyan-100 flex gap-3 items-start">
-    <svg class="h-5 w-5 text-cyan-400 flex-none mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-      <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0Zm-9-3a1 1 0 112 0 1 1 0 01-2 0Zm0 3a1 1 0 011-1h.01a1 1 0 011 1v4a1 1 0 11-2 0v-4Z" clip-rule="evenodd" />
-    </svg>
-    <p><strong>AFCU pool.</strong> Your browser is silently assigned a private Firebase identity. No email, password, or Google sign-in is required.</p>
-  </div>
   @if (isInitializing()) {
     <!-- Graceful Skeleton Loader -->
     <div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8 w-full max-w-4xl mx-auto">
@@ -47,7 +41,7 @@
       <div class="max-w-md mx-auto">
         <div class="bg-gray-700 p-6 rounded-lg flex flex-col items-center justify-center">
           <h3 class="text-xl font-semibold mb-2">Choose your pool name</h3>
-          <p class="text-sm text-gray-400 mb-4">No email or password required. Use the same browser when you return.</p>
+          <p class="text-sm text-gray-400 mb-4">No email required. You’ll enter the group invite code next; use the same browser when you return.</p>
           <div class="w-full space-y-2">
             <div>
               <input type="text" [(ngModel)]="guestName" (keyup.enter)="handleGuestSignIn()"
@@ -102,9 +96,19 @@
         <p class="text-xs font-bold tracking-[0.2em] text-cyan-400 mb-3">YOUR GROUP</p>
         <h2 class="text-3xl font-bold text-white mb-3">AFCU Confidence Pool</h2>
         <p class="text-gray-400 max-w-lg mx-auto">Make this week's picks, assign each confidence value once, and follow the group leaderboard.</p>
-        <button (click)="openPrimaryPool()" [disabled]="isFindingOrJoining() || gameService.isLoading()"
+        @if (!isPrimaryPoolMember()) {
+          <div class="mt-6 max-w-sm mx-auto text-left">
+            <label for="afcu-invite-code" class="block text-sm font-medium text-gray-300 mb-2">Invite code</label>
+            <input id="afcu-invite-code" name="afcu-invite-code" type="password" autocomplete="off"
+                  [(ngModel)]="inviteCode" (keyup.enter)="openPrimaryPool()" (input)="joinError.set(null)"
+                  class="w-full bg-gray-700 text-white rounded-md border border-gray-600 p-3 transition-colors focus:ring-cyan-500 focus:border-cyan-500"
+                  placeholder="Enter the AFCU invite code">
+          </div>
+        }
+        <button (click)="openPrimaryPool()"
+                [disabled]="isFindingOrJoining() || gameService.isLoading() || (!isPrimaryPoolMember() && !inviteCode().trim())"
                 class="mt-6 w-full sm:w-auto min-w-56 font-bold py-3 px-6 rounded-lg transition-colors duration-300 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed bg-cyan-500 hover:bg-cyan-600 text-white">
-          {{ isFindingOrJoining() ? 'Opening AFCU...' : 'Enter AFCU Pool' }}
+          {{ isFindingOrJoining() ? 'Opening AFCU...' : (isPrimaryPoolMember() ? 'Enter AFCU Pool' : 'Join AFCU Pool') }}
         </button>
         @if (joinError()) {
           <p class="text-red-400 text-sm font-medium mt-4 animate-slide-in-fade">{{ joinError() }}</p>

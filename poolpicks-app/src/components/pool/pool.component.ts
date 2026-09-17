@@ -45,7 +45,7 @@ export class PoolComponent implements OnDestroy {
 
   // State for the new pool creation flow
   private isCreatingPool = signal(false);
-  private newPoolData = signal<{ name: string } | null>(null);
+  private newPoolData = signal<{ name: string; inviteCode: string } | null>(null);
   
   // FIX: The type for `paramMap` and `queryParamMap` was being inferred as 'unknown'.
   // Explicitly typing them as `Signal<ParamMap | undefined>` resolves the issue.
@@ -444,9 +444,9 @@ export class PoolComponent implements OnDestroy {
   }
 
   private setupNewPool(): void {
-    const poolState = history.state as { poolName: string, isNextWeek?: boolean, isPlayoff?: boolean };
+    const poolState = history.state as { poolName: string, inviteCode?: string, isNextWeek?: boolean, isPlayoff?: boolean };
 
-    if (!poolState || !poolState.poolName) {
+    if (!poolState || !poolState.poolName || !poolState.inviteCode) {
         console.error('Pool creation state not found, redirecting home.');
         this.router.navigate(['/']);
         return;
@@ -460,7 +460,7 @@ export class PoolComponent implements OnDestroy {
     }
 
     this.isCreatingPool.set(true);
-    this.newPoolData.set({ name: poolState.poolName });
+    this.newPoolData.set({ name: poolState.poolName, inviteCode: poolState.inviteCode });
     
     const tempPool: Pool = {
         id: 'new',
@@ -581,6 +581,7 @@ export class PoolComponent implements OnDestroy {
 
       const newPoolId = await this.poolService.createPoolAndSubmitInitialPicks({
         poolName: newPoolInfo.name, 
+        inviteCode: newPoolInfo.inviteCode,
         picks: submission.picks, 
         tiebreaker: submission.tiebreaker, 
         week: currentPool.week, 
@@ -623,6 +624,7 @@ export class PoolComponent implements OnDestroy {
 
       const newPoolId = await this.poolService.createPlayoffPoolAndSubmitInitialPicks({
         poolName: newPoolInfo.name,
+        inviteCode: newPoolInfo.inviteCode,
         playoffPicks: submission.playoffPicks,
         tiebreaker: submission.tiebreaker,
         week: currentPool.week,

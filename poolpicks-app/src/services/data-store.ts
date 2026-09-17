@@ -4,6 +4,7 @@ import type { User } from './auth.service';
 
 export interface CreatePoolData {
   name: string;
+  inviteCode: string;
   participants: Participant[];
   week: number;
   year: number;
@@ -20,6 +21,7 @@ export interface CreatePoolData {
  */
 export interface DataStore {
   createPool(data: CreatePoolData): Promise<string>;
+  joinPool(poolId: string, poolName: string, user: User, inviteCode: string): Promise<void>;
   getPool(id: string): Promise<Pool | null>;
   doesPoolExist(id: string): Promise<boolean>;
   getCreatePoolOverride(): Promise<boolean>;

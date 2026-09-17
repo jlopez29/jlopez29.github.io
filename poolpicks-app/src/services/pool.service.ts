@@ -10,6 +10,7 @@ import { PlayoffPicks } from '../models/playoff.model';
 
 interface CreatePoolOptions {
   poolName: string;
+  inviteCode: string;
   picks: Pick[];
   tiebreaker: number;
   week: number;
@@ -20,6 +21,7 @@ interface CreatePoolOptions {
 
 interface CreatePlayoffPoolOptions {
   poolName: string;
+  inviteCode: string;
   playoffPicks: PlayoffPicks;
   tiebreaker: number;
   week: number;
@@ -60,6 +62,7 @@ export class PoolService {
       const trimmedPoolName = options.poolName.trim();
       const poolId = await this.dataService.createPool({
         name: trimmedPoolName, 
+        inviteCode: options.inviteCode,
         participants: [initialParticipant], 
         week: options.week, 
         year: options.year,
@@ -103,6 +106,7 @@ export class PoolService {
       const trimmedPoolName = options.poolName.trim();
       const poolId = await this.dataService.createPool({
         name: trimmedPoolName,
+        inviteCode: options.inviteCode,
         participants: [initialParticipant],
         week: options.week,
         year: options.year,
@@ -122,12 +126,13 @@ export class PoolService {
   }
 
 
-  async joinPool(pool: Pool): Promise<void> {
+  async joinPool(pool: { id: string; name: string }, inviteCode: string): Promise<void> {
     const currentUser = this.authService.currentUser();
     if (!currentUser) {
       throw new Error('You must be signed in to join a pool.');
     }
     
+    await this.dataService.joinPool(pool.id, pool.name, currentUser, inviteCode);
     await this.authService.addPoolToJoinedList({ id: pool.id, name: pool.name });
     this.authService.setLastVisitedPoolId(pool.id);
     this.router.navigate(['/pool', pool.id]);

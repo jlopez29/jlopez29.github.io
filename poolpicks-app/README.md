@@ -4,9 +4,10 @@ PoolPicks is an Angular NFL confidence-pool app backed by Firebase Anonymous
 Authentication and Cloud Firestore. The current launch exposes one pool named
 `AFCU`; the underlying data model still supports many pools and many weeks.
 
-Users enter only a display name. Firebase silently assigns a persistent UID to
-that browser, and every membership and weekly submission is stored under that
-UID. No Google sign-in, email, or password is required.
+Users enter a display name and the private group invite code once. Firebase
+silently assigns a persistent UID to that browser, and every membership and
+weekly submission is stored under that UID. No Google sign-in, email, or
+account password is required.
 
 ## Required Firebase setup
 
@@ -23,14 +24,32 @@ Before publishing the Firebase-backed build:
 3. Delete the old `pools` and `users` data if starting clean. Remove old pool
    documents recursively so any legacy subcollections are removed too; deleting
    only a parent document does not delete its subcollections.
-4. Deploy the included restrictive rules:
+4. In Firestore, create a private invite document whose ID is the shared invite
+   code. Do not commit the actual code to this repository:
+
+   ```text
+   poolInvites/{sharedInviteCode}
+     poolId: "AFCU"
+     active: true
+   ```
+
+   Share links may use this format to pre-fill the invite code:
+
+   ```text
+   https://jlopez29.github.io/poolpicks/#/?invite={sharedInviteCode}
+   ```
+
+   The hash fragment is handled by the Angular app and is not sent to GitHub
+   Pages in the HTTP request.
+
+5. Deploy the included restrictive rules:
 
    ```bash
    npx firebase-tools login
    npx firebase-tools deploy --only firestore:rules
    ```
 
-5. Build the GitHub Pages artifact:
+6. Build the GitHub Pages artifact:
 
    ```bash
    npm install
@@ -60,6 +79,7 @@ pools/{poolId}/members/{uid}
   displayName
   photoUrl
   role
+  inviteCode
 
 pools/{poolId}/weeks/{year-week}
   year
@@ -73,6 +93,10 @@ pools/{poolId}/weeks/{year-week}/submissions/{uid}
   picks or playoffPicks
   tiebreaker
   hasViewedPodium
+
+poolInvites/{sharedInviteCode}
+  poolId
+  active
 ```
 
 A user document is global to PoolPicks. The same UID can be a member of AFCU
@@ -104,6 +128,8 @@ When general pool creation is wanted later:
 ## Security behavior
 
 - Every request requires a Firebase-authenticated UID.
+- New membership requires an active, pool-specific invite document; invite
+  documents cannot be read or written by clients.
 - Users can write only their own profile, membership, and submission.
 - Pool/week administration is restricted to the pool owner.
 - Other participants' submissions cannot be read before the stored kickoff.
