@@ -1,0 +1,160 @@
+<div class="max-w-6xl mx-auto">
+  <div class="w-full mb-6">
+    <a routerLink="/" class="inline-flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 text-sm font-semibold text-cyan-400 transition-colors duration-200 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-gray-900">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+        </svg>
+        Back to Main Menu
+    </a>
+  </div>
+
+  <div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8">
+    <div class="flex items-center gap-4 mb-6 border-b-2 border-gray-700 pb-3">
+       <svg class="h-8 w-8 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 2H7C6.45 2 6 2.45 6 3V4C6 4.55 6.45 5 7 5H17C17.55 5 18 4.55 18 4V3C18 2.45 17.55 2 17 2Z" /><path d="M18 6H6C4.34 6 3 7.34 3 9V13C3 14.66 4.34 16 6 16H7V18C7 19.1 7.9 20 9 20H15C16.1 20 17 19.1 17 18V16H18C19.66 16 21 14.66 21 13V9C21 7.34 19.66 6 18 6Z" /></svg>
+      <h1 class="text-2xl sm:text-3xl font-bold text-yellow-400">My Trophy Case</h1>
+    </div>
+
+    @if (isLoading()) {
+      <div class="space-y-8">
+        @for (_ of [0, 1]; track _) {
+          <div>
+            <div class="h-7 w-1/3 bg-gray-700/50 rounded animate-shimmer mb-4"></div>
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              @for (_ of [0, 1, 2, 3]; track _) {
+                <div class="bg-gray-700/50 rounded-lg p-4 h-32 animate-shimmer"></div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    } @else {
+      <!-- Career Stats Card -->
+      @if (currentUser()?.stats; as stats) {
+        @if (stats.weeksPlayed > 0) {
+          <div class="bg-gray-900/50 rounded-xl shadow-lg p-6 sm:p-8 w-full mb-8 animate-fade-in-up border border-gray-700">
+            <h2 class="text-xl font-bold text-cyan-400 mb-4">Career Stats</h2>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-4">
+              <!-- Picks Submitted -->
+              <div class="flex justify-between items-center text-lg">
+                <span class="text-gray-300">Picks Submitted</span>
+                <span class="font-bold text-white">{{ stats.weeksPlayed }}</span>
+              </div>
+              <!-- Average Score -->
+              <div class="flex justify-between items-center text-lg">
+                <span class="text-gray-300">Average Score</span>
+                <span class="font-bold text-white">{{ stats.averageScore.toFixed(1) }}</span>
+              </div>
+              <!-- Total Points -->
+              <div class="flex justify-between items-center text-lg">
+                <span class="text-gray-300">Total Points</span>
+                <span class="font-bold text-green-400">{{ stats.totalScore }}</span>
+              </div>
+              <!-- 1st Place Finishes -->
+              <div class="flex justify-between items-center text-lg">
+                <span class="text-gray-300">1st Place</span>
+                <span class="font-bold text-yellow-400">{{ stats.firstPlaceFinishes }}</span>
+              </div>
+              <!-- 2nd Place Finishes -->
+              <div class="flex justify-between items-center text-lg">
+                <span class="text-gray-300">2nd Place</span>
+                <span class="font-bold text-gray-300">{{ stats.secondPlaceFinishes }}</span>
+              </div>
+              <!-- 3rd Place Finishes -->
+              <div class="flex justify-between items-center text-lg">
+                <span class="text-gray-300">3rd Place</span>
+                <span class="font-bold text-orange-400">{{ stats.thirdPlaceFinishes }}</span>
+              </div>
+            </div>
+          </div>
+        }
+      }
+
+      @if (allTrophies().length === 0 && unlockedBadges().length === 0) {
+        <div class="text-center py-12 animate-fade-in">
+          <svg class="h-16 w-16 text-gray-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 18.75h-9a9.75 9.75 0 0 0 9 0Z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M18.375 16.5c-1.49-1.49-3.52-2.25-5.625-2.25s-4.135.76-5.625 2.25M12 18.75v-5.25c-1.544 0-3.048.634-4.125 1.625-1.077 1.077-1.625 2.58-1.625 4.125s.548 3.048 1.625 4.125c1.077 1.077 2.58 1.625 4.125 1.625s3.048-.548 4.125-1.625c1.077-1.077 1.625-2.58 1.625-4.125v-.75" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 12.75c0 .414.336.75.75.75h3c.414 0 .75-.336.75-.75s-.336-.75-.75-.75h-3c-.414 0-.75.336-.75.75Z" />
+          </svg>
+          <h3 class="text-2xl font-bold text-gray-400 mt-4">Your Trophy Case is Empty</h3>
+          <p class="text-gray-500 mt-2">Win a top 3 spot in a weekly pool to start your collection!</p>
+        </div>
+      } @else {
+        <!-- My Trophies Section -->
+        @if (allTrophies().length > 0) {
+          <div class="animate-fade-in-up" [style.animation-delay]="'150ms'">
+            <h2 class="text-xl font-bold text-cyan-400 mb-4">Trophies</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              @for (trophy of allTrophies(); track trophy.poolId + '_' + trophy.week) {
+                <div class="bg-gray-900/50 rounded-lg p-4 text-center flex flex-col items-center justify-center gap-2 border border-gray-700 hover:border-cyan-500 transition-colors">
+                  @if (trophy.rank === 1) {
+                    <svg class="h-12 w-12 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 2H7C6.45 2 6 2.45 6 3V4C6 4.55 6.45 5 7 5H17C17.55 5 18 4.55 18 4V3C18 2.45 17.55 2 17 2Z" /><path d="M18 6H6C4.34 6 3 7.34 3 9V13C3 14.66 4.34 16 6 16H7V18C7 19.1 7.9 20 9 20H15C16.1 20 17 19.1 17 18V16H18C19.66 16 21 14.66 21 13V9C21 7.34 19.66 6 18 6Z" /></svg>
+                    <p class="font-bold text-lg text-yellow-400">1st Place</p>
+                  } @else if (trophy.rank === 2) {
+                    <svg class="h-12 w-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 2H7C6.45 2 6 2.45 6 3V4C6 4.55 6.45 5 7 5H17C17.55 5 18 4.55 18 4V3C18 2.45 17.55 2 17 2Z" /><path d="M18 6H6C4.34 6 3 7.34 3 9V13C3 14.66 4.34 16 6 16H7V18C7 19.1 7.9 20 9 20H15C16.1 20 17 19.1 17 18V16H18C19.66 16 21 14.66 21 13V9C21 7.34 19.66 6 18 6Z" /></svg>
+                    <p class="font-bold text-lg text-gray-400">2nd Place</p>
+                  } @else {
+                    <svg class="h-12 w-12 text-orange-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 2H7C6.45 2 6 2.45 6 3V4C6 4.55 6.45 5 7 5H17C17.55 5 18 4.55 18 4V3C18 2.45 17.55 2 17 2Z" /><path d="M18 6H6C4.34 6 3 7.34 3 9V13C3 14.66 4.34 16 6 16H7V18C7 19.1 7.9 20 9 20H15C16.1 20 17 19.1 17 18V16H18C19.66 16 21 14.66 21 13V9C21 7.34 19.66 6 18 6Z" /></svg>
+                    <p class="font-bold text-lg text-orange-400">3rd Place</p>
+                  }
+                  <p class="text-sm text-gray-300">Week {{ trophy.week }} {{ trophy.year }}</p>
+                  <p class="text-xs text-gray-400 truncate w-full" [title]="trophy.poolName">{{ trophy.poolName }}</p>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Unlocked Badges Section -->
+        @if(unlockedBadges().length > 0) {
+            <div 
+              class="animate-fade-in-up" 
+              [class.mt-8]="allTrophies().length > 0" 
+              [class.pt-8]="allTrophies().length > 0" 
+              [class.border-t]="allTrophies().length > 0" 
+              [class.border-gray-700]="allTrophies().length > 0"
+              [style.animation-delay]="allTrophies().length > 0 ? '300ms' : '150ms'">
+                <h2 class="text-xl font-bold text-cyan-400 mb-4">Unlocked Badges</h2>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    @for(badge of unlockedBadges(); track badge.id) {
+                        <div class="bg-gray-900/50 rounded-lg p-4 flex flex-col items-center text-center gap-3 border border-gray-700">
+                            <div class="w-16 h-16 p-2" [innerHTML]="badge.iconSvg | safeHtml"></div>
+                            <div>
+                                <p class="font-bold text-white">{{ badge.name }}</p>
+                                <p class="text-sm text-gray-400">{{ badge.description }}</p>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+      }
+
+      <!-- Locked Achievements Section -->
+      @if (lockedAchievements().length > 0) {
+        <div 
+          class="animate-fade-in-up" 
+          [class.mt-12]="allTrophies().length > 0 || unlockedBadges().length > 0"
+          [style.animation-delay]="'450ms'">
+            <h2 class="text-xl font-bold text-gray-500 mb-4">Locked Achievements</h2>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              @for (achievement of lockedAchievements(); track achievement.name) {
+                <div class="bg-gray-900/50 rounded-lg p-4 flex flex-col items-center text-center gap-3 border border-dashed border-gray-700 grayscale opacity-60">
+                    <div class="w-16 h-16 p-2 relative">
+                      <div [innerHTML]="achievement.iconSvg | safeHtml"></div>
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-300" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p class="font-bold text-gray-300">{{ achievement.name }}</p>
+                      <p class="text-sm text-gray-500">{{ achievement.description }}</p>
+                    </div>
+                </div>
+              }
+            </div>
+        </div>
+      }
+    }
+  </div>
+</div>

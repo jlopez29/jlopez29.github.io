@@ -1,0 +1,231 @@
+<div style="view-transition-name: home-content" class="flex flex-col gap-8 max-w-4xl mx-auto">
+  <div class="rounded-xl border border-cyan-400/30 bg-cyan-950/40 px-4 py-3 text-sm text-cyan-100 flex gap-3 items-start">
+    <svg class="h-5 w-5 text-cyan-400 flex-none mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+      <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0Zm-9-3a1 1 0 112 0 1 1 0 01-2 0Zm0 3a1 1 0 011-1h.01a1 1 0 011 1v4a1 1 0 11-2 0v-4Z" clip-rule="evenodd" />
+    </svg>
+    <p><strong>AFCU pool.</strong> Your browser is silently assigned a private Firebase identity. No email, password, or Google sign-in is required.</p>
+  </div>
+  @if (isInitializing()) {
+    <!-- Graceful Skeleton Loader -->
+    <div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8 w-full max-w-4xl mx-auto">
+      <div class="flex justify-between items-center mb-6 border-b-2 border-gray-700 pb-3">
+        <div class="h-8 w-1/3 bg-gray-700 rounded animate-shimmer"></div>
+        <div class="h-6 w-1/4 bg-gray-700 rounded animate-shimmer"></div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full">
+          <thead>
+            <tr class="border-b border-gray-600">
+              <th class="p-3 w-16"><div class="h-5 bg-gray-700 rounded animate-shimmer"></div></th>
+              <th class="p-3"><div class="h-5 bg-gray-700 rounded animate-shimmer"></div></th>
+              <th class="p-3 w-24"><div class="h-5 bg-gray-700 rounded animate-shimmer"></div></th>
+              <th class="p-3 w-36"><div class="h-5 bg-gray-700 rounded animate-shimmer"></div></th>
+              <th class="p-3 w-36"><div class="h-5 bg-gray-700 rounded animate-shimmer"></div></th>
+              <th class="p-3 w-24"><div class="h-5 bg-gray-700 rounded animate-shimmer"></div></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (_ of [0, 1, 2, 3, 4, 5]; track _) {
+              <tr>
+                <td class="p-4"><div class="h-6 bg-gray-700 rounded animate-shimmer"></div></td>
+                <td class="p-4"><div class="h-6 bg-gray-700 rounded animate-shimmer"></div></td>
+                <td class="p-4"><div class="h-6 bg-gray-700 rounded animate-shimmer"></div></td>
+                <td class="p-4"><div class="h-6 bg-gray-700 rounded animate-shimmer"></div></td>
+                <td class="p-4"><div class="h-6 bg-gray-700 rounded animate-shimmer"></div></td>
+                <td class="p-4"><div class="h-6 bg-gray-700 rounded animate-shimmer"></div></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  } @else if (!authService.currentUser()) {
+    <div class="bg-gray-800 rounded-2xl shadow-lg p-8 text-center">
+      <h2 class="text-3xl font-bold text-cyan-400 mb-4">Welcome to PoolPicks</h2>
+      <p class="text-gray-300 mb-8 max-w-lg mx-auto">Choose the name your group will see. Your picks will be tied to a silent, browser-based account.</p>
+      
+      <div class="max-w-md mx-auto">
+        <div class="bg-gray-700 p-6 rounded-lg flex flex-col items-center justify-center">
+          <h3 class="text-xl font-semibold mb-2">Choose your pool name</h3>
+          <p class="text-sm text-gray-400 mb-4">No email or password required. Use the same browser when you return.</p>
+          <div class="w-full space-y-2">
+            <div>
+              <input type="text" [(ngModel)]="guestName" (keyup.enter)="handleGuestSignIn()"
+                    (input)="guestNameError.set(null)"
+                    [attr.class]="'w-full bg-gray-600 text-white rounded-md border p-3 transition-colors ' + (guestNameError() ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-500 focus:ring-cyan-500 focus:border-cyan-500')"
+                    placeholder="e.g., Jesse">
+              @if (guestNameError(); as error) {
+                <p class="text-xs text-red-400 mt-2 text-left animate-slide-in-fade">{{ error }}</p>
+              }
+            </div>
+            <button (click)="handleGuestSignIn()" [disabled]="!guestName() || isSigningInAsGuest()"
+                    class="w-full !mt-3 font-bold py-3 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-500 disabled:text-gray-400 disabled:cursor-not-allowed bg-cyan-500 hover:bg-cyan-600 text-white">
+              {{ isSigningInAsGuest() ? 'Setting Up...' : 'Continue to AFCU' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="text-center">
+      <p class="text-purple-300/80 text-sm animate-slide-in-right-fade" style="animation-delay: 0.7s;">Games by JL</p>
+    </footer>
+  } @else {
+    <!-- My Pools -->
+    @if (joinedPools().length > 0) {
+      <div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8">
+        <h2 class="text-2xl sm:text-3xl font-bold text-cyan-400 mb-6 border-b-2 border-gray-700 pb-3">My Pools</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          @for(pool of joinedPools(); track pool.id) {
+            <div class="relative group">
+              <div (click)="navigateToPool(pool.id)" 
+                  class="w-full h-full text-left p-4 rounded-lg bg-gray-700 hover:bg-cyan-900/50 hover:border-cyan-500 border border-transparent transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 cursor-pointer">
+                
+                <span class="font-bold text-lg text-white">{{ pool.name }}</span>
+
+                <button (click)="removePool(pool.id, $event)"
+                        title="Remove pool from list"
+                        class="absolute top-2 right-2 p-1.5 bg-gray-800/50 text-gray-400 rounded-full hover:bg-red-500 hover:text-white transition-all duration-200 z-10
+                              lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    @if (settings.singlePoolMode) {
+      <div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8 text-center border border-cyan-400/30">
+        <p class="text-xs font-bold tracking-[0.2em] text-cyan-400 mb-3">YOUR GROUP</p>
+        <h2 class="text-3xl font-bold text-white mb-3">AFCU Confidence Pool</h2>
+        <p class="text-gray-400 max-w-lg mx-auto">Make this week's picks, assign each confidence value once, and follow the group leaderboard.</p>
+        <button (click)="openPrimaryPool()" [disabled]="isFindingOrJoining() || gameService.isLoading()"
+                class="mt-6 w-full sm:w-auto min-w-56 font-bold py-3 px-6 rounded-lg transition-colors duration-300 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed bg-cyan-500 hover:bg-cyan-600 text-white">
+          {{ isFindingOrJoining() ? 'Opening AFCU...' : 'Enter AFCU Pool' }}
+        </button>
+        @if (joinError()) {
+          <p class="text-red-400 text-sm font-medium mt-4 animate-slide-in-fade">{{ joinError() }}</p>
+        }
+      </div>
+    } @else {
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <!-- Join a Pool -->
+      <div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8 flex flex-col">
+        <h2 class="text-2xl sm:text-3xl font-bold text-cyan-400 mb-6 border-b-2 border-gray-700 pb-3">Join a Pool</h2>
+        <div class="space-y-4 flex-grow">
+          <div>
+            <label for="join-identifier" class="block text-sm font-medium text-gray-300 mb-2">Pool Name</label>
+            <input type="text" id="join-identifier" name="join-identifier" [(ngModel)]="joinIdentifier" (keyup.enter)="handleJoinAction()"
+                  (input)="joinIdentifierError.set(null)"
+                  [attr.class]="'w-full bg-gray-700 text-white rounded-md border p-3 transition-colors ' + (joinIdentifierError() ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-600 focus:ring-cyan-500 focus:border-cyan-500')"
+                  placeholder="e.g., Office Heroes Pool">
+            @if (joinIdentifierError(); as error) {
+              <p class="text-xs text-red-400 mt-2 animate-slide-in-fade">{{ error }}</p>
+            }
+          </div>
+        </div>
+        <button (click)="handleJoinAction()" [disabled]="!joinIdentifier() || isFindingOrJoining()"
+                class="w-full font-bold py-3 px-4 rounded-lg transition-colors duration-300 mt-6 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed bg-cyan-500 hover:bg-cyan-600 text-white">
+          {{ isFindingOrJoining() ? 'Joining...' : 'Find & Join Pool' }}
+        </button>
+
+        @if (joinError()) {
+          <div class="animate-slide-in-fade mt-4 p-3 bg-red-900/40 border border-red-700 rounded-lg flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+            </svg>
+            <p class="text-red-400 text-sm font-medium">{{ joinError() }}</p>
+          </div>
+        }
+      </div>
+
+      <!-- Create a Pool / Playoff Challenge-->
+      @if (gameService.isLoading() || gameService.isCheckingOverride()) {
+        <!-- Skeleton Loader for Create Pool -->
+        <div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8 flex flex-col">
+          <div class="h-8 w-3/4 bg-gray-700 rounded animate-shimmer mb-6"></div>
+          <div class="space-y-6 flex-grow pt-3">
+              <div>
+                <div class="h-5 w-1/3 bg-gray-700 rounded animate-shimmer mb-2"></div>
+                <div class="h-12 w-full bg-gray-700 rounded animate-shimmer"></div>
+              </div>
+          </div>
+          <div class="h-12 w-full bg-gray-700 rounded animate-shimmer mt-6"></div>
+        </div>
+      } @else {
+        @if (gameService.isPlayoffs()) {
+          <!-- Active Playoff Challenge Card -->
+          <div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8 flex flex-col animate-fade-in border-2 border-yellow-400/50">
+            <h2 class="text-2xl sm:text-3xl font-bold text-yellow-400 mb-6 border-b-2 border-gray-700 pb-3">Start a Playoff Challenge</h2>
+            <div class="space-y-4 flex-grow">
+              <div>
+                <label for="create-pool-name" class="block text-sm font-medium text-gray-300 mb-2">Challenge Name</label>
+                <input type="text" id="create-pool-name" name="create-pool-name" [(ngModel)]="createPoolName"
+                      class="w-full bg-gray-700 text-white rounded-md border-gray-600 focus:ring-yellow-500 focus:border-yellow-500 p-3"
+                      placeholder="e.g., Super Bowl Champs">
+                @if (createPoolError()) {
+                  <p class="text-red-400 text-sm font-medium mt-2 animate-slide-in-fade">{{ createPoolError() }}</p>
+                }
+              </div>
+            </div>
+            <button (click)="handleCreatePlayoffChallenge()" [disabled]="!createPoolName() || isCreating()"
+                    class="w-full font-bold py-3 px-4 rounded-lg transition-colors duration-300 mt-6
+                          disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed
+                          bg-yellow-600 hover:bg-yellow-700 text-white">
+              {{ isCreating() ? 'Creating...' : 'Create Challenge' }}
+            </button>
+          </div>
+        } @else if (canCreatePool()) {
+          <!-- Active Create Pool Card -->
+          <div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8 flex flex-col animate-fade-in">
+            <h2 class="text-2xl sm:text-3xl font-bold text-green-400 mb-6 border-b-2 border-gray-700 pb-3">Create New Pool</h2>
+            <div class="space-y-4 flex-grow">
+              <div>
+                <label for="create-pool-name" class="block text-sm font-medium text-gray-300 mb-2">Pool Name</label>
+                <input type="text" id="create-pool-name" name="create-pool-name" [(ngModel)]="createPoolName"
+                      class="w-full bg-gray-700 text-white rounded-md border-gray-600 focus:ring-green-500 focus:border-green-500 p-3"
+                      placeholder="e.g., Office Heroes Pool">
+                @if (createPoolError()) {
+                  <p class="text-red-400 text-sm font-medium mt-2 animate-slide-in-fade">{{ createPoolError() }}</p>
+                }
+              </div>
+            </div>
+            <button (click)="handleCreatePool()" [disabled]="!createPoolName() || isCreating()"
+                    class="w-full font-bold py-3 px-4 rounded-lg transition-colors duration-300 mt-6
+                          disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed
+                          bg-green-600 hover:bg-green-700 text-white">
+              {{ isCreating() ? 'Creating...' : 'Create Pool' }}
+            </button>
+          </div>
+        } @else {
+          <!-- Disabled Create Pool Card -->
+          <div class="relative bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8 animate-fade-in">
+            <div class="opacity-40 grayscale pointer-events-none">
+              <h2 class="text-2xl sm:text-3xl font-bold text-green-400 mb-6 border-b-2 border-gray-700 pb-3">Create New Pool</h2>
+              <div class="space-y-4 flex-grow">
+                  <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-2">Pool Name</label>
+                  <div class="w-full bg-gray-700 rounded-md p-3 h-12"></div>
+                </div>
+              </div>
+              <div class="w-full font-bold py-3 px-4 rounded-lg mt-6 bg-gray-600 text-gray-400 text-center">
+                Create Pool
+              </div>
+            </div>
+            <div class="absolute inset-0 bg-gray-900/60 rounded-2xl flex flex-col items-center justify-center text-center p-4 backdrop-blur-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <h3 class="mt-2 text-xl font-bold text-yellow-400">Pool Creation Locked</h3>
+              <p class="text-gray-300 mt-1">The first game of the week has already started.</p>
+            </div>
+          </div>
+        }
+      }
+    </div>
+    }
+  }
+</div>

@@ -1,0 +1,15 @@
+<div (click)="close.emit()" class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 animate-fade-in">
+  <div (click)="$event.stopPropagation()" class="bg-gray-800 rounded-2xl shadow-lg p-6 w-full max-w-lg animate-fade-in-up">
+    <h3 class="text-xl font-bold text-cyan-400 mb-6 border-b border-gray-700 pb-3">Choose Your Avatar</h3>
+    <div class="grid grid-cols-4 sm:grid-cols-6 gap-6 max-h-[60vh] overflow-y-auto p-2">
+      @for (avatar of avatars(); track $index) {
+        <button (click)="selectAvatar(avatar)" class="p-2 bg-gray-700 rounded-full hover:bg-cyan-500/50 transition-transform duration-200 hover:scale-110 aspect-square focus:outline-none focus:ring-2 focus:ring-cyan-500">
+          <img [src]="avatar" class="w-full h-full object-contain" alt="Avatar option {{ $index + 1 }}" />
+        </button>
+      }
+    </div>
+    <button (click)="close.emit()" class="mt-6 w-full font-bold py-2 px-4 rounded-lg bg-gray-600 hover:bg-gray-500 text-white transition-colors">
+      Cancel
+    </button>
+  </div>
+</div>

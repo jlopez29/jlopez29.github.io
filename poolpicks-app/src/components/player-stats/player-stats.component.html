@@ -1,0 +1,215 @@
+<div class="max-w-4xl mx-auto">
+  @if (pool() === undefined) {
+    <!-- Skeleton Loader -->
+    <div>
+      <div class="w-full mb-6">
+        <div class="h-10 w-48 bg-gray-700 rounded-lg animate-shimmer"></div>
+      </div>
+      <div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8">
+        <div class="flex justify-between items-start mb-6 border-b-2 border-gray-700 pb-3">
+          <div class="w-3/5 h-8 bg-gray-700 rounded animate-shimmer"></div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <!-- Stats Card Skeleton -->
+          <div class="bg-gray-700/50 rounded-lg p-6">
+            <div class="h-6 w-1/2 bg-gray-700 rounded mb-6 animate-shimmer"></div>
+            <div class="space-y-4">
+              <div class="h-5 bg-gray-700 rounded animate-shimmer"></div>
+              <div class="h-5 bg-gray-700 rounded animate-shimmer"></div>
+              <div class="h-5 bg-gray-700 rounded animate-shimmer"></div>
+              <div class="h-5 bg-gray-700 rounded animate-shimmer"></div>
+              <div class="h-5 bg-gray-700 rounded animate-shimmer"></div>
+            </div>
+          </div>
+          <!-- Stats Card Skeleton -->
+          <div class="bg-gray-700/50 rounded-lg p-6">
+            <div class="h-6 w-1/2 bg-gray-700 rounded mb-6 animate-shimmer"></div>
+            <div class="space-y-4">
+              <div class="h-5 bg-gray-700 rounded animate-shimmer"></div>
+              <div class="h-5 bg-gray-700 rounded animate-shimmer"></div>
+              <div class="h-5 bg-gray-700 rounded animate-shimmer"></div>
+              <div class="h-5 bg-gray-700 rounded animate-shimmer"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  } @else if (!participant()) {
+    <div class="text-center bg-gray-800 p-8 rounded-lg">
+      <h2 class="text-3xl font-bold text-red-500 mb-4">Participant Not Found</h2>
+      <p class="text-gray-300">Could not find a participant named "{{ participantName() }}" in this pool.</p>
+      <a [routerLink]="['/pool', poolId()]" class="mt-6 inline-block bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg">
+        Back to Leaderboard
+      </a>
+    </div>
+  } @else {
+    <div>
+      @if (participant(); as p) {
+        <!-- Back Button -->
+        <div class="w-full mb-6">
+          <a [routerLink]="['/pool', poolId(), 'picks', p.displayName]" [queryParams]="{ week: viewedWeek() }" class="inline-flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 text-sm font-semibold text-cyan-400 transition-colors duration-200 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-gray-900">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+              </svg>
+              Back to Picks
+          </a>
+        </div>
+
+        <div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8">
+          <!-- Header -->
+          <div class="flex justify-between items-start mb-6 border-b-2 border-gray-700 pb-3">
+            <div>
+              <h2 class="text-2xl sm:text-3xl font-bold text-white">
+                Player Stats: <span class="text-cyan-400">{{ p.displayName }}</span>
+              </h2>
+            </div>
+          </div>
+
+          @if (playerData(); as data) {
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <!-- Current Week Stats -->
+              <div class="bg-gray-700/50 rounded-lg p-6 animate-fade-in-up">
+                <h3 class="text-xl font-bold text-cyan-400 mb-4">Week {{ viewedWeek() }} Stats</h3>
+                <div class="space-y-3">
+                  <!-- Pick Record -->
+                  <div class="flex justify-between items-center">
+                    <span class="text-gray-300">Pick Record</span>
+                    <div class="font-semibold text-lg">
+                      <span class="text-green-400">{{ data.weekly.record.correct }}</span>
+                      <span class="text-gray-400 mx-1">/</span>
+                      <span class="text-red-400">{{ data.weekly.record.incorrect }}</span>
+                      <span class="text-gray-400 mx-1">/</span>
+                      <span class="text-yellow-400">{{ data.weekly.record.pending }}</span>
+                    </div>
+                  </div>
+                  <!-- Pick Percentage -->
+                  <div class="flex justify-between items-center">
+                    <span class="text-gray-300">Pick Percentage</span>
+                    <span class="font-semibold text-lg">{{ data.weekly.percentage }}%</span>
+                  </div>
+                  <!-- Points Scored -->
+                  <div class="flex justify-between items-center">
+                    <span class="text-gray-300">Points Scored</span>
+                    <span class="font-semibold text-lg text-green-400">{{ data.weekly.score }}</span>
+                  </div>
+                   <!-- Points vs Field -->
+                   <div class="flex justify-between items-center">
+                    <span class="text-gray-300">Points vs. Field</span>
+                    <span class="font-semibold text-lg" [class]="data.weekly.pointsVsField > 0 ? 'text-green-400' : (data.weekly.pointsVsField < 0 ? 'text-red-400' : 'text-gray-300')">
+                      {{ data.weekly.pointsVsField > 0 ? '+' : '' }}{{ data.weekly.pointsVsField.toFixed(1) }}
+                    </span>
+                  </div>
+                  <!-- Underdogs Picked -->
+                  <div class="flex justify-between items-center">
+                    <span class="text-gray-300">Underdogs Picked</span>
+                    <span class="font-semibold text-lg">{{ data.weekly.underdogs.picked }}</span>
+                  </div>
+                  <!-- Underdogs Correct -->
+                  <div class="flex justify-between items-center">
+                    <span class="text-gray-300">Underdogs Correct</span>
+                    <span class="font-semibold text-lg">{{ data.weekly.underdogs.correct }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Overall Stats -->
+              <div class="bg-gray-700/50 rounded-lg p-6 animate-fade-in-up" [style.animation-delay]="'100ms'">
+                <h3 class="text-xl font-bold text-cyan-400 mb-4">Overall Stats</h3>
+                <div class="space-y-3">
+                   <!-- Picks Submitted -->
+                  <div class="flex justify-between items-center">
+                    <span class="text-gray-300">Picks Submitted</span>
+                    <span class="font-semibold text-lg">{{ data.overall.weeksPlayed }}</span>
+                  </div>
+                   <!-- Total Points Scored -->
+                  <div class="flex justify-between items-center">
+                    <span class="text-gray-300">Total Points Scored</span>
+                    <span class="font-semibold text-lg text-green-400">{{ data.overall.totalScore }}</span>
+                  </div>
+                  <!-- Average Score -->
+                  <div class="flex justify-between items-center">
+                    <span class="text-gray-300">Average Score</span>
+                    <span class="font-semibold text-lg">{{ data.overall.averageScore.toFixed(1) }}</span>
+                  </div>
+                  <!-- 1st Place Finishes -->
+                  <div class="flex justify-between items-center">
+                    <span class="text-gray-300">1st Place Finishes</span>
+                    <div class="flex items-center gap-2">
+                      <svg class="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+                      <span class="font-semibold text-lg text-yellow-400">{{ data.overall.firstPlaceFinishes }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- PoolPicks Rating -->
+            <div class="mt-8 relative p-6 rounded-lg bg-gradient-to-br from-cyan-900 to-purple-900 animate-fade-in-up" [style.animation-delay]="'200ms'">
+              <div class="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-purple-500 rounded-lg blur opacity-50 animate-pulse"></div>
+              <div class="relative flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div>
+                      <h3 class="text-2xl font-bold text-white">PoolPicks Rating</h3>
+                      <p class="text-gray-300">A measure of overall performance and experience.</p>
+                  </div>
+                  <div class="font-extrabold text-5xl text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">
+                      {{ poolPicksRating() }}
+                  </div>
+              </div>
+            </div>
+
+            <!-- Awards & Achievements -->
+            <div class="mt-8 animate-fade-in-up" [style.animation-delay]="'300ms'">
+              <h3 class="text-xl font-bold text-white mb-4">Awards &amp; Achievements</h3>
+              @if (data.trophies.length === 0 && data.badges.length === 0) {
+                <div class="text-center py-8">
+                  <p class="text-gray-500">No awards yet!</p>
+                </div>
+              } @else {
+                <!-- Trophies -->
+                @if (data.trophies.length > 0) {
+                  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    @for (trophy of data.trophies; track trophy.poolId + '_' + trophy.week) {
+                      <div class="bg-gray-900/50 rounded-lg p-4 text-center flex flex-col items-center justify-center gap-2 border border-gray-700 hover:border-cyan-500 transition-colors">
+                        @if (trophy.rank === 1) {
+                          <svg class="h-12 w-12 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 2H7C6.45 2 6 2.45 6 3V4C6 4.55 6.45 5 7 5H17C17.55 5 18 4.55 18 4V3C18 2.45 17.55 2 17 2Z" /><path d="M18 6H6C4.34 6 3 7.34 3 9V13C3 14.66 4.34 16 6 16H7V18C7 19.1 7.9 20 9 20H15C16.1 20 17 19.1 17 18V16H18C19.66 16 21 14.66 21 13V9C21 7.34 19.66 6 18 6Z" /></svg>
+                          <p class="font-bold text-lg text-yellow-400">1st Place</p>
+                        } @else if (trophy.rank === 2) {
+                          <svg class="h-12 w-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 2H7C6.45 2 6 2.45 6 3V4C6 4.55 6.45 5 7 5H17C17.55 5 18 4.55 18 4V3C18 2.45 17.55 2 17 2Z" /><path d="M18 6H6C4.34 6 3 7.34 3 9V13C3 14.66 4.34 16 6 16H7V18C7 19.1 7.9 20 9 20H15C16.1 20 17 19.1 17 18V16H18C19.66 16 21 14.66 21 13V9C21 7.34 19.66 6 18 6Z" /></svg>
+                          <p class="font-bold text-lg text-gray-400">2nd Place</p>
+                        } @else {
+                          <svg class="h-12 w-12 text-orange-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 2H7C6.45 2 6 2.45 6 3V4C6 4.55 6.45 5 7 5H17C17.55 5 18 4.55 18 4V3C18 2.45 17.55 2 17 2Z" /><path d="M18 6H6C4.34 6 3 7.34 3 9V13C3 14.66 4.34 16 6 16H7V18C7 19.1 7.9 20 9 20H15C16.1 20 17 19.1 17 18V16H18C19.66 16 21 14.66 21 13V9C21 7.34 19.66 6 18 6Z" /></svg>
+                          <p class="font-bold text-lg text-orange-400">3rd Place</p>
+                        }
+                        <p class="text-sm text-gray-300">Wk {{ trophy.week }} {{ trophy.year }}</p>
+                        <p class="text-xs text-gray-400 truncate w-full" [title]="trophy.poolName">{{ trophy.poolName }}</p>
+                      </div>
+                    }
+                  </div>
+                }
+                <!-- Badges -->
+                @if(data.badges.length > 0) {
+                    <div class="mt-6 pt-6 border-t border-gray-700">
+                        <h4 class="text-lg font-bold text-cyan-400 mb-4">Badges</h4>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                            @for(badge of data.badges; track badge.id) {
+                                <div class="bg-gray-900/50 rounded-lg p-4 flex flex-col items-center text-center gap-3 border border-gray-700">
+                                    <div class="w-16 h-16 p-2" [innerHTML]="badge.iconSvg | safeHtml"></div>
+                                    <div>
+                                        <p class="font-bold text-white">{{ badge.name }}</p>
+                                        <p class="text-sm text-gray-400">{{ badge.description }}</p>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+              }
+            </div>
+          } @else {
+            <p class="text-gray-400 text-center py-8">Calculating stats...</p>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>

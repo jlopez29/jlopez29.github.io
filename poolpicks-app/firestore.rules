@@ -1,0 +1,167 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function poolAfter(poolId) {
+      return getAfter(/databases/$(database)/documents/pools/$(poolId));
+    }
+
+    function isPoolOwner(poolId) {
+      return signedIn() && poolAfter(poolId).data.ownerId == request.auth.uid;
+    }
+
+    function weekAfter(poolId, weekId) {
+      return getAfter(/databases/$(database)/documents/pools/$(poolId)/weeks/$(weekId));
+    }
+
+    function beforeDeadline(poolId, weekId) {
+      return request.time < weekAfter(poolId, weekId).data.lockAt;
+    }
+
+    function deadlinePassed(poolId, weekId) {
+      return request.time >= get(
+        /databases/$(database)/documents/pools/$(poolId)/weeks/$(weekId)
+      ).data.lockAt;
+    }
+
+    function validProfile(userId, data) {
+      return data.keys().hasOnly([
+          'uid', 'displayName', 'email', 'photoUrl', 'isGuest',
+          'joinedPools', 'unlockedAchievements', 'stats'
+        ])
+        && data.uid == userId
+        && data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 50
+        && data.photoUrl is string
+        && data.photoUrl.size() <= 20000
+        && data.get('joinedPools', {}) is map
+        && data.get('unlockedAchievements', {}) is map
+        && data.get('stats', {}) is map;
+    }
+
+    function validPool(poolId, data) {
+      return data.keys().hasOnly([
+          'name', 'week', 'year', 'type', 'ownerId', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.week is int
+        && data.week >= 1
+        && data.week <= 22
+        && data.year is int
+        && data.year >= 2024
+        && data.type in ['regular', 'playoff']
+        && data.ownerId == request.auth.uid;
+    }
+
+    function validMember(userId, data) {
+      return data.keys().hasOnly([
+          'userId', 'displayName', 'photoUrl', 'poolName', 'role', 'joinedAt'
+        ])
+        && data.userId == userId
+        && data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 50
+        && data.photoUrl is string
+        && data.photoUrl.size() <= 20000
+        && data.get('poolName', '') is string
+        && data.get('role', 'member') in ['owner', 'member'];
+    }
+
+    function validWeek(data) {
+      return data.keys().hasOnly(['year', 'week', 'type', 'createdAt', 'lockAt'])
+        && data.year is int
+        && data.week is int
+        && data.week >= 1
+        && data.week <= 22
+        && data.type in ['regular', 'playoff']
+        && data.lockAt is timestamp;
+    }
+
+    function validSubmission(userId, data) {
+      return data.keys().hasOnly([
+          'userId', 'displayName', 'photoUrl', 'picks', 'playoffPicks',
+          'tiebreaker', 'hasViewedPodium', 'updatedAt'
+        ])
+        && data.userId == userId
+        && data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 50
+        && data.photoUrl is string
+        && data.photoUrl.size() <= 20000
+        && data.get('picks', []) is list
+        && data.get('picks', []).size() <= 18
+        && data.get('playoffPicks', {}) is map
+        && data.tiebreaker is int
+        && data.tiebreaker >= 0
+        && data.tiebreaker <= 500
+        && data.get('hasViewedPodium', false) is bool;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update: if isSelf(userId) && validProfile(userId, request.resource.data);
+      allow delete: if isSelf(userId);
+    }
+
+    match /pools/{poolId} {
+      allow read: if signedIn();
+
+      // AFCU-only launch. To restore public pool creation later, remove the
+      // poolId check while retaining owner validation and add abuse controls.
+      allow create: if signedIn()
+        && poolId == 'AFCU'
+        && validPool(poolId, request.resource.data);
+
+      allow update: if isPoolOwner(poolId)
+        && validPool(poolId, request.resource.data)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['name', 'week', 'year', 'type', 'updatedAt']);
+      allow delete: if isPoolOwner(poolId);
+
+      match /members/{userId} {
+        allow read: if signedIn();
+        allow create, update: if isSelf(userId)
+          && validMember(userId, request.resource.data)
+          && request.resource.data.get('role', 'member') ==
+            (isPoolOwner(poolId) ? 'owner' : 'member');
+        allow delete: if isSelf(userId) || isPoolOwner(poolId);
+      }
+
+      match /weeks/{weekId} {
+        allow read: if signedIn();
+        allow create, update: if isPoolOwner(poolId)
+          && validWeek(request.resource.data);
+        allow delete: if isPoolOwner(poolId);
+
+        match /submissions/{userId} {
+          allow read: if isSelf(userId)
+            || (signedIn() && deadlinePassed(poolId, weekId));
+          allow create, update: if isSelf(userId)
+            && validSubmission(userId, request.resource.data)
+            && (beforeDeadline(poolId, weekId)
+              || (resource != null
+                && request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['photoUrl', 'hasViewedPodium', 'updatedAt'])));
+          allow delete: if isPoolOwner(poolId)
+            || (isSelf(userId) && beforeDeadline(poolId, weekId));
+        }
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://jlopez29.github.io/poolpicks/sitemap.xml

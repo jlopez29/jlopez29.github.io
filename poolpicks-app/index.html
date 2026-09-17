@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <title>PoolPicks - NFL Confidence Pool</title>
+  <meta name="description" content="Play NFL confidence pool picks online. Compete with friends, track scores, and see who really knows football. Free, fast, fun.">
+  <meta property="og:title" content="PoolPicks — NFL Confidence Pool">
+  <meta property="og:description" content="Make weekly NFL picks and compete with friends in a confidence pool.">
+  <meta property="og:url" content="https://jlopez29.github.io/poolpicks/">
+  <meta property="og:type" content="website">
+  <base href="/" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0B1320">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><g transform=%22rotate(45 50 50)%22><path d=%22M50 5 C 85 5, 95 35, 95 50 C 95 65, 85 95, 50 95 C 15 95, 5 65, 5 50 C 5 35, 15 5, 50 5 Z%22 fill=%22%2322d3ee%22 /><path d=%22M50 15 L50 85%22 stroke-width=%225%22 stroke=%22white%22 stroke-linecap=%22round%22 /></g></svg>">
+  
+  <style>
+    html, body {
+      background: #0B1320;
+      color: #ffffff;
+      height: 100%;
+      margin: 0;
+    }
+
+    app-root {
+      display: block;
+      opacity: 0;
+      transition: opacity 0.5s 0.2s ease-in-out; /* Delay fade-in slightly */
+      pointer-events: none;
+    }
+
+    @keyframes rotate {
+      100% {
+        transform: rotate(1turn);
+      }
+    }
+    .animate-rotate {
+      animation: rotate 4s linear infinite;
+    }
+    @keyframes shimmer {
+      100% {
+        transform: translateX(100%);
+      }
+    }
+    .animate-shimmer {
+      position: relative;
+      overflow: hidden;
+    }
+    .animate-shimmer::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      transform: translateX(-100%);
+      background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0, rgba(255, 255, 255, 0.05) 20%, rgba(255, 255, 255, 0.1) 60%, rgba(255, 255, 255, 0));
+      animation: shimmer 1.5s infinite;
+    }
+    @keyframes slide-in-fade {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .animate-slide-in-fade {
+      animation: slide-in-fade 0.3s ease-out forwards;
+    }
+    
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .animate-fade-in {
+      animation: fade-in 0.5s ease-in-out forwards;
+    }
+    @keyframes fade-in-up {
+      from {
+        opacity: 0;
+        transform: translateY(15px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .animate-fade-in-up {
+      opacity: 0; /* Start hidden to prevent flash of unstyled content */
+      animation: fade-in-up 0.5s ease-out forwards;
+    }
+    @keyframes slide-in-right-fade {
+      from {
+        opacity: 0;
+        transform: translateX(25px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    .animate-slide-in-right-fade {
+      opacity: 0; /* Start hidden to prevent flash of unstyled content */
+      animation: slide-in-right-fade 0.5s ease-out forwards;
+    }
+
+    /* --- View Transition Customization --- */
+
+    /* This is the top-level overlay for the entire transition.
+       Giving it a background color is the most robust way to prevent
+       any "white flash" on mobile as the underlying DOM updates. */
+    ::view-transition {
+      background-color: #0B1320;
+    }
+
+    /* This pseudo-element animates the size and position of the view. */
+    ::view-transition-group(*) {
+      animation-duration: 0.5s;
+      animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* These pseudo-elements handle the cross-fade (opacity).
+       We keep their duration in sync with the group animation for a smoother feel. */
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+      animation-duration: 0.5s;
+      animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* --- Slower transition specifically for login on the home page --- */
+    ::view-transition-group(home-content) {
+      animation-duration: 1s;
+    }
+    ::view-transition-old(home-content),
+    ::view-transition-new(home-content) {
+      animation-duration: 1s;
+    }
+  </style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Pool Picks",
+  "url": "https://jlopez29.github.io/poolpicks/",
+  "description": "Weekly NFL confidence pool game. Make picks, compete with friends, and track standings.",
+  "applicationCategory": "Game",
+  "operatingSystem": "Any",
+  "genre": "Sports",
+  "browserRequirements": "Requires JavaScript and a modern browser"
+}
+</script>
+
+</head>
+<body class="font-sans">
+  
+  <!-- Loading Indicator -->
+  <div id="app-loader" class="fixed inset-0 bg-[#0B1320] z-50 flex flex-col items-center justify-center transition-opacity duration-500 ease-in-out p-4">
+    <div class="w-full max-w-4xl mx-auto">
+      <div class="bg-gray-800 rounded-2xl shadow-lg p-8 text-center animate-shimmer">
+        <div class="h-8 w-3/4 bg-gray-700/50 rounded mx-auto mb-4"></div>
+        <div class="h-4 w-full max-w-lg bg-gray-700/50 rounded mx-auto mb-2"></div>
+        <div class="h-4 w-10/12 max-w-lg bg-gray-700/50 rounded mx-auto mb-10"></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+          <div class="bg-gray-700/50 p-6 rounded-lg h-48"></div>
+          <div class="bg-gray-700/50 p-6 rounded-lg h-48"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error Display -->
+  <div id="app-error" style="display: none;" class="fixed inset-0 bg-[#0B1320] z-40 flex flex-col items-center justify-center p-4 text-center transition-opacity duration-500 ease-in-out">
+    <div class="bg-gray-800 rounded-2xl shadow-lg p-8 max-w-md w-full">
+      <svg class="h-16 w-16 text-red-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+      </svg>
+      <h1 class="text-3xl font-bold text-red-400 mt-4">Uh oh!</h1>
+      <p class="text-gray-300 mt-2">Something went wrong while loading the application.</p>
+      <button onclick="window.location.reload()" class="mt-6 w-full font-bold py-3 px-4 rounded-lg transition-colors duration-300 bg-cyan-500 hover:bg-cyan-600 text-white">
+        Reload Page
+      </button>
+    </div>
+  </div>
+
+  <app-root></app-root>
+</body>
+</html>

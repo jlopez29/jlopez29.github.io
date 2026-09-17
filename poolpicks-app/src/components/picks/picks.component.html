@@ -1,0 +1,175 @@
+<div class="bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8">
+  <div class="flex justify-between items-start mb-6 border-b-2 border-gray-700 pb-3">
+    <div>
+      <h2 class="text-2xl sm:text-3xl font-bold text-cyan-400 mb-2">Submit Your Picks</h2>
+      @if (currentUser(); as user) {
+        <p class="text-gray-400">Welcome, <span class="font-bold">{{ user.displayName }}</span>!</p>
+      }
+    </div>
+    <button (click)="viewSchedule.emit()" class="inline-flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 text-sm font-semibold text-cyan-400 transition-colors duration-200 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-gray-900 flex-shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        <span class="hidden sm:inline">View Schedule</span>
+    </button>
+  </div>
+
+  <div class="space-y-8 max-h-[70vh] overflow-y-auto pr-2">
+    @if (gameService.isLoading()) {
+      <!-- Skeleton Loader for Picks -->
+      @for (_ of [0, 1]; track _) {
+        <div class="space-y-4">
+          <div class="relative rounded-xl shadow-lg overflow-hidden p-4 h-40 bg-gray-700 animate-shimmer">
+          </div>
+          <div>
+            <div class="block h-6 w-1/3 mx-auto bg-gray-700 rounded mb-4 animate-shimmer"></div>
+            <div class="flex flex-wrap justify-center gap-2">
+              @for (c of [0, 1, 2, 3, 4, 5, 6, 7]; track c) {
+                <div class="w-12 h-12 bg-gray-600 rounded-lg animate-shimmer"></div>
+              }
+            </div>
+          </div>
+        </div>
+      }
+    } @else {
+      @for (game of gameService.games(); track game.id; let i = $index) {
+        <div class="space-y-4 animate-fade-in-up" [style.animation-delay]="i * 100 + 'ms'">
+          <!-- New Game Card -->
+          @let winner = picks().get(game.id)?.winner;
+          <div 
+            class="relative rounded-xl shadow-lg overflow-hidden p-4 text-white flex items-center justify-around gap-2 sm:gap-4 transition-all duration-500 ease-in-out"
+            [style.background]="getGradient(game.awayTeam, game.homeTeam, winner)">
+
+            <!-- Animated Divider -->
+            <div class="absolute inset-y-0 w-1 bg-white/20 transition-all duration-500 ease-in-out z-10 -skew-x-12"
+                 [class.left-1/2]="!winner"
+                 [class.-translate-x-1/2]="!winner"
+                 [class.left-[65%]]="winner === game.awayTeam"
+                 [class.left-[35%]]="winner === game.homeTeam">
+            </div>
+
+            <!-- Away Team -->
+            <button (click)="onTeamSelect(game.id, game.awayTeam)" 
+                    class="relative z-30 flex-1 flex flex-col items-center gap-2 transition-all duration-500 ease-in-out p-2 rounded-lg"
+                    [class.scale-110]="winner === game.awayTeam"
+                    [class.scale-90]="winner === game.homeTeam"
+                    [class.grayscale]="winner === game.homeTeam"
+                    [class.opacity-60]="winner === game.homeTeam"
+                    [class.translate-x-2]="winner === game.awayTeam"
+                    [class.-translate-x-2]="winner === game.homeTeam">
+              <div class="relative w-16 h-16 sm:w-20 sm:h-20">
+                <div class="absolute -inset-3 bg-green-500/50 blur-lg rounded-full transition-all duration-300 ease-in-out"
+                     [class.scale-100]="winner === game.awayTeam"
+                     [class.opacity-100]="winner === game.awayTeam"
+                     [class.scale-0]="winner !== game.awayTeam"
+                     [class.opacity-0]="winner !== game.awayTeam">
+                </div>
+                <img [src]="teamService.getTeamByName(game.awayTeam)?.logo" [alt]="game.awayTeam" class="relative w-full h-full drop-shadow-lg"/>
+              </div>
+              <div class="relative">
+                <div class="relative bg-gray-900 rounded-lg">
+                  <span class="block px-3 py-1 font-bold text-sm sm:text-base text-center whitespace-nowrap">
+                    {{ game.awayTeam }}
+                  </span>
+                </div>
+                @if (winner === game.awayTeam) {
+                  <!-- Clipping container for the animated border -->
+                  <div class="absolute -inset-0.5 z-[-1] rounded-lg overflow-hidden">
+                    <!-- The oversized, rotating gradient background -->
+                    <div class="absolute -left-1/2 -top-1/2 w-[200%] h-[200%] animate-rotate"
+                         [style.background-image]="getAnimatedBorder(game.awayTeam)"
+                         style="background-repeat: no-repeat; background-size: 50% 50%, 50% 50%; background-position: 0 0, 100% 0, 100% 100%, 0 100%;">
+                    </div>
+                  </div>
+                }
+              </div>
+            </button>
+            
+            <!-- Game Info -->
+            <div class="absolute z-40 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
+              @if (game.time) {
+                <p class="text-sm text-center whitespace-nowrap bg-black/40 px-3 py-1.5 rounded-full">{{ game.time }}</p>
+              }
+              @if (game.line) {
+                 <p class="text-sm font-semibold text-cyan-300 text-center mt-2">{{ game.line }}</p>
+              }
+            </div>
+
+            <!-- Home Team -->
+            <button (click)="onTeamSelect(game.id, game.homeTeam)"
+                    class="relative z-30 flex-1 flex flex-col items-center gap-2 transition-all duration-500 ease-in-out p-2 rounded-lg"
+                    [class.scale-110]="winner === game.homeTeam"
+                    [class.scale-90]="winner === game.awayTeam"
+                    [class.grayscale]="winner === game.awayTeam"
+                    [class.opacity-60]="winner === game.awayTeam"
+                    [class.-translate-x-2]="winner === game.homeTeam"
+                    [class.translate-x-2]="winner === game.awayTeam">
+               <div class="relative w-16 h-16 sm:w-20 sm:h-20">
+                <div class="absolute -inset-3 bg-green-500/50 blur-lg rounded-full transition-all duration-300 ease-in-out"
+                     [class.scale-100]="winner === game.homeTeam"
+                     [class.opacity-100]="winner === game.homeTeam"
+                     [class.scale-0]="winner !== game.homeTeam"
+                     [class.opacity-0]="winner !== game.homeTeam">
+                </div>
+                <img [src]="teamService.getTeamByName(game.homeTeam)?.logo" [alt]="game.homeTeam" class="relative w-full h-full drop-shadow-lg"/>
+              </div>
+               <div class="relative">
+                <div class="relative bg-gray-900 rounded-lg">
+                  <span class="block px-3 py-1 font-bold text-sm sm:text-base text-center whitespace-nowrap">
+                    {{ game.homeTeam }}
+                  </span>
+                </div>
+                @if (winner === game.homeTeam) {
+                  <!-- Clipping container for the animated border -->
+                  <div class="absolute -inset-0.5 z-[-1] rounded-lg overflow-hidden">
+                     <!-- The oversized, rotating gradient background -->
+                    <div class="absolute -left-1/2 -top-1/2 w-[200%] h-[200%] animate-rotate"
+                         [style.background-image]="getAnimatedBorder(game.homeTeam)"
+                         style="background-repeat: no-repeat; background-size: 50% 50%, 50% 50%; background-position: 0 0, 100% 0, 100% 100%, 0 100%;">
+                    </div>
+                  </div>
+                }
+              </div>
+            </button>
+          </div>
+          
+          <div>
+            <label class="block text-base font-medium text-gray-400 mb-2 text-center">Confidence</label>
+            <div class="flex flex-wrap justify-center gap-2">
+              @for (opt of confidenceOptions(); track opt) {
+                <button type="button"
+                        (click)="onConfidenceSelect(game.id, opt)"
+                        [disabled]="usedConfidenceValues().has(opt) && picks().get(game.id)?.confidence !== opt"
+                        class="w-12 h-12 flex items-center justify-center text-base font-bold rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-opacity-75"
+                        [class]="picks().get(game.id)?.confidence === opt ? 'bg-cyan-500 text-white scale-110 shadow-lg' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'"
+                        [class.opacity-50]="usedConfidenceValues().has(opt) && picks().get(game.id)?.confidence !== opt"
+                        [class.cursor-not-allowed]="usedConfidenceValues().has(opt) && picks().get(game.id)?.confidence !== opt">
+                  {{ opt }}
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+      } @empty {
+        <p class="text-gray-400 text-center py-8 animate-fade-in">No games scheduled for this week.</p>
+      }
+  
+      @if (tiebreakerGame(); as game) {
+        <div class="mt-6">
+          <h3 class="text-lg font-semibold text-gray-200">Tiebreaker</h3>
+          <p class="text-sm text-gray-400 mb-2">Total score for {{ game.awayTeam }} @ {{ game.homeTeam }}</p>
+          <input type="number" name="tiebreaker" [(ngModel)]="tiebreaker"
+                class="w-full bg-gray-700 text-white rounded-md border-gray-600 focus:ring-cyan-500 focus:border-cyan-500 p-3"
+                placeholder="e.g., 48" required min="0">
+        </div>
+      }
+    }
+  </div>
+
+  <div class="mt-8 space-y-3">
+    <button (click)="submitPicks()" [disabled]="!isFormValid()"
+            class="w-full font-bold py-3 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed bg-cyan-500 hover:bg-cyan-600 text-white">
+      Lock In My Picks
+    </button>
+  </div>
+</div>
