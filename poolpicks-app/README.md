@@ -132,8 +132,9 @@ When general pool creation is wanted later:
   documents cannot be read or written by clients.
 - Users can write only their own profile, membership, and submission.
 - Pool/week administration is restricted to the pool owner.
-- Other participants' submissions cannot be read before the stored kickoff.
-- Picks and tiebreakers cannot be edited after kickoff.
+- Pool members can see submitted picks immediately.
+- Picks and tiebreakers are immutable after their initial submission; only
+  profile-display fields and podium-view state may change afterward.
 - Scores are calculated from ESPN results and are not accepted from Firestore
   clients.
 - Unknown collections are denied by default.

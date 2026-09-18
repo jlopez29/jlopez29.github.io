@@ -66,12 +66,6 @@ service cloud.firestore {
       return request.time < weekAfter(poolId, weekId).data.lockAt;
     }
 
-    function deadlinePassed(poolId, weekId) {
-      return request.time >= get(
-        /databases/$(database)/documents/pools/$(poolId)/weeks/$(weekId)
-      ).data.lockAt;
-    }
-
     function validProfile(userId, data) {
       return data.keys().hasOnly([
           'uid', 'displayName', 'email', 'photoUrl', 'isGuest',
@@ -199,17 +193,17 @@ service cloud.firestore {
         allow delete: if isPoolOwner(poolId);
 
         match /submissions/{userId} {
-          allow read: if (isSelf(userId) && isPoolMember(poolId))
-            || (isPoolMember(poolId) && deadlinePassed(poolId, weekId));
-          allow create, update: if isSelf(userId)
+          allow read: if isPoolMember(poolId);
+          allow create: if isSelf(userId)
             && isPoolMemberAfter(poolId)
             && validSubmission(userId, request.resource.data)
-            && (beforeDeadline(poolId, weekId)
-              || (resource != null
-                && request.resource.data.diff(resource.data).affectedKeys()
-                  .hasOnly(['photoUrl', 'hasViewedPodium', 'updatedAt'])));
-          allow delete: if isPoolOwner(poolId)
-            || (isSelf(userId) && beforeDeadline(poolId, weekId));
+            && beforeDeadline(poolId, weekId);
+          allow update: if isSelf(userId)
+            && isPoolMemberAfter(poolId)
+            && validSubmission(userId, request.resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['photoUrl', 'hasViewedPodium', 'updatedAt']);
+          allow delete: if false;
         }
       }
     }

@@ -2,7 +2,7 @@ import '@angular/compiler';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideHttpClient } from '@angular/common/http';
 import { ErrorHandler, provideZonelessChangeDetection } from '@angular/core';
-import { provideRouter, withHashLocation, withViewTransitions } from '@angular/router';
+import { provideRouter, withHashLocation } from '@angular/router';
 import { AppComponent } from './src/app.component';
 import { APP_ROUTES } from './src/app.routes';
 import { GlobalErrorHandler } from './src/services/global-error-handler.service';
@@ -60,7 +60,7 @@ bootstrapApplication(AppComponent, {
   providers: [
     provideZonelessChangeDetection(),
     provideHttpClient(),
-    provideRouter(APP_ROUTES, withHashLocation(), withViewTransitions({ skipInitialTransition: true })),
+    provideRouter(APP_ROUTES, withHashLocation()),
     { provide: DATA_STORE, useClass: FirestoreDataStore },
     { provide: ErrorHandler, useClass: GlobalErrorHandler }
   ]

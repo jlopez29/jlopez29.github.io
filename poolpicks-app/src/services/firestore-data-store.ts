@@ -69,7 +69,10 @@ export class FirestoreDataStore implements DataStore {
     const authUser = this.requireAuth();
     if (authUser.uid !== user.uid) throw new Error('You may only join a pool as yourself.');
 
-    await setDoc(doc(firestore, 'pools', this.normalizePoolId(poolId), 'members', user.uid), {
+    const memberRef = doc(firestore, 'pools', this.normalizePoolId(poolId), 'members', user.uid);
+    if ((await getDoc(memberRef)).exists()) return;
+
+    await setDoc(memberRef, {
       userId: user.uid,
       displayName: user.displayName.trim(),
       photoUrl: user.photoUrl,
@@ -223,16 +226,8 @@ export class FirestoreDataStore implements DataStore {
     if (authUser.uid !== userId) throw new Error('You may only remove yourself from a pool.');
     const pool = await this.getPool(poolId);
     if (!pool) return;
-    const weekId = this.weekId(pool.year, pool.week);
-    const weekSnapshot = await getDoc(doc(firestore, 'pools', pool.id, 'weeks', weekId));
-    const lockAt = weekSnapshot.data()?.['lockAt'];
-    const deletes = [deleteDoc(doc(firestore, 'pools', pool.id, 'members', userId))];
-
-    // Locked picks remain as an immutable audit record, even if someone leaves the pool.
-    if (lockAt instanceof Timestamp && Date.now() < lockAt.toMillis()) {
-      deletes.push(deleteDoc(doc(firestore, 'pools', pool.id, 'weeks', weekId, 'submissions', userId)));
-    }
-    await Promise.all(deletes);
+    // Submitted picks remain immutable even when someone leaves and later rejoins.
+    await deleteDoc(doc(firestore, 'pools', pool.id, 'members', userId));
   }
 
   async getUser(userId: string): Promise<User | null> {
@@ -253,18 +248,7 @@ export class FirestoreDataStore implements DataStore {
   }
 
   private async readParticipants(poolId: string, weekId: string): Promise<Participant[]> {
-    const authUser = this.requireAuth();
-    const weekSnapshot = await getDoc(doc(firestore, 'pools', poolId, 'weeks', weekId));
-    const lockAt = weekSnapshot.data()?.['lockAt'];
-    if (lockAt instanceof Timestamp && Date.now() < lockAt.toMillis()) {
-      const ownSubmission = await getDoc(
-        doc(firestore, 'pools', poolId, 'weeks', weekId, 'submissions', authUser.uid),
-      );
-      return ownSubmission.exists()
-        ? [this.fromSubmission(ownSubmission.id, ownSubmission.data() as Participant)]
-        : [];
-    }
-
+    this.requireAuth();
     const snapshots = await getDocs(collection(firestore, 'pools', poolId, 'weeks', weekId, 'submissions'));
     return snapshots.docs.map(snapshot => this.fromSubmission(snapshot.id, snapshot.data() as Participant));
   }

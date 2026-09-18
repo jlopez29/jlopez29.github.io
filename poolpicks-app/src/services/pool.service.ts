@@ -79,7 +79,19 @@ export class PoolService {
       return poolId;
     } catch (error) {
       console.error('Failed to create pool with initial picks:', error);
-      alert('Could not create the pool. Please try again.');
+      try {
+        const existingPoolId = await this.joinExistingPoolAndSubmit(
+          options.poolName.trim(),
+          options.inviteCode,
+          initialParticipant,
+        );
+        if (existingPoolId) return existingPoolId;
+      } catch (joinError) {
+        console.error('AFCU was created by someone else, but joining it failed:', joinError);
+        alert('AFCU already exists, but your picks could not be saved. Check the invite code and make sure picks are still open.');
+        return null;
+      }
+      alert('Could not create AFCU. Check the invite code and make sure picks are still open.');
       return null;
     }
   }
@@ -120,7 +132,19 @@ export class PoolService {
       return poolId;
     } catch (error) {
       console.error('Failed to create playoff challenge:', error);
-      alert('Could not create the challenge. Please try again.');
+      try {
+        const existingPoolId = await this.joinExistingPoolAndSubmit(
+          options.poolName.trim(),
+          options.inviteCode,
+          initialParticipant,
+        );
+        if (existingPoolId) return existingPoolId;
+      } catch (joinError) {
+        console.error('The challenge was created by someone else, but joining it failed:', joinError);
+        alert('The challenge already exists, but your picks could not be saved. Check the invite code and make sure picks are still open.');
+        return null;
+      }
+      alert('Could not create the challenge. Check the invite code and make sure picks are still open.');
       return null;
     }
   }
@@ -187,5 +211,21 @@ export class PoolService {
       console.error('Failed to submit playoff picks:', error);
       alert('Could not submit your picks. Please try again.');
     }
+  }
+
+  private async joinExistingPoolAndSubmit(
+    poolId: string,
+    inviteCode: string,
+    participant: Participant,
+  ): Promise<string | null> {
+    const currentUser = this.authService.currentUser();
+    if (!currentUser || !(await this.dataService.doesPoolExist(poolId))) return null;
+
+    await this.dataService.joinPool(poolId, poolId, currentUser, inviteCode);
+    await this.authService.addPoolToJoinedList({ id: poolId, name: poolId });
+    this.authService.setLastVisitedPoolId(poolId);
+    await this.dataService.addParticipant(poolId, participant);
+    this.achievementService.checkAndAwardFirstDownAchievement(currentUser);
+    return poolId;
   }
 }
