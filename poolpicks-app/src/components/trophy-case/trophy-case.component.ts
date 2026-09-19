@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, inject, signal } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, signal, computed, effect, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { AuthService, User, UserStats } from '../../services/auth.service';
@@ -7,6 +7,7 @@ import { Trophy, Achievement } from '../../models/achievement.model';
 import { Pool, Participant } from '../../models/pool.model';
 import { AchievementService } from '../../services/achievement.service';
 import { SafeHtmlPipe } from '../achievement-toast/achievement-toast.component';
+import { PoolHistoryService } from '../../services/pool-history.service';
 
 @Component({
   selector: 'app-trophy-case',
@@ -18,6 +19,9 @@ export class TrophyCaseComponent {
   private authService = inject(AuthService);
   private dataService = inject(DataService);
   private achievementService = inject(AchievementService);
+  private readonly poolHistory = inject(PoolHistoryService);
+  private readonly userId = computed(() => this.currentUser()?.uid);
+  loadError = signal<string | null>(null);
 
   isLoading = signal(true);
   currentUser = this.authService.currentUser;
@@ -27,11 +31,18 @@ export class TrophyCaseComponent {
   lockedAchievements = signal<Omit<Achievement, 'id'>[]>([]);
 
   constructor() {
-    this.loadTrophyCase();
+    effect(() => {
+      if (this.authService.authReady()) {
+        this.userId();
+        untracked(() => void this.loadTrophyCase());
+      }
+    });
   }
 
   async loadTrophyCase(): Promise<void> {
     this.isLoading.set(true);
+    this.loadError.set(null);
+    try {
     const user = this.currentUser();
     if (!user) {
       this.isLoading.set(false);
@@ -43,7 +54,7 @@ export class TrophyCaseComponent {
     const poolDetails = await Promise.all(
       poolSummaries.map(p => this.dataService.getPool(p.id))
     );
-    const validPools = poolDetails.filter(p => p !== null) as Pool[];
+    const validPools = await Promise.all(poolDetails.filter((p): p is Pool => p !== null).map(p => this.poolHistory.withScores(p)));
 
     // --- Retroactive Achievement Check ---
     // Scan all historical weeks for the user and silently award any achievements that were missed
@@ -62,7 +73,7 @@ export class TrophyCaseComponent {
     }
     
     // After the scan, refresh the user from the configured store.
-    const freshUser = await this.dataService.getUser(user.uid);
+    const freshUser = this.currentUser();
     const userForStats = freshUser ?? user;
 
     // --- Recalculate and Save All-Time Stats & Trophies ---
@@ -70,13 +81,7 @@ export class TrophyCaseComponent {
     const { stats, trophies } = this.calculateOverallStatsForUser(userForStats, validPools);
 
     // Save the recalculated stats through the data boundary for consistency.
-    const userDoc = await this.dataService.getUser(userForStats.uid);
-    if (userDoc) {
-      const updatedUser = { ...userDoc, stats: stats };
-      await this.dataService.updateUser(updatedUser);
-      // Update the live user signal in the app.
-      this.authService.updateUserStats(stats);
-    }
+    this.authService.updateUserStats(stats);
     
     this.allTrophies.set(trophies);
 
@@ -88,7 +93,12 @@ export class TrophyCaseComponent {
     this.unlockedBadges.set(unlocked);
     this.lockedAchievements.set(allDefinitions.filter(def => !unlockedTypes.has(def.type)));
 
-    this.isLoading.set(false);
+    } catch (error) {
+      console.error('Could not load trophy case.', error);
+      this.loadError.set('Could not load your trophies. Check your connection and try again.');
+    } finally {
+      this.isLoading.set(false);
+    }
   }
 
   private calculateOverallStatsForUser(user: User, pools: Pool[]): { stats: UserStats, trophies: Trophy[] } {
@@ -115,9 +125,8 @@ export class TrophyCaseComponent {
         const participants = allWeeksData[weekStr];
         if (!participants || participants.length === 0) continue;
         
-        // FIX: Find participant by displayName to resolve inconsistencies between legacy
-        // participant records (which might not have a proper userId) and current user objects.
-        const userAsParticipant = participants.find(p => p.displayName === user.displayName);
+        // Display names are not unique; identities and rankings must use the UID.
+        const userAsParticipant = participants.find(p => p.userId === user.uid);
         const weekKey = `${pool.id}_${week}`;
 
         if (userAsParticipant && !weeksPlayedSet.has(weekKey)) {
@@ -126,9 +135,8 @@ export class TrophyCaseComponent {
             
             const sorted = [...participants].sort((a, b) => b.score - a.score);
             // Ensure winner has a score > 0 to count as a competitive week
-            if (sorted.length > 0 && sorted[0].score > 0) {
-              // FIX: Find rank by displayName as well for consistency.
-              const userRank = sorted.findIndex(p => p.displayName === user.displayName);
+            if (pool.concludedWeeks?.includes(week) && sorted.length > 0 && sorted[0].score > 0) {
+              const userRank = sorted.findIndex(p => p.userId === user.uid);
               if (userRank !== -1 && userRank < 3) {
                 const rank = (userRank + 1) as 1 | 2 | 3;
                 if (rank === 1) stats.firstPlaceFinishes++;

@@ -10,7 +10,8 @@
 import { Injectable, signal, inject, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Game, GameStatus } from '../models/game.model';
-import { delay, timeout } from 'rxjs/operators';
+import { timeout } from 'rxjs/operators';
+import { firstValueFrom, Subscription } from 'rxjs';
 import { DataService } from './data.service';
 import { PlayoffTeam } from '../models/playoff.model';
 
@@ -68,6 +69,10 @@ interface EspnStandingsResponse {
 
 @Injectable({ providedIn: 'root' })
 export class GameService {
+  private scheduleRequest?: Subscription;
+  private requestedUrl: string | null = null;
+  private readonly weekRequests = new Map<string, Promise<Game[]>>();
+  private readonly finalWeeks = new Map<string, Game[]>();
   // FIX: Explicitly type injected HttpClient to work around a type inference issue where it was being resolved as 'unknown'.
   private http: HttpClient = inject(HttpClient);
   private dataService: DataService = inject(DataService);
@@ -78,6 +83,7 @@ export class GameService {
   year = signal(0);
   games = signal<Game[]>([]);
   gamesWeek = signal<number | null>(null); // Week corresponding to the `games` signal
+  gamesYear = signal<number | null>(null);
   isLoading = signal<boolean>(true);
   isLoadingPlayoffPicture = signal<boolean>(false);
   isRegularSeasonOver = signal(false);
@@ -99,8 +105,7 @@ export class GameService {
     this.fetchGamesData(url, { isInitialLoad: true });
   }
 
-  loadSpecificWeek(week: number): void {
-    const year = this.year();
+  loadSpecificWeek(week: number, year = this.year()): void {
     if (year === 0) {
       console.error("Cannot load specific week before year is initialized.");
       return;
@@ -111,7 +116,27 @@ export class GameService {
     const apiWeek = week > this.LAST_REGULAR_SEASON_WEEK ? week - this.LAST_REGULAR_SEASON_WEEK : week;
 
     const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${apiWeek}&year=${year}&seasontype=${seasontype}`;
-    this.fetchGamesData(url, { weekToLoad: week });
+    this.fetchGamesData(url, { weekToLoad: week, yearToLoad: year });
+  }
+
+  /** Fetch a deadline/history schedule without changing the week visible on screen. */
+  getWeekGames(week: number, year: number): Promise<Game[]> {
+    const seasonType = week > this.LAST_REGULAR_SEASON_WEEK ? 3 : 2;
+    const apiWeek = seasonType === 3 ? week - this.LAST_REGULAR_SEASON_WEEK : week;
+    const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${apiWeek}&year=${year}&seasontype=${seasonType}`;
+    const cached = this.finalWeeks.get(url);
+    if (cached) return Promise.resolve(cached);
+    const existing = this.weekRequests.get(url);
+    if (existing) return existing;
+    const request = firstValueFrom(this.http.get<EspnScoreboardResponse>(url).pipe(timeout(10000)))
+      .then(data => {
+        const games = this.mapEspnToGames(data.events);
+        if (games.length && games.every(game => game.status === 'final')) this.finalWeeks.set(url, games);
+        return games;
+      })
+      .finally(() => this.weekRequests.delete(url));
+    this.weekRequests.set(url, request);
+    return request;
   }
 
   loadPlayoffPicture(): void {
@@ -125,7 +150,6 @@ export class GameService {
     const url = `https://site.web.api.espn.com/apis/v2/sports/football/nfl/standings?level=3&season=${year}&seasontype=2&type=0`;
     this.http.get<EspnStandingsResponse>(url).pipe(
       timeout(10000), // 10 second timeout
-      delay(500) // Small delay for UX consistency
     ).subscribe({
       next: (data) => {
         const afcTeams: PlayoffTeam[] = [];
@@ -192,15 +216,17 @@ export class GameService {
   
   private async checkCreatePoolOverride() {
     this.isCheckingOverride.set(true);
-    // Add a minimum delay to prevent content flash if the API responds too quickly.
-    const delayPromise = new Promise(resolve => setTimeout(resolve, 1000));
-    const overridePromise = this.dataService.getCreatePoolOverride();
-    const [_, overrideStatus] = await Promise.all([delayPromise, overridePromise]);
-    this.createPoolOverride.set(overrideStatus);
-    this.isCheckingOverride.set(false);
+    try {
+      this.createPoolOverride.set(await this.dataService.getCreatePoolOverride());
+    } finally {
+      this.isCheckingOverride.set(false);
+    }
   }
 
-  private fetchGamesData(url: string, options: { isInitialLoad?: boolean, weekToLoad?: number } = {}): void {
+  private fetchGamesData(url: string, options: { isInitialLoad?: boolean, weekToLoad?: number, yearToLoad?: number } = {}): void {
+    if (this.requestedUrl === url && this.isLoading()) return;
+    this.scheduleRequest?.unsubscribe();
+    this.requestedUrl = url;
     this.isLoading.set(true);
 
     const requestedWeek = options.weekToLoad ?? (options.isInitialLoad ? undefined : this.week());
@@ -210,9 +236,8 @@ export class GameService {
       this.isRegularSeasonOver.set(false);
     }
     
-    this.http.get<EspnScoreboardResponse>(url).pipe(
+    this.scheduleRequest = this.http.get<EspnScoreboardResponse>(url).pipe(
       timeout(10000), // 10 second timeout
-      delay(1000)
     ).subscribe({
       next: (data) => {
         if (options.isInitialLoad && data.week && data.season) {
@@ -223,9 +248,11 @@ export class GameService {
           this.week.set(actualWeek);
           this.year.set(data.season.year);
           this.gamesWeek.set(actualWeek);
+          this.gamesYear.set(data.season.year);
 
         } else if (options.weekToLoad) {
           this.gamesWeek.set(options.weekToLoad);
+          this.gamesYear.set(options.yearToLoad ?? this.year());
         }
 
         // If we requested a week beyond the regular season and got no games, set the flag.
@@ -253,6 +280,7 @@ export class GameService {
         // This prevents an infinite loading state while allowing the user to stay in the app.
         if (options.weekToLoad) {
           this.gamesWeek.set(options.weekToLoad);
+          this.gamesYear.set(options.yearToLoad ?? this.year());
         }
         this.games.set([]);
         this.isLoading.set(false);
@@ -267,7 +295,7 @@ export class GameService {
     const sortedEvents = [...events].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     const mondayEvents = sortedEvents
-        .filter(e => new Date(e.date).getDay() === 1) // 1 is Monday
+        .filter(e => new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'America/New_York' }).format(new Date(e.date)) === 'Mon')
         .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     // There may not be a Monday night game in the playoffs, so this logic remains flexible.

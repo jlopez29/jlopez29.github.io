@@ -52,15 +52,15 @@ export class AchievementService {
   }
 
   checkAndAwardWelcomeAchievement(user: User): void {
-      this.triggerAchievement(user, 'WELCOME_ABOARD');
+      void this.triggerAchievement(user, 'WELCOME_ABOARD').catch(error => console.error('Could not save welcome badge.', error));
   }
 
   checkAndAwardArchitectAchievement(user: User): void {
-      this.triggerAchievement(user, 'THE_ARCHITECT');
+      void this.triggerAchievement(user, 'THE_ARCHITECT').catch(error => console.error('Could not save creator badge.', error));
   }
 
   checkAndAwardFirstDownAchievement(user: User): void {
-      this.triggerAchievement(user, 'FIRST_DOWN');
+      void this.triggerAchievement(user, 'FIRST_DOWN').catch(error => console.error('Could not save picks badge.', error));
   }
   
   getUnlockedBadges(user: User | null): Achievement[] {
@@ -84,6 +84,8 @@ export class AchievementService {
 
   // Method to be called from PoolComponent when a week concludes
   async processAndNotifyForConcludedWeek(pool: Pool, week: number, user: User, options: { silent?: boolean } = {}): Promise<void> {
+    const weeklyGames = await this.gameService.getWeekGames(week, pool.year);
+    if (!weeklyGames.length || !weeklyGames.every(game => game.status === 'final')) return;
     // The new source of truth for "processed" is whether the user has the badge unlocked.
     // This removes the need for a separate "processed weeks" tracker in local storage.
     const newAchievementsForToast: Achievement[] = [];
@@ -118,7 +120,6 @@ export class AchievementService {
       }
     }
 
-    const weeklyGames = await this.fetchGamesForWeek(week, pool.year);
     if (weeklyGames.length > 0) {
       const userParticipant = participants.find(p => p.userId === user.uid);
       if (userParticipant) {
@@ -190,7 +191,7 @@ export class AchievementService {
   }
   
   private isPerfectWeek(participant: Participant, games: Game[]): boolean {
-    if (participant.picks.length < games.length) return false;
+    if (!participant.picks || participant.picks.length < games.length) return false;
     const gamesById = new Map(games.map(g => [g.id, g]));
     return participant.picks.every(pick => {
         const game = gamesById.get(pick.gameId);
@@ -201,7 +202,7 @@ export class AchievementService {
   private isUpsetKing(participant: Participant, allParticipants: Participant[], games: Game[]): boolean {
     const gamesById = new Map(games.map(g => [g.id, g]));
     const countCorrectUnderdogs = (p: Participant): number => {
-      return p.picks.reduce((count, pick) => {
+      return (p.picks ?? []).reduce((count, pick) => {
         const game = gamesById.get(pick.gameId);
         if (game) {
           const underdog = this.teamService.getUnderdog(game);
@@ -214,37 +215,6 @@ export class AchievementService {
     if (userCorrectUnderdogs === 0) return false;
     const maxCorrectUnderdogs = Math.max(...allParticipants.map(p => countCorrectUnderdogs(p)));
     return userCorrectUnderdogs === maxCorrectUnderdogs;
-  }
-
-  private async fetchGamesForWeek(week: number, year: number): Promise<Game[]> {
-     try {
-       const seasontype = 2;
-       const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&year=${year}&seasontype=${seasontype}`;
-       const response = await fetch(url);
-       const data = await response.json();
-       const events = data.events || [];
-       return events.map((event: any) => {
-          const competition = event.competitions[0];
-          const homeComp = competition.competitors.find((c:any) => c.homeAway === 'home');
-          const awayComp = competition.competitors.find((c:any) => c.homeAway === 'away');
-          if (!homeComp || !awayComp) return null;
-          const homeScore = parseInt(homeComp.score || '0', 10);
-          const awayScore = parseInt(awayComp.score || '0', 10);
-          let winner: string | null = null;
-          if (homeScore > awayScore) winner = homeComp.team.displayName;
-          else if (awayScore > homeScore) winner = awayComp.team.displayName;
-          return {
-              id: parseInt(event.id, 10),
-              homeTeam: homeComp.team.displayName,
-              awayTeam: awayComp.team.displayName,
-              homeScore, awayScore, status: 'final', winner,
-              line: competition.odds?.[0]?.details,
-          };
-       }).filter((g: any) => g !== null);
-     } catch (error) {
-       console.error(`Failed to fetch historical game data for week ${week}, ${year}:`, error);
-       return [];
-     }
   }
 
   private getTrophyIcon(rank: 1 | 2 | 3): string {

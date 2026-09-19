@@ -1,6 +1,6 @@
 
 
-import { Component, ChangeDetectionStrategy, inject, signal, computed, effect, OnDestroy, Signal } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, signal, computed, effect, OnDestroy, Signal, untracked, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink, ParamMap } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -10,7 +10,7 @@ import { ScheduleComponent } from '../schedule/schedule.component';
 import { PodiumComponent } from '../podium/podium.component';
 import { GameService } from '../../services/game.service';
 import { DataService } from '../../services/data.service';
-import { AuthService } from '../../services/auth.service';
+import { AuthService, User } from '../../services/auth.service';
 import { PoolService } from '../../services/pool.service';
 import { Pool, Pick, Participant } from '../../models/pool.model';
 import { Game } from '../../models/game.model';
@@ -18,6 +18,7 @@ import { PoolStateService } from '../../services/pool-state.service';
 import { AchievementService } from '../../services/achievement.service';
 import { PlayoffBracketComponent } from '../playoff-bracket/playoff-bracket.component';
 import { PlayoffPicks } from '../../models/playoff.model';
+import { PoolHistoryService } from '../../services/pool-history.service';
 
 @Component({
   selector: 'app-pool',
@@ -35,10 +36,18 @@ export class PoolComponent implements OnDestroy {
   private poolService: PoolService = inject(PoolService);
   private poolStateService: PoolStateService = inject(PoolStateService);
   private achievementService: AchievementService = inject(AchievementService);
+  private readonly poolHistory = inject(PoolHistoryService);
+  private readonly processedWeeks = new Set<string>();
+  private readonly picksForm = viewChild(PicksComponent);
   
   poolId = signal<string | null>(null);
   pool = signal<Pool | null | undefined>(undefined); // undefined: loading, null: not found
   currentUser = this.authService.currentUser;
+  private readonly userId = computed(() => this.currentUser()?.uid);
+  private loadVersion = 0;
+  private destroyed = false;
+  isSubmitting = signal(false);
+  loadError = signal<string | null>(null);
   isScheduleDrawerOpen = signal(false);
   viewedWeek = signal<number | null>(null);
   showPodiumView = signal(false); // To toggle podium for historical weeks
@@ -74,7 +83,7 @@ export class PoolComponent implements OnDestroy {
     if (!pool) return false;
 
     const games = this.gameService.games();
-    const gamesLoadedForViewedWeek = this.gameService.gamesWeek() === this.viewedWeek();
+    const gamesLoadedForViewedWeek = this.gameService.gamesWeek() === this.viewedWeek() && this.gameService.gamesYear() === pool.year;
 
     if (!gamesLoadedForViewedWeek || games.length === 0) {
         return false;
@@ -98,7 +107,7 @@ export class PoolComponent implements OnDestroy {
       return false;
     }
     // For both pool types, we are ready when the games for the specific `viewedWeek` are loaded.
-    return this.gameService.gamesWeek() === this.viewedWeek() && !this.gameService.isLoading();
+    return this.gameService.gamesWeek() === this.viewedWeek() && this.gameService.gamesYear() === this.pool()?.year && !this.gameService.isLoading();
   });
 
   participantsForViewedWeek = computed<Participant[]>(() => {
@@ -114,14 +123,14 @@ export class PoolComponent implements OnDestroy {
 
   availableWeeks = computed<number[]>(() => {
     const p = this.pool();
-    const liveWeek = this.gameService.week();
+    const liveWeek = p?.year === this.gameService.year() ? this.gameService.week() : p?.week ?? this.gameService.week();
     
     if (!p || this.isCreatingPool()) {
         const viewed = this.viewedWeek();
         return viewed ? [viewed] : [];
     }
 
-    const historyWeeks = p.history ? Object.keys(p.history).map(Number) : [];
+    const historyWeeks = p.availableWeeks ?? (p.history ? Object.keys(p.history).map(Number) : []);
     const potentialWeeks = new Set([p.week, ...historyWeeks, liveWeek]);
     
     const filteredWeeks = [...potentialWeeks].filter(week => {
@@ -131,6 +140,7 @@ export class PoolComponent implements OnDestroy {
         }
         // For past weeks, only include them if they have participants.
         if (week < liveWeek) {
+            if (p.availableWeeks?.includes(week)) return true;
             const participantsForWeek = (p.week === week) ? p.participants : (p.history?.[week] ?? []);
             return participantsForWeek.length > 0;
         }
@@ -279,7 +289,9 @@ export class PoolComponent implements OnDestroy {
   weekConcluded = computed(() => {
     const games = this.gameService.games();
     // Week is concluded if there are games and all of them are final.
-    return games.length > 0 && games.every(g => g.status === 'final');
+    return !this.gameService.isLoading() && this.gameService.gamesWeek() === this.viewedWeek()
+      && this.gameService.gamesYear() === this.pool()?.year
+      && games.length > 0 && games.every(g => g.status === 'final');
   });
 
   weekInProgress = computed(() => {
@@ -336,8 +348,10 @@ export class PoolComponent implements OnDestroy {
     effect(() => {
         const id = this.paramMap()?.get('id');
         const liveWeek = this.gameService.week(); // Depend on liveWeek to prevent race condition
+        this.queryParamMap();
 
-        if (!this.currentUser()) {
+        if (!this.authService.authReady()) return;
+        if (!this.userId()) {
             this.router.navigate(['/']);
             return;
         }
@@ -346,10 +360,10 @@ export class PoolComponent implements OnDestroy {
           this.poolId.set(id);
           this.poolStateService.setCurrentPoolId(id);
           if (id === 'new') {
-              if (this.gameService.isLoading() || liveWeek <= 0) {
+              if (liveWeek <= 0) {
                 return;
               }
-              this.setupNewPool();
+              untracked(() => this.setupNewPool());
           } else {
               // Guard against running before the game service is initialized.
               if (liveWeek <= 0) {
@@ -357,22 +371,11 @@ export class PoolComponent implements OnDestroy {
               }
               this.isCreatingPool.set(false);
               this.newPoolData.set(null);
-              this.loadPoolData();
+              untracked(() => void this.loadPoolData());
           }
         } else {
             this.pool.set(null); // No ID, pool not found
         }
-    });
-
-    // Effect to sync viewedWeek from the URL, making it the single source of truth.
-    effect(() => {
-      const weekStr = this.queryParamMap()?.get('week');
-      if (weekStr) {
-        const week = Number(weekStr);
-        if (this.viewedWeek() !== week) {
-          this.viewedWeek.set(week);
-        }
-      }
     });
 
     // Effect 2: Fetches game data when viewedWeek changes for an EXISTING pool.
@@ -382,32 +385,26 @@ export class PoolComponent implements OnDestroy {
         const week = this.viewedWeek();
         const loadedGamesWeek = this.gameService.gamesWeek();
         
-        if (typeof week === 'number' && week > 0 && week !== loadedGamesWeek) {
-            this.gameService.loadSpecificWeek(week);
+        const year = this.pool()!.year;
+        if (typeof week === 'number' && week > 0 && (week !== loadedGamesWeek || year !== this.gameService.gamesYear())) {
+            untracked(() => this.gameService.loadSpecificWeek(week, year));
         }
     });
     
-    // Effect to redirect on logout
-    effect(() => {
-      if (!this.currentUser()) {
-        this.router.navigate(['/']);
-      }
-    });
-
-    // Keep locally calculated demo scores in the configured store for the active week.
+    // Scores are derived from the schedule. Updating them must not write to Firestore.
     effect(() => {
       const pool = this.pool();
       const leaderboard = this.leaderboardData();
       
-      if (pool && leaderboard.length > 0 && pool.participants.length > 0 && this.viewedWeek() === pool.week) {
+      if (pool && leaderboard.length > 0 && pool.participants.length > 0 && this.viewedWeek() === pool.week
+          && this.gameService.gamesWeek() === pool.week && this.gameService.gamesYear() === pool.year && !this.gameService.isLoading()) {
         const updatesNeeded = leaderboard.some(leaderboardParticipant => {
           const originalParticipant = pool.participants.find(p => p.userId === leaderboardParticipant.userId);
           return originalParticipant && originalParticipant.score !== leaderboardParticipant.score;
         });
         
         if (updatesNeeded) {
-          console.log('Scores have changed. Updating the demo store.');
-          this.updateScores(leaderboard);
+          this.updateLocalScores(leaderboard);
         }
       }
     });
@@ -417,7 +414,7 @@ export class PoolComponent implements OnDestroy {
       if (this.poolStateService.refreshRequested() > 0) {
         const id = this.poolId();
         if (id) {
-          this.loadPoolData();
+          untracked(() => void this.loadPoolData());
         }
       }
     });
@@ -429,17 +426,33 @@ export class PoolComponent implements OnDestroy {
       const viewedWeek = this.viewedWeek();
       
       if (this.weekConcluded() && pool && user && viewedWeek === pool.week) {
-        const finalParticipants = pool.participants;
-        const poolForAchievements: Pool = {
-          ...pool,
-          history: { ...pool.history, [viewedWeek]: finalParticipants }
-        };
-        this.achievementService.processAndNotifyForConcludedWeek(poolForAchievements, viewedWeek, user);
+        const key = `${pool.id}/${pool.year}/${viewedWeek}/${user.uid}`;
+        if (!this.processedWeeks.has(key)) {
+          this.processedWeeks.add(key);
+          untracked(() => void this.processConcludedWeek(pool.id, viewedWeek, user, key));
+        }
       }
     });
   }
 
+  private async processConcludedWeek(id: string, week: number, user: User, key: string) {
+    try {
+      const fullPool = await this.dataService.getPool(id);
+      if (!fullPool) return;
+      const scored = await this.poolHistory.withScores(fullPool);
+      if (this.destroyed) return;
+      await this.achievementService.processAndNotifyForConcludedWeek({
+        ...scored, history: { ...scored.history, [scored.week]: scored.participants },
+      }, week, user);
+    } catch (error) {
+      this.processedWeeks.delete(key);
+      console.error('Could not check concluded-week achievements.', error);
+    }
+  }
+
   ngOnDestroy(): void {
+    this.destroyed = true;
+    this.loadVersion++;
     this.poolStateService.setCurrentPoolId(null);
   }
 
@@ -482,37 +495,41 @@ export class PoolComponent implements OnDestroy {
     const id = this.poolId();
     if (!id || this.isCreatingPool()) return;
   
+    const version = ++this.loadVersion;
     this.pool.set(undefined); // Start loading
+    this.loadError.set(null);
   
     let poolData: Pool | null = null;
   
     try {
       const user = this.authService.currentUser();
-      if (user?.isGuest && user.photoUrl && !user.photoUrl.includes('data-is-default-avatar')) {
-        await this.dataService.updateParticipantPhotoUrl(id, user.uid, user.photoUrl);
-      }
-  
-      const delayPromise = new Promise(resolve => setTimeout(resolve, 1000));
-      const poolPromise = this.dataService.getPool(id);
-      let [_, fetchedPoolData] = await Promise.all([delayPromise, poolPromise]);
+      const queryWeek = Number(this.route.snapshot.queryParamMap.get('week'));
+      const readOptions = {
+        historyWeeks: Number.isInteger(queryWeek) && queryWeek > 0 && queryWeek <= 22 ? [queryWeek] : [],
+        includePreviousWeek: !queryWeek,
+      };
+      let fetchedPoolData = await this.dataService.getPool(id, readOptions);
+      if (this.destroyed || version !== this.loadVersion) return;
       
       const liveWeek = this.gameService.week();
       
       // Advance stale, empty, regular season pools to the current week.
-      if (fetchedPoolData && fetchedPoolData.type !== 'playoff' && fetchedPoolData.week < liveWeek && fetchedPoolData.participants.length === 0) {
+      if (fetchedPoolData && fetchedPoolData.year === this.gameService.year() && fetchedPoolData.ownerId === user?.uid && fetchedPoolData.type !== 'playoff' && fetchedPoolData.week < liveWeek && fetchedPoolData.participants.length === 0) {
           console.log(`Pool "${fetchedPoolData.name}" is on an empty past week (${fetchedPoolData.week}). Advancing to current week ${liveWeek}.`);
-          await this.dataService.archiveAndAdvanceWeek(id, fetchedPoolData, liveWeek, this.weekLockAt());
+          const games = await this.gameService.getWeekGames(liveWeek, fetchedPoolData.year);
+          await this.dataService.archiveAndAdvanceWeek(id, fetchedPoolData, liveWeek, this.weekLockAt(games));
           // After advancing, refetch the data before continuing.
-          fetchedPoolData = await this.dataService.getPool(id);
+          fetchedPoolData = await this.dataService.getPool(id, readOptions);
       }
 
       // Convert any regular season pool that is now in a playoff week to the playoff challenge format.
-      if (fetchedPoolData && fetchedPoolData.week > this.gameService.LAST_REGULAR_SEASON_WEEK && fetchedPoolData.type !== 'playoff') {
+      if (fetchedPoolData && fetchedPoolData.ownerId === user?.uid && fetchedPoolData.week > this.gameService.LAST_REGULAR_SEASON_WEEK && fetchedPoolData.type !== 'playoff') {
         console.warn(`Pool "${fetchedPoolData.name}" is a regular season pool active during the playoffs. Converting to a playoff challenge.`);
         await this.dataService.updatePoolType(id, 'playoff');
         // Re-fetch the data to get the updated type and ensure subsequent logic is correct.
-        fetchedPoolData = await this.dataService.getPool(id);
+        fetchedPoolData = await this.dataService.getPool(id, readOptions);
       }
+      if (this.destroyed || version !== this.loadVersion) return;
       
       poolData = fetchedPoolData;
   
@@ -528,7 +545,7 @@ export class PoolComponent implements OnDestroy {
         if (!weekFromQuery && poolData.type !== 'playoff') {
           let defaultWeek = poolData.week;
 
-          if (poolData.week < liveWeek) {
+          if (poolData.year === this.gameService.year() && poolData.week < liveWeek) {
             defaultWeek = liveWeek;
           } 
           else if (user) { 
@@ -550,25 +567,22 @@ export class PoolComponent implements OnDestroy {
           });
         } else {
             // For playoff pools or when week is in query, just set it.
-            this.viewedWeek.set(Number(weekFromQuery) || poolData.week);
+            this.viewedWeek.set(readOptions.historyWeeks[0] ?? poolData.week);
         }
       }
     } catch (error) {
       console.error('Failed to load pool data:', error);
+      if (this.destroyed || version !== this.loadVersion) return;
+      this.loadError.set('Could not load this pool. Check your connection and make sure you have joined with the invite code.');
     }
-  
-    const updateState = () => { this.pool.set(poolData); };
-  
-    if ((document as any).startViewTransition) {
-      (document as any).startViewTransition(updateState);
-    } else {
-      updateState();
-    }
+    if (!this.destroyed && version === this.loadVersion) this.pool.set(poolData);
   }
 
   async handlePicksSubmitted(submission: { picks: Pick[], tiebreaker: number }) {
     const id = this.poolId();
-    if (!id) return;
+    if (!id || this.isSubmitting()) return;
+    this.isSubmitting.set(true);
+    try {
 
     if (this.isCreatingPool()) {
       const newPoolInfo = this.newPoolData();
@@ -591,6 +605,7 @@ export class PoolComponent implements OnDestroy {
       });
 
       if (newPoolId) {
+        this.picksForm()?.clearSavedDraft();
         setTimeout(() => {
           this.router.navigate(['/pool', newPoolId], { replaceUrl: true });
         }, 0);
@@ -604,14 +619,25 @@ export class PoolComponent implements OnDestroy {
         await this.dataService.archiveAndAdvanceWeek(id, currentPool, viewedWeek, this.weekLockAt());
       }
       
-      await this.poolService.submitPicks(id, submission.picks, submission.tiebreaker);
-      this.loadPoolData();
+      const saved = await this.poolService.submitPicks(id, submission.picks, submission.tiebreaker, { year: currentPool.year, week: viewedWeek });
+      if (saved) {
+        this.picksForm()?.clearSavedDraft();
+        await this.loadPoolData();
+      }
+    }
+    } catch (error) {
+      console.error('Could not submit picks:', error);
+      alert(error instanceof Error ? error.message : 'Could not save picks. Please try again.');
+    } finally {
+      this.isSubmitting.set(false);
     }
   }
   
   async handlePlayoffPicksSubmitted(submission: { playoffPicks: PlayoffPicks, tiebreaker: number }) {
     const id = this.poolId();
-    if (!id) return;
+    if (!id || this.isSubmitting()) return;
+    this.isSubmitting.set(true);
+    try {
 
     if (this.isCreatingPool()) {
       const newPoolInfo = this.newPoolData();
@@ -638,8 +664,16 @@ export class PoolComponent implements OnDestroy {
         }, 0);
       }
     } else {
-      await this.poolService.submitPlayoffPicks(id, submission.playoffPicks, submission.tiebreaker);
-      this.loadPoolData();
+      const currentPool = this.pool();
+      if (!currentPool) return;
+      const saved = await this.poolService.submitPlayoffPicks(id, submission.playoffPicks, submission.tiebreaker, currentPool);
+      if (saved) await this.loadPoolData();
+    }
+    } catch (error) {
+      console.error('Could not submit playoff picks:', error);
+      alert(error instanceof Error ? error.message : 'Could not save picks. Please try again.');
+    } finally {
+      this.isSubmitting.set(false);
     }
   }
 
@@ -648,6 +682,10 @@ export class PoolComponent implements OnDestroy {
     const p = this.pool();
     const user = this.currentUser();
     if (!id || !p || !user) return;
+    if (p.ownerId && p.ownerId !== user.uid) {
+      alert('The pool owner needs to start the next week.');
+      return;
+    }
 
     try {
       const updatedParticipants = p.participants.map(participant => {
@@ -659,14 +697,15 @@ export class PoolComponent implements OnDestroy {
 
       const poolWithUpdatedFlag: Pool = { ...p, participants: updatedParticipants };
       const newWeek = p.week + 1;
-      await this.dataService.archiveAndAdvanceWeek(id, poolWithUpdatedFlag, newWeek, this.weekLockAt());
+      const nextGames = await this.gameService.getWeekGames(newWeek, p.year);
+      const lockAt = this.weekLockAt(nextGames);
+      await this.dataService.updateParticipants(id, updatedParticipants);
+      await this.dataService.archiveAndAdvanceWeek(id, poolWithUpdatedFlag, newWeek, lockAt);
       
       this.router.navigate([], {
         relativeTo: this.route,
         queryParams: { week: newWeek },
         queryParamsHandling: 'merge'
-      }).then(() => {
-        this.loadPoolData();
       });
     } catch (error) {
       console.error('Failed to start next week:', error);
@@ -705,7 +744,7 @@ export class PoolComponent implements OnDestroy {
             history[week] = participantsInHistory;
             
             this.pool.update(pool => pool ? { ...pool, history } : null);
-            await this.dataService.updatePoolHistory(p.id, history);
+            await this.dataService.updatePoolHistory(p.id, { [week]: participantsInHistory });
           }
         }
       } catch (error) {
@@ -731,8 +770,8 @@ export class PoolComponent implements OnDestroy {
     this.router.navigate(['/']);
   }
 
-  private weekLockAt(): string {
-    const startTimes = this.gameService.games()
+  private weekLockAt(games = this.gameService.games()): string {
+    const startTimes = games
       .map(game => Date.parse(game.startTime))
       .filter(time => Number.isFinite(time));
     if (startTimes.length === 0) {
@@ -741,10 +780,9 @@ export class PoolComponent implements OnDestroy {
     return new Date(Math.min(...startTimes)).toISOString();
   }
 
-  private async updateScores(leaderboard: LeaderboardParticipant[]): Promise<void> {
-    const poolId = this.poolId();
+  private updateLocalScores(leaderboard: LeaderboardParticipant[]): void {
     const currentPool = this.pool();
-    if (!poolId || !currentPool) return;
+    if (!currentPool) return;
 
     const updatedParticipants = currentPool.participants.map(p => {
         const leaderboardEntry = leaderboard.find(lp => lp.userId === p.userId);
@@ -754,16 +792,6 @@ export class PoolComponent implements OnDestroy {
         return p;
     });
 
-    try {
-        await this.dataService.updateParticipants(poolId, updatedParticipants);
-        this.pool.update(p => {
-          if (p) {
-            return { ...p, participants: updatedParticipants };
-          }
-          return p;
-        });
-    } catch (error) {
-        console.error('Failed to update scores in the demo store:', error);
-    }
+    this.pool.set({ ...currentPool, participants: updatedParticipants });
   }
 }

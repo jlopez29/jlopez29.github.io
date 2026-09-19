@@ -28,7 +28,7 @@ export class PicksComponent {
   picks = signal<Map<number, { winner: string, confidence: number | null }>>(new Map());
   tiebreaker = signal<number | null>(null);
 
-  private storageKey = computed(() => `nfl-pool-picks-${this.poolIdentifier()}-${this.week()}`);
+  private storageKey = computed(() => `nfl-pool-picks-${this.currentUser()?.uid}-${this.gameService.year()}-${this.poolIdentifier()}-${this.week()}`);
   private loadedFromStorage = signal(false);
 
   confidenceOptions = computed(() => {
@@ -47,10 +47,16 @@ export class PicksComponent {
   });
 
   isFormValid = computed(() => {
-    return this.picks().size === this.gameService.games().length &&
-           this.usedConfidenceValues().size === this.gameService.games().length &&
-           this.tiebreaker() !== null && this.tiebreaker()! >= 0 &&
-           [...this.picks().values()].every(p => p.winner !== '');
+    const games = this.gameService.games();
+    const tiebreaker = this.tiebreaker();
+    return games.length > 0 && this.picks().size === games.length &&
+      this.usedConfidenceValues().size === games.length &&
+      Number.isInteger(tiebreaker) && tiebreaker! >= 0 && tiebreaker! <= 500 &&
+      games.every(game => {
+        const pick = this.picks().get(game.id);
+        return pick && (pick.winner === game.homeTeam || pick.winner === game.awayTeam)
+          && Number.isInteger(pick.confidence) && pick.confidence! >= 1 && pick.confidence! <= games.length;
+      });
   });
 
   tiebreakerGame = computed(() => {
@@ -161,8 +167,16 @@ export class PicksComponent {
 
     this.picksSubmitted.emit({ picks: finalPicks, tiebreaker: this.tiebreaker() as number });
 
-    // Clean up local storage after submission
-    localStorage.removeItem(this.storageKey());
+    // Keep the draft until the parent confirms that the database accepted it.
+  }
+
+  clearSavedDraft(): void {
+    try {
+      localStorage.removeItem(this.storageKey());
+    } catch (error) {
+      // A browser storage failure must not turn a successful database save into an error.
+      console.warn('Could not clear the local picks draft.', error);
+    }
   }
 
   getGradient(awayTeamName: string, homeTeamName: string, winnerName?: string): string {

@@ -7,6 +7,7 @@ import { Pick, Participant } from '../models/pool.model';
 import { Pool } from '../models/pool.model';
 import { AchievementService } from './achievement.service';
 import { PlayoffPicks } from '../models/playoff.model';
+import { SubmissionWeek } from './data-store';
 
 interface CreatePoolOptions {
   poolName: string;
@@ -84,6 +85,7 @@ export class PoolService {
           options.poolName.trim(),
           options.inviteCode,
           initialParticipant,
+          options,
         );
         if (existingPoolId) return existingPoolId;
       } catch (joinError) {
@@ -137,6 +139,7 @@ export class PoolService {
           options.poolName.trim(),
           options.inviteCode,
           initialParticipant,
+          options,
         );
         if (existingPoolId) return existingPoolId;
       } catch (joinError) {
@@ -162,12 +165,12 @@ export class PoolService {
     this.router.navigate(['/pool', pool.id]);
   }
 
-  async submitPicks(poolId: string, picks: Pick[], tiebreaker: number): Promise<void> {
+  async submitPicks(poolId: string, picks: Pick[], tiebreaker: number, expectedWeek?: SubmissionWeek): Promise<boolean> {
     const currentUser = this.authService.currentUser();
     if (!currentUser) {
       alert('You are not signed in.');
       this.router.navigate(['/']);
-      return;
+      return false;
     }
 
     try {
@@ -179,21 +182,23 @@ export class PoolService {
         tiebreaker,
         score: 0,
         hasViewedPodium: false
-      });
+      }, expectedWeek);
       // Award achievement for submitting picks
       this.achievementService.checkAndAwardFirstDownAchievement(currentUser);
+      return true;
     } catch (error) {
       console.error('Failed to submit picks:', error);
       alert('Could not submit your picks. Please try again.');
+      return false;
     }
   }
 
-  async submitPlayoffPicks(poolId: string, playoffPicks: PlayoffPicks, tiebreaker: number): Promise<void> {
+  async submitPlayoffPicks(poolId: string, playoffPicks: PlayoffPicks, tiebreaker: number, expectedWeek?: SubmissionWeek): Promise<boolean> {
     const currentUser = this.authService.currentUser();
     if (!currentUser) {
       alert('You are not signed in.');
       this.router.navigate(['/']);
-      return;
+      return false;
     }
 
     try {
@@ -205,11 +210,13 @@ export class PoolService {
         tiebreaker,
         score: 0,
         hasViewedPodium: false
-      });
+      }, expectedWeek);
       this.achievementService.checkAndAwardFirstDownAchievement(currentUser);
+      return true;
     } catch (error) {
       console.error('Failed to submit playoff picks:', error);
       alert('Could not submit your picks. Please try again.');
+      return false;
     }
   }
 
@@ -217,6 +224,7 @@ export class PoolService {
     poolId: string,
     inviteCode: string,
     participant: Participant,
+    expectedWeek: SubmissionWeek,
   ): Promise<string | null> {
     const currentUser = this.authService.currentUser();
     if (!currentUser || !(await this.dataService.doesPoolExist(poolId))) return null;
@@ -224,7 +232,7 @@ export class PoolService {
     await this.dataService.joinPool(poolId, poolId, currentUser, inviteCode);
     await this.authService.addPoolToJoinedList({ id: poolId, name: poolId });
     this.authService.setLastVisitedPoolId(poolId);
-    await this.dataService.addParticipant(poolId, participant);
+    await this.dataService.addParticipant(poolId, participant, expectedWeek);
     this.achievementService.checkAndAwardFirstDownAchievement(currentUser);
     return poolId;
   }

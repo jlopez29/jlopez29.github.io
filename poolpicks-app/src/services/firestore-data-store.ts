@@ -5,6 +5,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -13,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { Participant, Pool } from '../models/pool.model';
 import type { User } from './auth.service';
-import { CreatePoolData, DataStore } from './data-store';
+import { CreatePoolData, DataStore, PoolReadOptions, SubmissionWeek } from './data-store';
 import { firebaseAuth, firestore } from './firebase-client';
 
 type PoolDocument = Omit<Pool, 'id' | 'participants' | 'history'> & {
@@ -83,7 +84,7 @@ export class FirestoreDataStore implements DataStore {
     });
   }
 
-  async getPool(id: string): Promise<Pool | null> {
+  async getPool(id: string, options: PoolReadOptions = {}): Promise<Pool | null> {
     this.requireAuth();
     const poolId = this.normalizePoolId(id);
     const snapshot = await getDoc(doc(firestore, 'pools', poolId));
@@ -91,14 +92,20 @@ export class FirestoreDataStore implements DataStore {
 
     const data = snapshot.data() as PoolDocument;
     const currentWeekId = this.weekId(data.year, data.week);
-    const participants = await this.readParticipants(poolId, currentWeekId);
+    const [participants, weeks] = await Promise.all([
+      this.readParticipants(poolId, currentWeekId),
+      getDocs(collection(firestore, 'pools', poolId, 'weeks')),
+    ]);
     const history: { [week: string]: Participant[] } = {};
-    const weeks = await getDocs(collection(firestore, 'pools', poolId, 'weeks'));
+    const availableWeeks: number[] = [data.week];
 
     await Promise.all(weeks.docs.map(async weekSnapshot => {
       if (weekSnapshot.id === currentWeekId) return;
-      const weekData = weekSnapshot.data() as { week?: number };
-      if (typeof weekData.week !== 'number') return;
+      const weekData = weekSnapshot.data() as { year?: number; week?: number };
+      if (weekData.year !== data.year || typeof weekData.week !== 'number') return;
+      availableWeeks.push(weekData.week);
+      if (options.historyWeeks && !options.historyWeeks.includes(weekData.week)
+        && !(options.includePreviousWeek && weekData.week === data.week - 1)) return;
       history[String(weekData.week)] = await this.readParticipants(poolId, weekSnapshot.id);
     }));
 
@@ -111,6 +118,7 @@ export class FirestoreDataStore implements DataStore {
       ownerId: data.ownerId,
       participants,
       history,
+      availableWeeks: availableWeeks.sort((a, b) => b - a),
     };
   }
 
@@ -125,22 +133,21 @@ export class FirestoreDataStore implements DataStore {
 
   async updateParticipants(poolId: string, participants: Participant[]): Promise<void> {
     const authUser = this.requireAuth();
-    const pool = await this.getPool(poolId);
+    const pool = await this.getPoolMetadata(poolId);
     if (!pool) throw new Error('Pool not found.');
     const ownParticipant = participants.find(item => item.userId === authUser.uid);
     if (!ownParticipant) return;
 
-    await setDoc(
+    await updateDoc(
       doc(firestore, 'pools', pool.id, 'weeks', this.weekId(pool.year, pool.week), 'submissions', authUser.uid),
-      this.toSubmission(ownParticipant),
-      { merge: true },
+      { hasViewedPodium: ownParticipant.hasViewedPodium ?? false, updatedAt: serverTimestamp() },
     );
   }
 
   async updateParticipantPhotoUrl(poolId: string, userId: string, photoUrl: string): Promise<void> {
     const authUser = this.requireAuth();
     if (authUser.uid !== userId) throw new Error('You may only update your own profile.');
-    const pool = await this.getPool(poolId);
+    const pool = await this.getPoolMetadata(poolId);
     if (!pool) return;
 
     const batch = writeBatch(firestore);
@@ -154,16 +161,27 @@ export class FirestoreDataStore implements DataStore {
       'submissions',
       userId,
     );
-    if ((await getDoc(memberRef)).exists()) batch.update(memberRef, { photoUrl });
-    if ((await getDoc(submissionRef)).exists()) batch.update(submissionRef, { photoUrl, updatedAt: serverTimestamp() });
-    await batch.commit();
+    const [member, submission] = await Promise.all([getDoc(memberRef), getDoc(submissionRef)]);
+    let changed = false;
+    if (member.exists() && member.data()['photoUrl'] !== photoUrl) {
+      batch.update(memberRef, { photoUrl });
+      changed = true;
+    }
+    if (submission.exists() && submission.data()['photoUrl'] !== photoUrl) {
+      batch.update(submissionRef, { photoUrl, updatedAt: serverTimestamp() });
+      changed = true;
+    }
+    if (changed) await batch.commit();
   }
 
-  async addParticipant(poolId: string, participant: Participant): Promise<void> {
+  async addParticipant(poolId: string, participant: Participant, expectedWeek?: SubmissionWeek): Promise<void> {
     const authUser = this.requireAuth();
     if (participant.userId !== authUser.uid) throw new Error('You may only submit your own picks.');
-    const pool = await this.getPool(poolId);
+    const pool = await this.getPoolMetadata(poolId);
     if (!pool) throw new Error('Pool not found.');
+    if (expectedWeek && (pool.week !== expectedWeek.week || pool.year !== expectedWeek.year)) {
+      throw new Error('The pool has moved to another week. Refresh before submitting your picks.');
+    }
 
     await setDoc(
       doc(firestore, 'pools', pool.id, 'weeks', this.weekId(pool.year, pool.week), 'submissions', authUser.uid),
@@ -174,19 +192,29 @@ export class FirestoreDataStore implements DataStore {
 
   async archiveAndAdvanceWeek(poolId: string, currentPool: Pool, newWeek: number, lockAt: string): Promise<void> {
     const authUser = this.requireAuth();
-    if (currentPool.ownerId !== authUser.uid) return;
+    if (currentPool.ownerId !== authUser.uid) throw new Error('Only the pool owner can start the next week.');
+    if (!Number.isInteger(newWeek) || newWeek <= currentPool.week || newWeek > 22) {
+      throw new Error('The next week must be later in the same season.');
+    }
     const poolRef = doc(firestore, 'pools', this.normalizePoolId(poolId));
     const nextWeekRef = doc(firestore, 'pools', this.normalizePoolId(poolId), 'weeks', this.weekId(currentPool.year, newWeek));
-    const batch = writeBatch(firestore);
-    batch.update(poolRef, { week: newWeek, updatedAt: serverTimestamp() });
-    batch.set(nextWeekRef, {
-      year: currentPool.year,
-      week: newWeek,
-      type: currentPool.type ?? 'regular',
-      lockAt: Timestamp.fromDate(new Date(lockAt)),
-      createdAt: serverTimestamp(),
-    }, { merge: true });
-    await batch.commit();
+    await runTransaction(firestore, async transaction => {
+      const snapshot = await transaction.get(poolRef);
+      const nextWeek = await transaction.get(nextWeekRef);
+      const latest = snapshot.data() as PoolDocument | undefined;
+      if (!latest || latest.ownerId !== authUser.uid || latest.year !== currentPool.year) {
+        throw new Error('The pool has changed. Please refresh.');
+      }
+      if (latest.week >= newWeek) return; // Another tab already advanced it; never rewind.
+      transaction.update(poolRef, { week: newWeek, updatedAt: serverTimestamp() });
+      if (!nextWeek.exists()) transaction.set(nextWeekRef, {
+        year: currentPool.year,
+        week: newWeek,
+        type: currentPool.type ?? 'regular',
+        lockAt: Timestamp.fromDate(new Date(lockAt)),
+        createdAt: serverTimestamp(),
+      });
+    });
   }
 
   async updatePoolType(poolId: string, type: 'regular' | 'playoff'): Promise<void> {
@@ -198,17 +226,16 @@ export class FirestoreDataStore implements DataStore {
 
   async updatePoolHistory(poolId: string, history: { [week: string]: Participant[] }): Promise<void> {
     const authUser = this.requireAuth();
-    const pool = await this.getPool(poolId);
+    const pool = await this.getPoolMetadata(poolId);
     if (!pool) throw new Error('Pool not found.');
 
     const writes: Promise<void>[] = [];
     for (const [week, participants] of Object.entries(history)) {
       const ownParticipant = participants.find(item => item.userId === authUser.uid);
       if (!ownParticipant) continue;
-      writes.push(setDoc(
+      writes.push(updateDoc(
         doc(firestore, 'pools', pool.id, 'weeks', this.weekId(pool.year, Number(week)), 'submissions', authUser.uid),
-        this.toSubmission(ownParticipant),
-        { merge: true },
+        { hasViewedPodium: ownParticipant.hasViewedPodium ?? false, updatedAt: serverTimestamp() },
       ));
     }
     await Promise.all(writes);
@@ -224,10 +251,8 @@ export class FirestoreDataStore implements DataStore {
   async removeParticipant(poolId: string, userId: string): Promise<void> {
     const authUser = this.requireAuth();
     if (authUser.uid !== userId) throw new Error('You may only remove yourself from a pool.');
-    const pool = await this.getPool(poolId);
-    if (!pool) return;
     // Submitted picks remain immutable even when someone leaves and later rejoins.
-    await deleteDoc(doc(firestore, 'pools', pool.id, 'members', userId));
+    await deleteDoc(doc(firestore, 'pools', this.normalizePoolId(poolId), 'members', userId));
   }
 
   async getUser(userId: string): Promise<User | null> {
@@ -240,7 +265,8 @@ export class FirestoreDataStore implements DataStore {
     const authUser = this.requireAuth();
     if (authUser.uid !== user.uid) throw new Error('You may only update your own profile.');
 
-    await setDoc(doc(firestore, 'users', user.uid), user, { merge: true });
+    // Replace supplied top-level maps: recursive merge would resurrect removed pools.
+    await setDoc(doc(firestore, 'users', user.uid), user, { mergeFields: Object.keys(user) });
   }
 
   async logError(component: string, errorData: unknown): Promise<void> {
@@ -251,6 +277,12 @@ export class FirestoreDataStore implements DataStore {
     this.requireAuth();
     const snapshots = await getDocs(collection(firestore, 'pools', poolId, 'weeks', weekId, 'submissions'));
     return snapshots.docs.map(snapshot => this.fromSubmission(snapshot.id, snapshot.data() as Participant));
+  }
+
+  private async getPoolMetadata(id: string): Promise<(PoolDocument & { id: string }) | null> {
+    this.requireAuth();
+    const snapshot = await getDoc(doc(firestore, 'pools', this.normalizePoolId(id)));
+    return snapshot.exists() ? { ...snapshot.data() as PoolDocument, id: snapshot.id } : null;
   }
 
   private fromSubmission(userId: string, data: Participant): Participant {

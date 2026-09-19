@@ -44,7 +44,7 @@
             <div>
               <h2 class="text-2xl sm:text-3xl font-bold text-white">
                 Picks for 
-                <a [routerLink]="['/pool', poolId(), 'stats', p.displayName]" [queryParams]="{ week: viewedWeek() }" class="text-cyan-400 hover:underline" title="View Player Stats">
+                <a [routerLink]="['/pool', poolId(), 'stats', p.displayName]" [queryParams]="{ week: viewedWeek(), uid: p.userId }" class="text-cyan-400 hover:underline" title="View Player Stats">
                   {{ p.displayName }}
                 </a>
               </h2>

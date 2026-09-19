@@ -1,5 +1,6 @@
 
-import { Component, ChangeDetectionStrategy, inject, signal, computed, effect, OnDestroy } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, signal, computed, effect, OnDestroy, untracked } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { GameService } from '../../services/game.service';
@@ -47,6 +48,11 @@ export class ParticipantPicksComponent implements OnDestroy {
   viewedWeek = signal<number | null>(null);
 
   pool = signal<Pool | null | undefined>(undefined);
+  private readonly params = toSignal(this.route.paramMap);
+  private readonly query = toSignal(this.route.queryParamMap);
+  private readonly userId = computed(() => this.authService.currentUser()?.uid);
+  private loadVersion = 0;
+  private destroyed = false;
 
   isPlayoffPool = computed(() => this.pool()?.type === 'playoff');
 
@@ -57,12 +63,14 @@ export class ParticipantPicksComponent implements OnDestroy {
 
     const week = this.viewedWeek();
     if (week === null) return null;
+    const uid = this.query()?.get('uid');
+    const matches = (part: Participant) => uid ? part.userId === uid : part.displayName === name;
 
     // Check current participants first, then history.
     if (p.week === week) {
-      return p.participants.find(part => part.displayName === name) || null;
+      return p.participants.find(matches) || null;
     }
-    return p.history?.[week]?.find(part => part.displayName === name) || null;
+    return p.history?.[week]?.find(matches) || null;
   });
 
   picksWithGameDetails = computed<PickWithGame[]>(() => {
@@ -128,39 +136,28 @@ export class ParticipantPicksComponent implements OnDestroy {
   });
 
   constructor() {
-    if (!this.authService.currentUser()) {
-      this.router.navigate(['/']);
-      return;
-    }
-
-    // Subscribe to query params to get the week, which determines which games to load.
-    this.route.queryParamMap.subscribe(params => {
-      const weekStr = params.get('week');
-      if (weekStr) {
-        const week = Number(weekStr);
-        this.viewedWeek.set(week);
-        // FIX: Check against the week of the currently loaded games, not the overall current week of the season.
-        if (this.gameService.gamesWeek() !== week) {
-          this.gameService.loadSpecificWeek(week);
-        }
+    effect(() => {
+      if (!this.authService.authReady()) return;
+      if (!this.userId()) {
+        this.router.navigate(['/']);
+        return;
       }
-    });
-    
-    const id = this.route.snapshot.paramMap.get('id');
-    const name = this.route.snapshot.paramMap.get('name');
-    
-    if (id && name) {
+      const id = this.params()?.get('id');
+      const name = this.params()?.get('name');
+      const week = Number(this.query()?.get('week'));
+      if (!id || !name) { this.pool.set(null); return; }
       this.poolId.set(id);
       this.participantName.set(name);
+      this.viewedWeek.set(Number.isInteger(week) && week > 0 && week <= 22 ? week : null);
       this.poolStateService.setCurrentPoolId(id);
-      this.loadPoolData(id);
-    } else {
-      this.pool.set(null);
-    }
+      untracked(() => void this.loadPoolData(id));
+    });
 
     effect(() => {
-      if (!this.authService.currentUser()) {
-        this.router.navigate(['/']);
+      const week = this.viewedWeek();
+      const year = this.pool()?.year;
+      if (week && year && (this.gameService.gamesWeek() !== week || this.gameService.gamesYear() !== year)) {
+        untracked(() => this.gameService.loadSpecificWeek(week, year));
       }
     });
 
@@ -168,46 +165,34 @@ export class ParticipantPicksComponent implements OnDestroy {
       if (this.poolStateService.refreshRequested() > 0) {
         const id = this.poolId();
         if (id) {
-          this.loadPoolData(id);
+          untracked(() => void this.loadPoolData(id));
         }
       }
     });
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+    this.loadVersion++;
     this.poolStateService.setCurrentPoolId(null);
   }
 
   async loadPoolData(poolId: string) {
+    const version = ++this.loadVersion;
     this.pool.set(undefined); // loading
   
     let poolData: Pool | null = null;
     try {
-      const user = this.authService.currentUser();
-      // Only sync guest avatar to DB if it's a custom one, not a default.
-      if (user?.isGuest && user.photoUrl && !user.photoUrl.includes('data-is-default-avatar')) {
-        await this.dataService.updateParticipantPhotoUrl(poolId, user.uid, user.photoUrl);
-      }
-  
-      // Add a minimum delay to appreciate the shimmer effect
-      const delayPromise = new Promise(resolve => setTimeout(resolve, 1000));
-      const poolPromise = this.dataService.getPool(poolId);
-      const [_, fetchedPoolData] = await Promise.all([delayPromise, poolPromise]);
-      poolData = fetchedPoolData;
+      const week = this.viewedWeek();
+      poolData = await this.dataService.getPool(poolId, { historyWeeks: week ? [week] : [] });
     } catch (error) {
       console.error('Failed to load participant picks data:', error);
       // poolData will remain null, signaling an error state to the UI.
     }
   
-    const updateState = () => {
+    if (!this.destroyed && version === this.loadVersion) {
+      if (!this.viewedWeek() && poolData) this.viewedWeek.set(poolData.week);
       this.pool.set(poolData);
-    };
-  
-    // Use View Transitions API for a smooth cross-fade from skeleton to content.
-    if ((document as any).startViewTransition) {
-      (document as any).startViewTransition(updateState);
-    } else {
-      updateState();
     }
   }
 

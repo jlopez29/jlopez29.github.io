@@ -12,6 +12,14 @@ export interface CreatePoolData {
   lockAt: string;
 }
 
+/** Omit historyWeeks for a complete archive (stats); pass [] for the active week only. */
+export interface PoolReadOptions {
+  historyWeeks?: number[];
+  includePreviousWeek?: boolean;
+}
+
+export interface SubmissionWeek { year: number; week: number; }
+
 /**
  * The persistence contract used by the UI.
  *
@@ -22,12 +30,12 @@ export interface CreatePoolData {
 export interface DataStore {
   createPool(data: CreatePoolData): Promise<string>;
   joinPool(poolId: string, poolName: string, user: User, inviteCode: string): Promise<void>;
-  getPool(id: string): Promise<Pool | null>;
+  getPool(id: string, options?: PoolReadOptions): Promise<Pool | null>;
   doesPoolExist(id: string): Promise<boolean>;
   getCreatePoolOverride(): Promise<boolean>;
   updateParticipants(poolId: string, participants: Participant[]): Promise<void>;
   updateParticipantPhotoUrl(poolId: string, userId: string, photoUrl: string): Promise<void>;
-  addParticipant(poolId: string, participant: Participant): Promise<void>;
+  addParticipant(poolId: string, participant: Participant, expectedWeek?: SubmissionWeek): Promise<void>;
   archiveAndAdvanceWeek(poolId: string, currentPool: Pool, newWeek: number, lockAt: string): Promise<void>;
   updatePoolType(poolId: string, type: 'regular' | 'playoff'): Promise<void>;
   updatePoolHistory(poolId: string, history: { [week: string]: Participant[] }): Promise<void>;

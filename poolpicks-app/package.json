@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test": "node --test tests/*.test.mjs",
     "dev": "ng serve",
     "build": "ng build --base-href /poolpicks/",
     "build:deploy": "ng build --configuration github-pages",

@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { Participant, Pool } from '../models/pool.model';
 import type { User } from './auth.service';
-import { CreatePoolData, DATA_STORE, DataStore } from './data-store';
+import { CreatePoolData, DATA_STORE, DataStore, PoolReadOptions, SubmissionWeek } from './data-store';
 
 /** Stable application-facing facade over whichever persistence adapter is configured. */
 @Injectable({ providedIn: 'root' })
@@ -10,12 +10,12 @@ export class DataService implements DataStore {
 
   createPool(data: CreatePoolData) { return this.store.createPool(data); }
   joinPool(poolId: string, poolName: string, user: User, inviteCode: string) { return this.store.joinPool(poolId, poolName, user, inviteCode); }
-  getPool(id: string) { return this.store.getPool(id); }
+  getPool(id: string, options?: PoolReadOptions) { return this.store.getPool(id, options); }
   doesPoolExist(id: string) { return this.store.doesPoolExist(id); }
   getCreatePoolOverride() { return this.store.getCreatePoolOverride(); }
   updateParticipants(poolId: string, participants: Participant[]) { return this.store.updateParticipants(poolId, participants); }
   updateParticipantPhotoUrl(poolId: string, userId: string, photoUrl: string) { return this.store.updateParticipantPhotoUrl(poolId, userId, photoUrl); }
-  addParticipant(poolId: string, participant: Participant) { return this.store.addParticipant(poolId, participant); }
+  addParticipant(poolId: string, participant: Participant, expectedWeek?: SubmissionWeek) { return this.store.addParticipant(poolId, participant, expectedWeek); }
   archiveAndAdvanceWeek(poolId: string, currentPool: Pool, newWeek: number, lockAt: string) { return this.store.archiveAndAdvanceWeek(poolId, currentPool, newWeek, lockAt); }
   updatePoolType(poolId: string, type: 'regular' | 'playoff') { return this.store.updatePoolType(poolId, type); }
   updatePoolHistory(poolId: string, history: { [week: string]: Participant[] }) { return this.store.updatePoolHistory(poolId, history); }

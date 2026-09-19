@@ -74,7 +74,7 @@
         @for (participant of leaderboard(); track participant.userId; let i = $index) {
           <tr class="border-b border-gray-700 last:border-0 cursor-pointer animate-fade-in-up transition-colors"
               [style.animation-delay]="i * 50 + 'ms'"
-              (click)="viewPicks(participant.displayName)"
+              (click)="viewPicks(participant)"
               [class.bg-yellow-900/40]="i === 0"
               [class.bg-slate-600/50]="i === 1"
               [class.bg-orange-900/50]="i === 2"

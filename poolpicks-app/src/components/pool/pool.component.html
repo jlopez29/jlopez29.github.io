@@ -41,8 +41,11 @@
   </div>
 } @else if (pool() === null) {
   <div class="text-center">
-    <h2 class="text-3xl font-bold text-red-500 mb-4">Pool Not Found</h2>
-    <p class="text-gray-300">The pool ID in the URL does not exist. Please check the code or link.</p>
+    <h2 class="text-3xl font-bold text-red-500 mb-4">{{ loadError() ? 'Unable to Load Pool' : 'Pool Not Found' }}</h2>
+    <p class="text-gray-300" role="alert">{{ loadError() ?? 'The pool ID in the URL does not exist. Please check the code or link.' }}</p>
+    @if (loadError()) {
+      <button (click)="loadPoolData()" class="mt-4 bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Try Again</button>
+    }
     <a routerLink="/" class="mt-6 inline-block bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg">
       Go to Home
     </a>
@@ -131,7 +134,10 @@
               </app-podium>
             </div>
           } @else if (isPickingOpen() && !userHasSubmitted()) {
-            <div class="max-w-4xl mx-auto">
+            <fieldset [disabled]="isSubmitting()" [attr.aria-busy]="isSubmitting()" class="max-w-4xl mx-auto min-w-0">
+              @if (isSubmitting()) {
+                <p role="status" class="text-center text-cyan-300 mb-3">Saving your picks…</p>
+              }
               @if (isPlayoffPool()) {
                 <app-playoff-bracket (playoffPicksSubmitted)="handlePlayoffPicksSubmitted($event)"></app-playoff-bracket>
               } @else {
@@ -142,7 +148,7 @@
                   (viewSchedule)="toggleScheduleDrawer(true)">
                 </app-picks>
               }
-            </div>
+            </fieldset>
           } @else {
             <div class="max-w-4xl mx-auto">
                 <app-leaderboard 

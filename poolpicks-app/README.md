@@ -147,6 +147,33 @@ validated server-side; the current setup is designed for the trusted AFCU group.
 
 ## Development
 
+Run the isolated regression suite (no live Firebase access):
+
+```bash
+npm test
+```
+
+Tests cover Firestore SDK read/write calls, selected-week loading, stale submissions,
+safe week advancement, request cancellation, profile-write serialization, and scoring.
+These are mocked unit tests, not a replacement for testing deployed rules or a
+two-browser smoke test against the configured project.
+
+### Read/write optimizations
+
+Pool and pick screens load the active week plus the requested historical week;
+they no longer download every week's submissions. The initial podium check may
+also load the previous week. Stats, trophies, and concluded-week awards still
+load the archive when needed. Scores are calculated from ESPN results in memory.
+Opening pages does not write avatars or scores. Avatar changes only write changed
+documents; podium updates only write the flag for the affected week.
+
+No collection migration, backend deployment, or rules change is required for this
+optimization pass. Existing members, invites, and submissions remain unchanged.
+Only the pool owner can advance weeks; the new deadline uses that week's schedule.
+Drafts are now scoped by user and season, and remain saved until submission succeeds.
+
+### Commands
+
 ```bash
 npm install
 npm run dev
@@ -167,7 +194,7 @@ npm run build:deploy
 Validate Firestore rules locally:
 
 ```bash
-npx firebase-tools emulators:exec --only firestore --project demo-poolpicks "true"
+env -u DEBUG npx firebase-tools emulators:exec --only firestore --project demo-poolpicks "true"
 ```
 
 The local-storage adapter remains in `src/services/local-storage-data-store.ts`

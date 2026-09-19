@@ -3,7 +3,7 @@
 
 
 
-import { Component, ChangeDetectionStrategy, inject, signal, computed, effect } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, signal, computed, effect, untracked, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { PoolService } from '../../services/pool.service';
@@ -35,6 +35,8 @@ export class HomeComponent {
   private router: Router = inject(Router);
   private route: ActivatedRoute = inject(ActivatedRoute);
   private dataService: DataService = inject(DataService);
+  private readonly userId = computed(() => this.authService.currentUser()?.uid);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Guest sign-in
   guestName = signal('');
@@ -66,8 +68,7 @@ export class HomeComponent {
     }
     const games = this.gameService.games();
 
-    // The view waits for `isCheckingOverride` to be false, which has a 1s delay,
-    // so `gameService` should be done loading. This check handles edge cases.
+    // Do not offer creation until the schedule request has completed.
     if (this.gameService.isLoading()) {
       return false;
     }
@@ -93,12 +94,12 @@ export class HomeComponent {
         this.isInitializing.set(true);
         return;
       }
-      const user = this.authService.currentUser();
-      if (user) {
-        // Defer initialization to the next macrotask to prevent a race condition
-        // with Angular's View Transitions API on initial app load. This ensures
-        // the home view is stable before any automatic navigation occurs.
-        setTimeout(() => this.initializeApp());
+      if (this.userId()) {
+        untracked(() => void this.initializeApp().catch(error => {
+          console.error('Could not initialize the main menu.', error);
+          this.isInitializing.set(false);
+          this.joinError.set('Could not load your pools. Please refresh and try again.');
+        }));
       } else {
         // No user, so initialization is complete.
         this.isInitializing.set(false);
@@ -108,6 +109,10 @@ export class HomeComponent {
         this.joinIdentifierError.set(null);
         this.joinIdentifier.set('');
       }
+    });
+    effect(() => {
+      const pools = this.authService.currentUser()?.joinedPools ?? {};
+      this.joinedPools.set(Object.entries(pools).map(([id, name]) => ({ id, name })));
     });
   }
 
@@ -119,6 +124,7 @@ export class HomeComponent {
     const lastPoolId = this.authService.getLastVisitedPoolId();
     if (lastPoolId && !this.router.navigated) {
       const exists = await this.dataService.doesPoolExist(lastPoolId);
+      if (this.destroyRef.destroyed) return;
       if (exists) {
         this.router.navigate(['/pool', lastPoolId]);
         // We are navigating away, so keep the loader on and don't continue to load home page data.
@@ -131,6 +137,7 @@ export class HomeComponent {
 
     // If not redirecting, proceed to load the home page content.
     const pools = await this.authService.getJoinedPools();
+    if (this.destroyRef.destroyed) return;
     this.joinedPools.set(pools);
     this.isInitializing.set(false);
   }

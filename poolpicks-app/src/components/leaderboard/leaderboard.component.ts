@@ -38,9 +38,9 @@ export class LeaderboardComponent {
 
   currentUser = this.authService.currentUser;
 
-  viewPicks(name: string): void {
-    this.router.navigate(['/pool', this.poolId(), 'picks', name], { 
-      queryParams: { week: this.viewedWeek() } 
+  viewPicks(participant: Participant): void {
+    this.router.navigate(['/pool', this.poolId(), 'picks', participant.displayName], {
+      queryParams: { week: this.viewedWeek(), uid: participant.userId }
     });
   }
 }

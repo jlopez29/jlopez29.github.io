@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Participant, Pool } from '../models/pool.model';
 import type { User } from './auth.service';
-import { CreatePoolData, DataStore } from './data-store';
+import { CreatePoolData, DataStore, SubmissionWeek } from './data-store';
 
 const POOLS_KEY = 'poolpicks-demo-v1-pools';
 const USERS_KEY = 'poolpicks-demo-v1-users';
@@ -65,8 +65,11 @@ export class LocalStorageDataStore implements DataStore {
     }));
   }
 
-  async addParticipant(poolId: string, participant: Participant): Promise<void> {
+  async addParticipant(poolId: string, participant: Participant, expectedWeek?: SubmissionWeek): Promise<void> {
     this.updatePool(poolId, pool => {
+      if (expectedWeek && (pool.year !== expectedWeek.year || pool.week !== expectedWeek.week)) {
+        throw new Error('The pool has moved to another week. Refresh before submitting your picks.');
+      }
       const participants = [...pool.participants];
       const index = participants.findIndex(item => item.userId === participant.userId);
       if (index >= 0) participants[index] = this.clone(participant);
@@ -92,7 +95,7 @@ export class LocalStorageDataStore implements DataStore {
   }
 
   async updatePoolHistory(poolId: string, history: { [week: string]: Participant[] }): Promise<void> {
-    this.updatePool(poolId, pool => ({ ...pool, history: this.clone(history) }));
+    this.updatePool(poolId, pool => ({ ...pool, history: { ...pool.history, ...this.clone(history) } }));
   }
 
   async getAllPools(): Promise<Pool[]> {

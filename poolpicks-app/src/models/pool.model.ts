@@ -26,6 +26,8 @@ export interface Pool {
   year: number;
   participants: Participant[];
   history?: { [week: string]: Participant[] };
+  availableWeeks?: number[];
+  concludedWeeks?: number[];
   type?: 'regular' | 'playoff';
   ownerId?: string;
 }
