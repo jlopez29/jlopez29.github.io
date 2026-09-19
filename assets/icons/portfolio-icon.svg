@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="JL">
+  <defs>
+    <linearGradient id="background" x1="72" y1="40" x2="448" y2="472" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22334f"/>
+      <stop offset="1" stop-color="#171221"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="132" y1="112" x2="390" y2="400" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9bb8ff"/>
+      <stop offset="1" stop-color="#c48cf0"/>
+    </linearGradient>
+    <filter id="shadow" x="80" y="80" width="352" height="352" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#05030a" flood-opacity=".36"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="108" fill="url(#background)"/>
+  <circle cx="256" cy="256" r="156" fill="url(#mark)" filter="url(#shadow)"/>
+  <circle cx="256" cy="256" r="139" fill="#151120" fill-opacity=".94" stroke="#eef2ff" stroke-opacity=".14" stroke-width="2"/>
+  <path d="M197 169v108c0 50-25 76-73 76h-8v-43h8c20 0 29-10 29-34V169h44Zm36 0h45v139h118v45H233V169Z" fill="#f7f9ff"/>
+  <path d="M120 383h272" stroke="url(#mark)" stroke-width="10" stroke-linecap="round"/>
+</svg>
