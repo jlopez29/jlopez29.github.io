@@ -10,6 +10,7 @@ other apps. There is no repository-wide package install or build step.
 
 | Project | Description | Source / documentation | Site path |
 | --- | --- | --- | --- |
+| Neon House | Casino tycoon prototype with a shared craps simulation and walkable player mode | [casino-godot/](casino-godot/README.md) | `/casino/` |
 | Portfolio | Project showcase with responsive navigation and light/dark themes | [index.html](index.html), [home.css](home.css) | `/` |
 | PoolPicks | NFL confidence picks, weekly leaderboards, playoff picks, and achievements; currently configured for the private AFCU group | [poolpicks-app/](poolpicks-app/README.md) | `/poolpicks/` |
 | LoL IQ | League of Legends training games, champion scouting, and guided lessons | [loliq/](loliq/README.md) | `/loliq/` |
@@ -24,6 +25,8 @@ other apps. There is no repository-wide package install or build step.
 ├── home.css            # Portfolio styles
 ├── favicon.ico
 ├── profile.png
+├── casino-godot/       # Editable Godot / GDScript casino prototype
+├── casino/             # Generated web game plus its static wrapper
 ├── loliq/              # Editable static app and curriculum
 ├── panre/              # Editable static app and practice content
 ├── wordxchange/        # Editable static word game
@@ -74,6 +77,15 @@ development rebuilding; it does not update the deployable `poolpicks/` directory
 not automatically connected to an emulator, so signing in or submitting picks
 can affect real data. Review [PoolPicks setup](poolpicks-app/README.md) before
 testing against Firebase.
+
+## Neon House development
+
+Open `casino-godot/project.godot` in Godot 4.7.2 standard edition (no .NET
+required). The game uses GDScript and the Compatibility renderer, with a
+single-threaded web export suitable for GitHub Pages. Run and export instructions,
+controls, and prototype limitations are in [the game README](casino-godot/README.md).
+Edit the game in `casino-godot/`, then regenerate the game files in `casino/`.
+The checked-in `casino/index.html` wrapper is maintained separately.
 
 ## Test and build PoolPicks
 
