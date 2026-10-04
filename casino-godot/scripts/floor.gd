@@ -11,6 +11,7 @@ var rotated := false
 var selected := 1
 var preview := Vector2(-100, -100)
 var move_target := Vector2(-1, -1)
+var walk_path: Array = []
 var zoom := 1.0
 var camera := Vector2.ZERO
 var pulse := 0.0
@@ -43,11 +44,13 @@ func _process(delta: float) -> void:
 	if sim == null:
 		return
 	pulse += delta
-	zoom = lerpf(zoom, 1.32 if visitor_mode else 1.0, minf(1, delta * 6))
-	var desired := size / 2 - sim.player * zoom if visitor_mode else Vector2.ZERO
-	desired.x = clampf(desired.x, size.x - 850 * zoom, 0)
-	desired.y = clampf(desired.y, size.y - 610 * zoom, 0)
-	camera = camera.lerp(desired, minf(1, delta * 6))
+	var fit := minf(size.x / 850.0, size.y / 610.0)
+	zoom = lerpf(zoom, fit * (1.32 if visitor_mode else 1.0), minf(1, delta * 8))
+	var desired := size / 2 - sim.player * zoom if visitor_mode else (size - Vector2(850, 610) * zoom) / 2
+	for axis in [0, 1]:
+		var extent: float = Vector2(850, 610)[axis] * zoom
+		desired[axis] = clampf(desired[axis], size[axis] - extent, 0) if extent > size[axis] else (size[axis] - extent) / 2
+	camera = camera.lerp(desired, minf(1, delta * 8))
 	if visitor_mode and sim.joined < 0:
 		var dir := Vector2.ZERO
 		if not get_viewport().gui_get_focus_owner() is LineEdit:
@@ -55,11 +58,16 @@ func _process(delta: float) -> void:
 			dir.y = float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)) - float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP))
 		if dir.length() > 0:
 			move_target = Vector2(-1, -1)
+			walk_path.clear()
 		elif move_target.x >= 0:
-			dir = move_target - sim.player
-			if dir.length() < 5:
-				move_target = Vector2(-1, -1)
-		var motion := dir.normalized() * delta * 150
+			var target := Vector2(walk_path[0][0], walk_path[0][1]) if not walk_path.is_empty() else move_target
+			dir = target - sim.player
+			if dir.length() < 4:
+				if not walk_path.is_empty(): walk_path.pop_front()
+				elif sim.player.distance_to(move_target) < 5: move_target = Vector2(-1, -1)
+			dir = dir.normalized() * minf(1.0, dir.length() / maxf(0.001, delta * 150))
+
+		var motion := dir.limit_length(1.0) * delta * 150
 		if not blocked(sim.player + Vector2(motion.x, 0)):
 			sim.player.x += motion.x
 		if not blocked(sim.player + Vector2(0, motion.y)):
@@ -82,7 +90,7 @@ func _gui_input(event: InputEvent) -> void:
 				guest_clicked.emit(int(guest.id))
 				return
 		if visitor_mode and not blocked(at):
-			move_target = at
+			walk_to(at)
 		floor_clicked.emit(at)
 
 func text_at(at: Vector2, text: String, color: Color = INK, font_size: int = 14) -> void:
@@ -135,6 +143,10 @@ func _draw() -> void:
 		draw_circle(at + Vector2(0, -3), 3, Color("f0cfb5"))
 		if guest.satisfaction < 50:
 			text_at(at + Vector2(8, -9), "!", Color("f08484"), 14)
+		var table := sim.get_table(int(guest.table))
+		if not table.is_empty() and int(table.shooter) == int(guest.id):
+			draw_arc(at, 12, 0, TAU, 20, GOLD, 2)
+			text_at(at + Vector2(-11, -14), "DICE", GOLD, 8)
 		if guest.vip:
 			text_at(at + Vector2(-8, -13), "VIP", GOLD, 8)
 	if visitor_mode:
@@ -186,3 +198,16 @@ func box(bg: Color, border: Color, radius: int) -> StyleBoxFlat:
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(radius)
 	return style
+
+func walk_to(at: Vector2) -> void:
+	if blocked(at): return
+	move_target = at
+	var request := {"x": sim.player.x, "y": sim.player.y, "tx": at.x, "ty": at.y}
+	sim.route(request)
+	walk_path = request.path
+
+func walk_to_table(id: int) -> void:
+	var table := sim.get_table(id)
+	if table.is_empty(): return
+	var rect := sim.bounds(table)
+	walk_to(Vector2(rect.get_center().x, rect.end.y + 24))

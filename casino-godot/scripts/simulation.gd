@@ -29,7 +29,7 @@ func _init() -> void:
 	log_event("Welcome to Neon House. Hire a two-dealer crew, then open the doors.")
 
 func new_table(at: Vector2, rotated: bool) -> Dictionary:
-	var item := {"id": next_id, "x": at.x, "y": at.y, "rotated": rotated, "point": 0, "dice": [1, 1], "timer": 0.0, "wagers": 0.0, "payouts": 0.0, "broken": false, "rolls": 0, "minimum": 25.0, "owner": CrapsRules.empty_bets(), "result": "Come-out roll. Place a Pass Line bet to start."}
+	var item := {"id": next_id, "x": at.x, "y": at.y, "rotated": rotated, "point": 0, "dice": [1, 1], "timer": 0.0, "wagers": 0.0, "payouts": 0.0, "broken": false, "rolls": 0, "shooter": -1, "shooter_seat": -1, "hand_rolls": 0, "owner_queued": false, "betting_hold": false, "owner_working": false, "history": [], "service_minutes": 0, "minimum": 25.0, "owner": CrapsRules.empty_bets(), "result": "Come-out roll. Place a Pass Line bet to start."}
 	next_id += 1
 	return item
 
@@ -276,24 +276,29 @@ func step() -> void:
 	guests = guests.filter(func(g): return not (g.state == "Leaving" and Vector2(g.x, g.y).distance_to(CasinoTuning.ENTRY) < 3))
 	for table in tables:
 		# After closing, finish existing contracts but don't take new bets.
-		if table.broken or crew(int(table.id)).size() < 2 or joined == int(table.id):
+		if table.broken or crew(int(table.id)).size() < 2:
 			continue
 		if not opened and not seated(int(table.id)).any(func(g): return CrapsRules.exposure(g.bets) > 0) and CrapsRules.exposure(table.owner) == 0:
+			continue
+		ensure_shooter(table)
+		if joined == int(table.id) and (int(table.shooter) == 0 or table.betting_hold):
 			continue
 		table.timer += 1.0
 		var energy := 0.0
 		for employee in crew(int(table.id)):
 			energy += employee.energy / 2
-		var interval := CasinoTuning.ROLL_SECONDS + (100 - energy) * 0.04
-		if table.timer >= interval and (not seated(int(table.id)).is_empty() or CrapsRules.exposure(table.owner) > 0):
+		var interval := roll_interval(table, energy)
+		if table.timer >= interval and (not seated(int(table.id)).is_empty() or CrapsRules.exposure(table.owner) > 0 or joined == int(table.id)):
 			table.timer = 0
 			roll(int(table.id))
-	if opened and elapsed % 95 == 0 and incidents.size() < 3 and not tables.is_empty():
-		var table: Dictionary = tables[rng.randi_range(0, tables.size() - 1)]
-		if not table.broken:
-			table.broken = true
-			incidents.append({"type": "repair", "table": int(table.id), "title": "Table %d · damaged rail" % table.id, "detail": "Play is halted. Repair $120 or keep the table closed."})
-			log_event("Table %d halted: a damaged rail needs repair." % table.id)
+	for table in tables:
+		if not operating(table): continue
+		table.service_minutes += 1
+		if table.service_minutes >= CasinoTuning.REPAIR_GRACE_MINUTES and int(table.service_minutes) % CasinoTuning.REPAIR_CHECK_MINUTES == 0 and incidents.size() < 3:
+			if rng.randf() < CasinoTuning.REPAIR_CHANCE:
+				table.broken = true
+				incidents.append({"type": "repair", "table": int(table.id), "title": "Table %d · worn rail" % table.id, "detail": "Wear has halted play. Repair the rail for $120."})
+				log_event("Table %d halted: a worn rail needs repair." % table.id)
 	if opened and elapsed % 70 == 0 and service_count == 0 and incidents.size() < 3:
 		incidents.append({"type": "service", "table": -1, "title": "Drink service complaint", "detail": "No service staff. A $60 comp buys goodwill; hire service for lasting relief."})
 		log_event("Guests are asking for drinks. Hire service staff or offer a comp.")
@@ -313,45 +318,176 @@ func take_bet(table: Dictionary, bettor: Dictionary, kind: String, amount: float
 	table.wagers += amount
 	return true
 
-func bet(id: int, kind: String) -> bool:
+func bet_amount(table: Dictionary, kind: String, chip: float = 0.0) -> float:
+	var amount := maxf(table.minimum, chip)
+	var multiple := 5.0
+	if kind in ["six", "eight"]: multiple = 6.0
+	if kind.begins_with("hard_") or CrapsRules.PROPS.has(kind): amount = maxf(5, chip)
+	if kind == "odds" or kind == "lay_odds" or kind.contains("odds_"):
+		amount = chip if chip > 0 else 30.0
+		var number := int(table.point) if kind in ["odds", "lay_odds"] else int(kind.get_slice("_", kind.get_slice_count("_") - 1))
+		if kind == "lay_odds" or kind.begins_with("dont_come_odds_"):
+			multiple = 2.0 if number in [4, 10] else (3.0 if number in [5, 9] else 6.0)
+		else:
+			multiple = 10.0 if number in [5, 9] else 5.0
+	return ceilf(amount / multiple) * multiple
+
+func bet_error(id: int, kind: String, chip: float = 0.0) -> String:
 	var table := get_table(id)
 	if table.is_empty() or not operating(table) or joined != id:
-		log_event("Join an open, staffed table before placing a bet.")
+		return "Join an open, staffed table to bet."
+	if not CrapsRules.empty_bets().has(kind): return "Unknown bet."
+	var amount := bet_amount(table, kind, chip)
+	if wallet < amount: return "Your visitor wallet cannot cover this bet."
+	if kind in ["pass", "dont_pass"] and (int(table.point) != 0 or table.owner[kind] > 0):
+		return "Place one line bet before the come-out roll."
+	if kind in ["come", "dont_come"] and (int(table.point) == 0 or table.owner[kind] > 0):
+		return "A Come / Don't Come bet starts after a table point is established."
+	var base := ""
+	var number := int(table.point)
+	var laying := false
+	if kind == "odds": base = "pass"
+	elif kind == "lay_odds":
+		base = "dont_pass"
+		laying = true
+	elif kind.begins_with("come_odds_"):
+		base = kind.replace("odds_", "")
+		number = int(kind.trim_prefix("come_odds_"))
+	elif kind.begins_with("dont_come_odds_"):
+		base = kind.replace("odds_", "")
+		number = int(kind.trim_prefix("dont_come_odds_"))
+		laying = true
+	elif kind.begins_with("come_") or kind.begins_with("dont_come_"):
+		return "Place a Come bet in the box; it travels on the next roll."
+	if base != "":
+		if number == 0 or table.owner[base] <= 0: return "Odds need an established contract."
+		var limit: float = table.owner[base] * 3.0 * (CrapsRules.true_odds(number) if laying else 1.0)
+		if table.owner[kind] + amount > limit + 0.001: return "Odds limit: 3× the contract (lay to win 3×)."
+	return ""
+
+func bet(id: int, kind: String, chip: float = 0.0) -> bool:
+	var reason := bet_error(id, kind, chip)
+	if reason != "":
+		log_event(reason)
 		return false
-	var amount := 30.0 if kind in ["six", "eight", "odds"] else float(table.minimum)
-	if kind == "pass" and (int(table.point) != 0 or table.owner.pass > 0):
-		log_event("Pass Line: one bet, placed before the come-out roll.")
-		return false
-	if kind == "odds" and (int(table.point) == 0 or table.owner.pass <= 0 or table.owner.odds + amount > table.owner.pass * 3):
-		log_event("Odds require a Pass Line point; maximum 3× your line bet.")
-		return false
-	if kind == "field" and table.owner.field > 0:
-		return false
+	var table := get_table(id)
+	var amount := bet_amount(table, kind, chip)
 	var placed := take_bet(table, {"bets": table.owner}, kind, amount, true)
-	log_event("%s bet placed: $%d." % [kind.capitalize(), amount] if placed else "Your visitor wallet cannot cover that bet.")
+	table.timer = 0.0 # Give the bettor a fresh window after changing a wager.
+	log_event("%s: $%d added." % [CrapsRules.name_for(kind), amount])
 	return placed
 
-func reclaim(id: int) -> void:
+func remove_bet(id: int, kind: String) -> float:
 	var table := get_table(id)
-	if table.is_empty():
-		return
-	var returned := 0.0
-	for kind in ["odds", "six", "eight", "field", "pass"]:
-		if kind == "pass" and int(table.point) != 0:
-			continue
-		returned += table.owner[kind]
-		table.owner[kind] = 0.0
+	if table.is_empty() or not table.owner.has(kind) or not CrapsRules.removable(kind, int(table.point)): return 0.0
+	var returned: float = table.owner[kind]
+	table.owner[kind] = 0.0
+	var attached := "lay_odds" if kind == "dont_pass" else ("dont_come_odds_" + kind.trim_prefix("dont_come_") if kind.begins_with("dont_come_") and not kind.contains("odds") else "")
+	if attached != "":
+		returned += table.owner[attached]
+		table.owner[attached] = 0.0
 	wallet += returned
 	visitor_net += returned
 	cash -= returned
 	revenue -= returned
 	table.wagers -= returned
-	log_event("Returned $%d. An established Pass Line contract stays until resolved." % returned)
+	table.timer = 0.0
+	return returned
+
+func reclaim(id: int) -> void:
+	var returned := 0.0
+	for kind in CrapsRules.empty_bets(): returned += remove_bet(id, kind)
+	log_event("Returned $%d. Established Pass and Come contracts remain until resolved." % returned)
+
+# A shooter owns a hand, not a UI mode. 0 is the visitor, positive IDs are guests,
+# -2 is a CPU stand-in at an otherwise empty table, and -1 is unassigned.
+func participants(table: Dictionary) -> Array:
+	var result: Array = []
+	for guest in seated(int(table.id)):
+		result.append({"id": int(guest.id), "seat": int(guest.seat)})
+	if result.is_empty(): result.append({"id": -2, "seat": 0})
+	if joined == int(table.id) and table.owner_queued:
+		result.append({"id": 0, "seat": 7})
+	result.sort_custom(func(a, b): return a.seat < b.seat)
+	return result
+
+func ensure_shooter(table: Dictionary, advance: bool = false) -> void:
+	var players := participants(table)
+	if not advance and int(table.shooter) == -2 and int(table.hand_rolls) > 0: return
+	if not advance and players.any(func(p): return int(p.id) == int(table.shooter)):
+		return
+	var next: Dictionary = players[0]
+	for candidate in players:
+		if int(candidate.seat) > int(table.shooter_seat):
+			next = candidate
+			break
+	table.shooter = int(next.id)
+	table.shooter_seat = int(next.seat)
+	table.hand_rolls = 0
+	table.timer = 0.0
+	if joined == int(table.id): log_event("Dice to %s." % shooter_name(table))
+
+func shooter_name(table: Dictionary) -> String:
+	if int(table.shooter) == 0: return "You"
+	for guest in guests:
+		if int(guest.id) == int(table.shooter): return guest.name + " (CPU)"
+	return "CPU shooter"
+
+func join_table(id: int) -> bool:
+	var table := get_table(id)
+	if table.is_empty() or not operating(table): return false
+	if joined >= 0: leave_table()
+	joined = id
+	table.owner_queued = true
+	table.betting_hold = false
+	table.timer = 0.0
+	if seated(id).is_empty() and int(table.hand_rolls) == 0:
+		table.shooter = 0
+		table.shooter_seat = 7
+	else:
+		ensure_shooter(table)
+	log_event("Joined craps. %s has the dice; your bets share every roll." % shooter_name(table))
+	return true
+
+func leave_table() -> void:
+	var table := get_table(joined)
+	joined = -1
+	if table.is_empty(): return
+	table.owner_queued = false
+	table.betting_hold = false
+	ensure_shooter(table)
+	log_event("Left the rail. CPU play continues and your outstanding bets stay live.")
+
+func pass_dice(id: int) -> void:
+	var table := get_table(id)
+	if table.is_empty() or joined != id: return
+	table.owner_queued = false
+	if int(table.shooter) == 0: ensure_shooter(table, true)
+	table.betting_hold = false
+	table.timer = 0.0
+	log_event("You passed the dice. %s will shoot; your bets remain live." % shooter_name(table))
+
+func queue_for_dice(id: int) -> void:
+	var table := get_table(id)
+	if table.is_empty() or joined != id: return
+	table.owner_queued = true
+	log_event("You're in the shooter rotation. The current shooter keeps their hand.")
+
+func shoot_player(id: int, forced: Array = []) -> bool:
+	var table := get_table(id)
+	if table.is_empty() or joined != id or int(table.shooter) != 0 or not operating(table): return false
+	roll(id, forced)
+	return true
+
+func roll_interval(table: Dictionary, energy: float = 100.0) -> float:
+	return (CasinoTuning.VISITOR_ROLL_SECONDS if joined == int(table.id) else CasinoTuning.ROLL_SECONDS) + (100 - energy) * 0.04
 
 func roll(id: int, forced: Array = []) -> void:
 	var table := get_table(id)
 	if table.is_empty() or table.broken or crew(id).size() < 2:
 		return
+	ensure_shooter(table)
+	var rolled_by := shooter_name(table)
 	var old_point := int(table.point)
 	for guest in seated(id):
 		if opened and old_point == 0 and guest.bets.pass == 0 and guest.wallet >= table.minimum:
@@ -373,7 +509,7 @@ func roll(id: int, forced: Array = []) -> void:
 		elif previous > CrapsRules.exposure(guest.bets):
 			guest.satisfaction = maxf(0, guest.satisfaction - 1)
 			guest.thought = "Next shooter, please."
-	var result := CrapsRules.resolve(old_point, table.owner, int(dice[0]), int(dice[1]))
+	var result := CrapsRules.resolve(old_point, table.owner, int(dice[0]), int(dice[1]), bool(table.owner_working))
 	table.owner = result.bets
 	wallet += result.credit
 	visitor_net += result.credit
@@ -383,6 +519,11 @@ func roll(id: int, forced: Array = []) -> void:
 	table.point = result.point
 	table.result = result.message
 	table.rolls += 1
+	table.hand_rolls += 1
+	table.timer = 0.0
+	table.history.push_front({"a": int(dice[0]), "b": int(dice[1]), "total": int(result.total), "shooter": rolled_by, "seven_out": bool(result.seven_out), "point": int(result.point), "credit": float(result.credit)})
+	if table.history.size() > 20: table.history.pop_back()
+	if result.seven_out: ensure_shooter(table, true)
 	if joined == id:
 		log_event(result.message + (" Returned $%d to your wallet." % result.credit if result.credit > 0 else ""))
 
@@ -429,8 +570,11 @@ func snapshot() -> Dictionary:
 	return {"version": CasinoTuning.SAVE_VERSION, "cash": cash, "wallet": wallet, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
 
 func restore(data: Dictionary) -> bool:
-	if int(data.get("version", -1)) != CasinoTuning.SAVE_VERSION:
+	if int(data.get("version", -1)) not in [1, CasinoTuning.SAVE_VERSION]:
 		return false
+	data = data.duplicate(true)
+	if int(data.version) == 1:
+		if not migrate_v1(data): return false
 	# Saves are local, versioned simulation snapshots rather than scene-tree dumps.
 	for key in ["cash", "wallet", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation", "minute", "day", "elapsed", "opened", "tables", "guests", "staff", "alerts", "incidents", "next_id", "joined", "player", "rng_state"]:
 		if not data.has(key):
@@ -453,10 +597,10 @@ func restore(data: Dictionary) -> bool:
 	for table in data.tables:
 		if not table is Dictionary:
 			return false
-		for key in ["id", "x", "y", "rotated", "point", "dice", "timer", "wagers", "payouts", "broken", "rolls", "minimum", "owner", "result"]:
+		for key in ["id", "x", "y", "rotated", "point", "dice", "timer", "wagers", "payouts", "broken", "rolls", "minimum", "owner", "result", "shooter", "shooter_seat", "hand_rolls", "owner_queued", "betting_hold", "owner_working", "history", "service_minutes"]:
 			if not table.has(key):
 				return false
-		for key in ["id", "x", "y", "point", "timer", "wagers", "payouts", "rolls", "minimum"]:
+		for key in ["id", "x", "y", "point", "timer", "wagers", "payouts", "rolls", "minimum", "shooter", "shooter_seat", "hand_rolls", "service_minutes"]:
 			if not valid_number(table[key]):
 				return false
 		if int(table.id) in ids or int(table.id) < 1 or int(table.point) not in [0, 4, 5, 6, 8, 9, 10]:
@@ -464,6 +608,13 @@ func restore(data: Dictionary) -> bool:
 		ids.append(int(table.id))
 		if not table.rotated is bool or not table.broken is bool or not table.result is String or not valid_bets(table.owner):
 			return false
+		if not table.owner_queued is bool or not table.betting_hold is bool or not table.owner_working is bool or not table.history is Array or table.history.size() > 20:
+			return false
+		for entry in table.history:
+			if not entry is Dictionary: return false
+			for key in ["a", "b", "total", "point", "credit"]:
+				if not entry.has(key) or not valid_number(entry[key]): return false
+			if not entry.get("shooter") is String or not entry.get("seven_out") is bool: return false
 		if not table.dice is Array or table.dice.size() != 2:
 			return false
 		for die in table.dice:
@@ -539,4 +690,23 @@ func valid_bets(value: Variant) -> bool:
 	for kind in CrapsRules.empty_bets():
 		if not value.has(kind) or not valid_number(value[kind]) or float(value[kind]) < 0:
 			return false
+	return true
+
+func migrate_v1(data: Dictionary) -> bool:
+	if not data.get("tables") is Array or not data.get("guests") is Array: return false
+	for table in data.tables:
+		if not table is Dictionary or not table.get("owner") is Dictionary: return false
+		if not migrate_bets(table.owner): return false
+		var owner_present := int(data.get("joined", -1)) == int(table.get("id", -2))
+		table.merge({"shooter": 0 if owner_present else -1, "shooter_seat": 7 if owner_present else -1, "hand_rolls": 0, "owner_queued": owner_present, "betting_hold": false, "owner_working": false, "history": [], "service_minutes": 0}, true)
+	for guest in data.guests:
+		if not guest is Dictionary or not guest.get("bets") is Dictionary or not migrate_bets(guest.bets): return false
+	data.version = CasinoTuning.SAVE_VERSION
+	return true
+
+func migrate_bets(bets: Dictionary) -> bool:
+	for kind in ["pass", "odds", "six", "eight", "field"]:
+		if not bets.has(kind) or not valid_number(bets[kind]) or float(bets[kind]) < 0: return false
+	for kind in CrapsRules.empty_bets():
+		if not bets.has(kind): bets[kind] = 0.0
 	return true
