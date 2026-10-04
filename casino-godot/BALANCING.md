@@ -14,13 +14,13 @@ forecast of real casino finances.
 | Table overhead | $12 per game hour, including closed tables |
 | Required crew / seats | 2 dealers / 7 public players + owner rail position |
 | Game time | 1 minute per real second at 1× |
-| Dice interval | 6 seconds + up to 3.4 seconds for fatigue |
+| Dice interval | 6 game minutes; 15 while visitor is seated, plus fatigue |
 | Guest arrival | Every 3 game minutes evening, otherwise every 5 |
 | Guest bankroll | $400–$1,500; VIP $5,000 |
 | Guest wager | Table minimum; VIP 4× minimum |
 | Guest cap | 40 |
 | VIP arrival | Every 100 simulated minutes while open |
-| Rail incident / repair | Every 95 minutes if eligible / $120 |
+| Rail incident / repair | 3 operating days grace, then 8% daily chance per operating table / $120 |
 | Service complaint / comp | Every 70 minutes with no service staff / $60 |
 
 Pass Line has a 1.414% theoretical house edge. Short-term actual cash can swing
@@ -34,4 +34,7 @@ Service drains thirst, improving satisfaction; ignored complaints damage
 reputation. Dealer energy falls while working, slowing table throughput. Standby
 staff recover and can relieve tired dealers. Early playtests should watch whether
 these pressures are understandable and whether variance makes expansion feel
-interesting rather than arbitrary. There are no unlock requirements in 0.1.
+interesting rather than arbitrary. There are no unlock requirements in 0.2.
+
+Repair wear resets after repair. The grace period and daily chance are playtest
+settings, not measured real-world failure rates.

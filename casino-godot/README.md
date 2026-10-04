@@ -1,4 +1,4 @@
-# Neon House — playable 0.1
+# Neon House — playable 0.2
 
 A Godot/GDScript casino tycoon prototype with a shared craps simulation.
 Manage the business, walk its floor, and play at your own tables. The goal is to
@@ -7,7 +7,7 @@ find out whether the combination creates enjoyable management decisions.
 ## Play
 
 Serve the repository root with `python3 -m http.server 8080 --bind 127.0.0.1`,
-then open `http://localhost:8080/casino/`. Desktop keyboard and mouse recommended;
+then open `http://localhost:8080/casino/`. Desktop and touch controls are supported;
 a browser supporting WebAssembly and WebGL 2 is required. The first download is
 about 39 MB. Use Fullscreen for a larger view.
 
@@ -16,10 +16,11 @@ about 39 MB. Use Fullscreen for a larger view.
 3. Open the casino. Guests find seats, place bets, and share table rolls.
 4. Build another craps table ($3,500). Rotation and spacing checks are included.
 5. Hire service from **Staff & assignments** to prevent thirst and complaints.
-6. Click **Walk the floor**, move beside a table with WASD/arrows, select it, and
+6. Choose **Walk the floor**, tap a table to approach it (or use WASD/arrows), and
    click **Join craps table** or press E.
-7. Place bets and **Shoot the dice**. Other seated guests share your outcomes.
-8. Leave the rail with Escape. The table resumes automatic rolling, including
+7. Place bets and **Shoot dice** when it is your turn. Other seated guests share
+   the same rolls. Pass dice to a CPU to bet without shooting.
+8. Leave the rail with Escape or **Leave table / walk floor**. CPU play continues, including
    settlement of your outstanding contracts.
 
 Your visitor wallet starts at $1,000 and is separate from the casino treasury.
@@ -29,7 +30,8 @@ fictional. No accounts, purchases, payments, or multiplayer are involved.
 
 ## Controls and management
 
-- Click a table or guest to inspect it; click empty floor to walk toward it.
+- Click or tap a table or guest to inspect it; tap empty floor to walk toward it.
+- Phones use Floor / Table / Manage / Log tabs, with scrolling panels and touch buttons.
 - WASD/arrows: walk; E: join selected nearby table.
 - Build: click to place; R: rotate; Escape: cancel.
 - Move/sell: available when a table is empty with no outstanding visitor bets.
@@ -48,16 +50,23 @@ fictional. No accounts, purchases, payments, or multiplayer are involved.
   4/5/6/8/9/10 as point. Make point before seven to win.
 - One Pass Line bet per player, placed only before come-out; locked after a point.
 - Pass odds: true odds (2:1 on 4/10, 3:2 on 5/9, 6:5 on 6/8), up to 3× the line.
-- Place 6/8: $30 increments, pays 7:6, stays up after a hit, loses on seven-out.
-  Place bets are OFF on come-out, including come-out seven.
-- Field: single roll, even money on 3/4/9/10/11, double on 2, triple on 12.
-- Take down removable bets: return Place/Field/odds; return Pass only before point.
+- Don't Pass and Don't Come: bar 12, with lay odds capped to win 3× the base.
+- Come bets travel to their own number, with up to 3× odds.
+- Place all six numbers: 4/10 pay 9:5, 5/9 pay 7:5, 6/8 pay 7:6.
+- Hardways and one-roll propositions, plus Field (double 2 / triple 12).
+- Chip selectors, bet categories, individual removals, and the last 20 rolls.
+- Place, hardways, and Come odds are OFF on come-out unless called working.
+  Numbered Come bases and lay odds always work.
+- Established Pass/Come bases remain locked; removable bets can be taken down.
+- The shooter keeps the dice after making a point. Seven-out advances the rotation.
+  Join an active table to queue; pass voluntarily to bet only. Hold betting pauses
+  that table's CPU rolls while the rest of the casino continues.
 - One of eight rail positions is reserved for owner playtesting, so guests do not
   fill your place while you walk to a table.
 - Automatic guests currently use Pass Line. An abstract two-dealer crew replaces
   the larger crew used by a real craps casino.
 
-Rules reference: [Hollywood Casino's craps guide](https://www.hollywoodpnrc.com/-/media/png/east/hollywood-pnrc/pdfs/table-games-tutorials/craps-gaming-guide.pdf).
+Rules reference: [Hollywood Casino Toledo's table rules](https://www.pennentertainment.com/hollywood-toledo/casino/table-games-rules).
 
 ## Edit, run, test, export
 
@@ -92,10 +101,12 @@ node casino-godot/tests/browser_smoke.mjs
 
 `PLAYWRIGHT_MODULE` can point to Playwright's `index.mjs`; `CHROMIUM_PATH` can select
 an installed Chromium executable. `CASINO_TEST_URL` overrides the URL.
-The debug export exposes a read-only JS snapshot for test assertions. That hook
+The smoke test covers desktop and emulated touch, portrait/landscape layouts,
+shooter handoff, betting, and browser save/reload. The debug export exposes
+a read-only JS snapshot and button bounds for test assertions. That hook
 is excluded by `OS.is_debug_build()` from the release game.
 
-## Limits of 0.1
+## Limits of 0.2
 
 This is a 2D overhead playable test, including a zoomed visitor view, not a
 first-person 3D casino. It has craps only, simple service and repair incidents,

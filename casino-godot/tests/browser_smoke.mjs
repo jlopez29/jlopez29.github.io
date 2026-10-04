@@ -1,93 +1,101 @@
-// Run against the DEBUG export. No test bridge exists in the release build.
+// Use the debug export: the bridge only reads state and control bounds.
 import assert from 'node:assert/strict';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const browser = await chromium.launch({
-  headless: true,
+const browser = await chromium.launch({ headless: true,
   ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
-  args: ['--no-sandbox', '--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'],
-});
-const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-const page = await context.newPage();
-const errors = [];
-page.on('pageerror', error => errors.push(error.message));
-page.on('console', message => {
-  if (message.type() === 'error' && !message.text().includes('404')) errors.push(message.text());
-});
-const state = () => page.evaluate(() => window.neonHouseSnapshot);
-const click = async (x, y) => { await page.mouse.click(x, y); await page.waitForTimeout(250); };
-const button = async prefix => {
-  await page.waitForTimeout(300);
-  const target = await page.evaluate(prefix => window.neonHouseUI.find(b => b.text.startsWith(prefix) && !b.disabled), prefix);
-  assert.ok(target, `Enabled button exists: ${prefix}`);
-  await click(target.x + target.w / 2, target.y + target.h / 2);
-};
+  args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader'] });
 try {
-  await page.goto(process.env.CASINO_TEST_URL || 'http://127.0.0.1:8090/game.html');
-  await page.waitForFunction(() => window.neonHouseSnapshot && window.neonHouseUI, null, { timeout: 60000 });
-  await page.waitForTimeout(1000);
-  assert.equal((await state()).cash, 24000);
-  await button("Let's open the house"); // dismiss onboarding
-  await button('Hire dealer'); // hire two dealers
-  await button('Hire dealer');
-  assert.equal((await state()).staff.length, 2);
-  await button('Open casino'); // open
-  await button('4×'); // 4x
-  await page.waitForFunction(() => window.neonHouseSnapshot.tables[0].rolls > 0, null, { timeout: 60000 });
-  assert.ok((await state()).guests.length > 0);
-  await button('Walk the floor'); // visitor mode
-  await page.keyboard.down('w');
-  await page.waitForFunction(() => window.neonHouseSnapshot.player[1] < 440, null, { timeout: 15000 });
-  await page.keyboard.up('w');
-  await page.keyboard.press('e');
-  await page.waitForFunction(() => window.neonHouseSnapshot.joined === 1);
-  // Manual table may have a point already. Field is always valid and clears after one roll.
-  await button('Field'); // field
-  const betState = await state();
-  assert.ok(betState.tables[0].owner.field > 0);
-  assert.equal(betState.wallet, 1000 - betState.tables[0].minimum);
-  const previousRolls = betState.tables[0].rolls;
-  await button('SHOOT THE DICE'); // shoot
-  await page.waitForFunction(count => window.neonHouseSnapshot.tables[0].rolls > count, previousRolls);
-  assert.equal((await state()).tables[0].owner.field, 0);
-  // Build an unsettled Place contract, pause, and persist it across browser reload.
-  await button('Place 6');
-  assert.equal((await state()).tables[0].owner.six, 30);
-  await button('Pause'); // pause
-  await button('Save'); // save
-  const saved = await state();
-  await page.waitForTimeout(2500); // allow IndexedDB sync
-  await page.reload();
-  await page.waitForFunction(() => window.neonHouseSnapshot && window.neonHouseUI, null, { timeout: 60000 });
-  await page.waitForTimeout(1000);
-  await button("Let's open the house");
-  await button('Pause'); // pause fresh session before restore
-  await button('Load'); // load
-  const loaded = await state();
-  assert.equal(loaded.joined, 1);
-  assert.equal(loaded.staff.length, 2);
-  assert.equal(loaded.tables[0].owner.six, 30);
-  assert.equal(loaded.wallet, saved.wallet);
-  assert.equal(loaded.cash, saved.cash);
-  assert.equal(loaded.rng_state, saved.rng_state);
-  // Leaving the table resumes management; build another empty table.
-  await page.keyboard.press('Escape');
-  await button('+ Build craps'); // build; automatically returns to management
-  await click(350, 250); // floor (70,110), clear of starter table
-  assert.equal((await state()).tables.length, 2);
-  assert.ok((await state()).tables[1].x >= 65, 'New table is within buildable bounds');
-  // Save a populated simulation with route waypoints and verify it, too.
-  await button('Save');
-  const expanded = await state();
-  await button('Load');
-  assert.equal((await state()).tables.length, 2);
-  assert.equal((await state()).guests.length, expanded.guests.length);
-  await page.screenshot({ path: '/tmp/neon-house-browser.png' });
-  assert.deepEqual(errors, [], 'No Godot/browser runtime errors');
-  console.log('Browser smoke passed: staffing, guest rounds, walk/join, betting, dice, IndexedDB reload, expansion, populated restore.');
-} catch (error) {
-  console.error(JSON.stringify(await state()));
-  await page.screenshot({ path: "/tmp/neon-house-failure.png" });
-  throw error;
-} finally {
-  await browser.close();
-}
+ for (const mobile of [false, true]) {
+  const context = await browser.newContext({ viewport: mobile ? {width:390,height:798} : {width:1440,height:900}, hasTouch:mobile, isMobile:mobile });
+  const page = await context.newPage();
+  const cdp = await context.newCDPSession(page);
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('console', m => { if (m.type()==='error' && !m.text().includes('404')) errors.push(m.text()); });
+  const state = () => page.evaluate(() => window.neonHouseSnapshot);
+  const target = prefix => page.evaluate(prefix => window.neonHouseUI.find(b=>b.text.startsWith(prefix) && !b.disabled), prefix);
+  async function swipe(x,y,dy) {
+   await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+   for(let i=1;i<=10;i++) {await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y+dy*i/10}]}); await page.waitForTimeout(25);}
+   await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+   await page.waitForTimeout(500);
+  }
+  async function button(prefix) {
+   console.log(`${mobile ? "touch" : "desktop"}: ${prefix}`);
+   await page.waitForFunction(prefix => window.neonHouseUI.some(b=>b.text.startsWith(prefix) && !b.disabled), prefix, {timeout:15000});
+   await page.waitForTimeout(150);
+   for(let i=0;i<18;i++) {
+    const b=await target(prefix); assert.ok(b,`Enabled button: ${prefix}`);
+    const [x,y,w,h]=b.clip;
+    if(b.y>=y && b.y+b.h<=y+h) {
+     if(mobile) await page.touchscreen.tap(b.x+b.w/2,b.y+b.h/2); else await page.mouse.click(b.x+b.w/2,b.y+b.h/2);
+     await page.waitForTimeout(200); return;
+    }
+    const down=b.y<y;
+    if(mobile) await swipe(x+w/2,y+h*(down?.3:.7),h*(down?.4:-.4));
+    else {await page.mouse.move(x+w/2,y+h/2);await page.mouse.wheel(0,down?-240:240);await page.waitForTimeout(200);}
+   }
+   throw Error(`Could not scroll to ${prefix}`);
+  }
+  async function pane(name){if(mobile) await button(name);}
+  try {
+   await page.goto(process.env.CASINO_TEST_URL || 'http://127.0.0.1:8090/game.html');
+   await page.waitForFunction(()=>window.neonHouseUI,null,{timeout:60000});
+   await page.waitForTimeout(800);
+   await button("Let's open the house");
+   await pane('Table'); await button('Hire dealer'); await button('Hire dealer');
+   await pane('Manage'); await button('Pause'); await button('Open casino');
+   await button('Walk the floor');
+   await pane('Table'); await button('Walk to this table');
+   await page.waitForTimeout(2200);
+   await pane('Table'); await button('Join craps table');
+   assert.equal((await state()).joined,1);
+   assert.equal((await state()).tables[0].shooter,0,'Empty table grants visitor first hand');
+   await pane('Manage'); await button('1×'); await pane('Table');
+   await button('Field +');
+   assert.equal((await state()).tables[0].owner.field,25);
+   const rolls=(await state()).tables[0].rolls;
+   await button('SHOOT DICE');
+   await page.waitForFunction(n=>window.neonHouseSnapshot.tables[0].rolls>n,rolls);
+   assert.equal((await state()).tables[0].owner.field,0);
+   await button('Pass dice to CPU'); await button('Hold betting');
+   const held=(await state()).tables[0].rolls;
+   await button('Join shooter rotation');
+   assert.notEqual((await state()).tables[0].shooter,0,'Queue does not steal the hand');
+   await button('Place'); await button('Place 6 +');
+   assert.equal((await state()).tables[0].owner.six,30);
+   await button('Hard'); await button('Hard 4 +');
+   assert.equal((await state()).tables[0].owner.hard_4,25);
+   await button('My bets'); await button('Hard 4 ·');
+   assert.equal((await state()).tables[0].owner.hard_4,0);
+   assert.equal((await state()).tables[0].rolls,held,'Hold leaves bets open while time advances');
+   await button('Save'); const saved=await state();
+   await page.waitForTimeout(2500); await page.reload();
+   await page.waitForFunction(()=>window.neonHouseUI,null,{timeout:60000});
+   await page.waitForTimeout(500); await button("Let's open the house"); await button('Load');
+   const loaded=await state();
+   assert.equal(loaded.joined,1); assert.equal(loaded.tables[0].owner.six,30);
+   assert.equal(loaded.wallet,saved.wallet); assert.equal(loaded.tables[0].shooter,saved.tables[0].shooter);
+   assert.equal(loaded.tables[0].betting_hold,true); assert.equal(loaded.tables[0].owner_queued,true);
+   await pane('Table'); await button('Resume CPU');
+   await page.waitForFunction(n=>window.neonHouseSnapshot.tables[0].rolls>n,held,{timeout:25000});
+   await button('History');
+   await page.screenshot({path:`/tmp/neon-house-${mobile?'mobile':'desktop'}.png`});
+   if(mobile) {
+    await page.setViewportSize({width:844,height:344});await page.waitForTimeout(600);
+    await button('Place');await button('Place 8 +');
+    assert.equal((await state()).tables[0].owner.eight,30);
+    await page.screenshot({path:'/tmp/neon-house-landscape.png'});
+    await page.setViewportSize({width:320,height:650});await page.waitForTimeout(600);
+    await button('My bets');await button('Take down removable bets');
+    assert.equal((await state()).tables[0].owner.eight,0);
+    await pane('Floor');
+   } else await button('Leave table / walk floor');
+   assert.equal((await state()).joined,-1);
+   assert.notEqual((await state()).tables[0].shooter,0);
+   assert.deepEqual(errors,[]);
+   console.log(`${mobile?'Touch portrait/landscape':'Desktop'} passed: staffing, walking, betting, handoff, CPU hold/resume, queue, removals, save/reload.`);
+  } catch(e) {await page.screenshot({path:'/tmp/neon-house-failure.png'});console.error(errors); console.error(JSON.stringify((await state()).tables));throw e;}
+  finally {await context.close();}
+ }
+} finally {await browser.close();}

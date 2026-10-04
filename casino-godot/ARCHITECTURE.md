@@ -12,7 +12,8 @@ project, separate from the portfolio's HTML apps.
   staffing, table rounds, incidents, placement, clock, versioned snapshots.
 - `scripts/floor.gd`: procedural floor rendering, visitor movement/collision,
   zoom/follow view, selection, build previews. Emits selection/placement signals.
-- `scripts/main.gd`: game UI, fixed simulation ticks, persistence, mode switches,
+- `scripts/craps_layout.gd`: clickable desktop felt, dice, and recent rolls.
+- `scripts/main.gd`: responsive game UI, fixed simulation ticks, persistence, mode switches,
   dice animation, onboarding. Simulation continues while playing.
 - `tests/run_tests.gd`: headless rule/economy/persistence/navigation scenarios.
 - `tests/browser_smoke.mjs`: browser lifecycle and control integration tests.
@@ -26,15 +27,20 @@ are visible separately because owner play can otherwise distort business results
 Simulation advances once per game minute, not once per rendering frame. Guest
 movement interpolates between grid-navigation waypoints. AStarGrid2D routes around
 placed tables; placement reserves an aisle. Visitor movement has collision checks
-and manual keyboard steering (clicking through furniture stops at it).
+and manual keyboard steering; touch paths route around furniture.
 
 Craps cannot operate without two assigned dealers. Closing admits no new guests
-or bets but finishes contracts. Joining pauses auto-rolls only for that table;
-manual dice settle guest bets too. Leaving resumes automatic settlement. Sell/move
+or bets but finishes contracts. Tables retain a shooter and seat rotation. A
+visitor joins the queue behind the active shooter; CPU rolls continue until the
+visitor’s turn, unless Hold betting is enabled. Making a point retains the dice;
+seven-out advances to the next seat. Leaving releases any manual turn to the CPU.
+Sell/move
 is blocked for occupied tables and unresolved visitor bets. New tables can reuse
 standby crews. Paused time disables manual rolls, so guests/finance remain in sync.
 
-The save format contains domain state and a version, not serialized nodes. RNG
+The v2 save format contains domain state and a version, not serialized nodes.
+It migrates v1 saves and includes extended bets, shooter/queue state, roll history,
+and repair wear. The existing save filename is retained for migration. RNG
 state is a decimal string to preserve all 64 bits through JSON. Saves use Godot's
 `user://` path, backed by browser storage in web builds. UI mode/speed settings
 are session-only. The single save slot is deliberately small in scope.

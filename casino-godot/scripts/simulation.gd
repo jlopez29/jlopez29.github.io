@@ -133,6 +133,7 @@ func sell(id: int) -> bool:
 func set_open(value: bool) -> void:
 	opened = value
 	if not value:
+		if joined >= 0: leave_table()
 		log_event("Doors closed to new guests. Existing bets will finish before guests leave.")
 	else:
 		log_event("Doors open. The evening crowd is on its way.")
@@ -267,7 +268,7 @@ func step() -> void:
 		if guest.thirst > 25:
 			guest.satisfaction = maxf(0, guest.satisfaction - 0.12)
 			guest.thought = "I've been waiting for a drink."
-		if guest.state == "Waiting" and guest.age % 3 == 0:
+		if guest.state == "Waiting" and int(guest.age) % 3 == 0:
 			choose_table(guest)
 		if guest.state == "Playing":
 			var table := get_table(int(guest.table))
@@ -413,7 +414,7 @@ func participants(table: Dictionary) -> Array:
 
 func ensure_shooter(table: Dictionary, advance: bool = false) -> void:
 	var players := participants(table)
-	if not advance and int(table.shooter) == -2 and int(table.hand_rolls) > 0: return
+	if not advance and int(table.shooter) == -2 and (int(table.hand_rolls) > 0 or joined == int(table.id)): return
 	if not advance and players.any(func(p): return int(p.id) == int(table.shooter)):
 		return
 	var next: Dictionary = players[0]
@@ -545,6 +546,7 @@ func resolve_incident(index: int, pay: bool) -> void:
 			var table := get_table(int(incident.table))
 			if not table.is_empty():
 				table.broken = false
+				table.service_minutes = 0
 		else:
 			reputation = minf(100, reputation + 2)
 			for guest in guests:

@@ -99,13 +99,14 @@ func _ready() -> void:
 	add_gap(left, 8)
 	add_label(left, "MANAGEMENT", 11, MUTED)
 	add_button(left, "Staff & assignments", func(): open_page("staff"))
-	add_button(left, "Finance & performance", func(): open_page("finance"))
+	add_button(left, "Finance", func(): open_page("finance"))
 	add_button(left, "Incidents & decisions", func(): open_page("incidents"))
 	add_gap(left, 10)
 	add_label(left, "SIMULATION SPEED", 11, MUTED)
 	var speeds := HBoxContainer.new()
 	left.add_child(speeds)
 	pause_button = add_button(speeds, "Pause", toggle_pause)
+	pause_button.size_flags_stretch_ratio = 1.8
 	for multiplier in [1, 2, 4]:
 		add_button(speeds, "%d×" % multiplier, func(): speed = multiplier; previous_speed = multiplier; refresh())
 	add_label(left, "Tap a table to inspect.
@@ -167,6 +168,7 @@ func layout_ui() -> void:
 		get_window().content_scale_size = Vector2i(dimensions)
 	var w := dimensions.x
 	var h := dimensions.y
+	var landscape := w > h and h < 600
 	mobile = w < 1050 or h < 600
 	backdrop.size = dimensions
 	brand.add_theme_font_size_override("font_size", 16 if mobile else 24)
@@ -175,14 +177,16 @@ func layout_ui() -> void:
 	subtitle.position = Vector2(20, 50)
 	header_actions.position = Vector2(w - 198, 34) if mobile else Vector2(w - 260, 16)
 	header_actions.size = Vector2(186 if mobile else 240, 44)
-	stats.position = Vector2(12, 88) if mobile else Vector2(340, 18)
+	if landscape: header_actions.position.y = 8
+	stats.position = Vector2(12, 36 if landscape else 88) if mobile else Vector2(340, 18)
 	stats.add_theme_font_size_override("font_size", 15 if mobile else 18)
-	status.position = Vector2(12, 112) if mobile else Vector2(340, 50)
+	status.position = Vector2(12, 60 if landscape else 112) if mobile else Vector2(340, 50)
 	status.add_theme_font_size_override("font_size", 11 if mobile else 12)
 	mode_hint.visible = not mobile
 	bottom_nav.visible = mobile
 	if mobile:
-		var area := Rect2(10, 138, w - 20, maxf(100, h - 202))
+		var top := 84 if landscape else 138
+		var area := Rect2(10, top, w - 20, maxf(100, h - top - 64))
 		for panel in [side_panel, inspector_panel, events_panel]:
 			panel.position = area.position
 			panel.size = area.size
@@ -837,7 +841,12 @@ func publish_debug() -> void:
 	for button in get_tree().get_nodes_in_group("debug_buttons"):
 		if button.is_visible_in_tree():
 			var rect: Rect2 = button.get_global_rect()
-			buttons.append({"text": button.text, "disabled": button.disabled, "x": rect.position.x, "y": rect.position.y, "w": rect.size.x, "h": rect.size.y})
+			var clip := Rect2(Vector2.ZERO, Vector2(get_window().content_scale_size))
+			var ancestor := button.get_parent()
+			while ancestor != null:
+				if ancestor is ScrollContainer: clip = clip.intersection(ancestor.get_global_rect())
+				ancestor = ancestor.get_parent()
+			buttons.append({"text": button.text, "disabled": button.disabled, "x": rect.position.x, "y": rect.position.y, "w": rect.size.x, "h": rect.size.y, "clip": [clip.position.x, clip.position.y, clip.size.x, clip.size.y]})
 	JavaScriptBridge.eval("window.neonHouseSnapshot = " + JSON.stringify(sim.snapshot()) + ";window.neonHouseUI = " + JSON.stringify(buttons), true)
 
 # Preserve live buttons across simulation refreshes: a mouse-down must not lose

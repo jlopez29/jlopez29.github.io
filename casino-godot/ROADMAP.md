@@ -1,6 +1,6 @@
 # Roadmap
 
-Current milestone: **0.1 browser playtest — craps and owner/visitor loop**.
+Current milestone: **0.2 browser playtest — expanded craps, shooter rotation, and touch controls**.
 
 ## Completed
 
@@ -9,7 +9,10 @@ Current milestone: **0.1 browser playtest — craps and owner/visitor loop**.
 - Hire/assign two-dealer crews, wages, fatigue, standby relief, service coverage.
 - Autonomous guest arrivals, navigation, seating, bankrolls, satisfaction, leaving.
 - Shared craps dice, real Pass Line contracts and house transfers.
-- Walkable visitor mode, joining tables, Pass/odds/Place 6/8/Field bets.
+- Walkable visitor mode, touch navigation, and responsive phone panels.
+- Pass/Don’t, Come/Don’t Come, odds, all Place numbers, Field, hardways and props.
+- Shared shooter rotation, CPU handoff, betting holds, bet removal and roll history.
+- Rare rail repairs with an operating-time grace period.
 - VIP bankroll variation, repair/service decisions, alerts and inspection.
 - Finance with payout/stake accounting, reputation, clock/speed controls.
 - Versioned local save/load and headless/in-browser regression checks.
@@ -19,7 +22,7 @@ Current milestone: **0.1 browser playtest — craps and owner/visitor loop**.
 
 1. Tune throughput, operating costs, and guest patience using observed sessions.
 2. More visitor feedback: drink ordering, service wait, crowd reactions and audio.
-3. Larger, more tactile craps layout; Come/Don't Pass and additional Place numbers.
+3. Refine the felt and touch feedback; consider Buy/Lay and advanced betting options.
 4. Meaningful reputation unlocks, room expansion, VIP preferences and comps.
 5. More differentiated guests and staff; surveillance and uncertain incidents.
 6. Slots and blackjack after craps + management have proven engaging.
