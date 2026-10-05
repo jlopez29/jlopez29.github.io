@@ -213,3 +213,23 @@ minute-step lifecycle runs at every speed. Presentation consumes existing guest
 thought events for the resulting decisions. Aggregate arrivals/demand retain their
 existing rules and remain Phase 07; their capacity check recognizes the new
 activity states rather than treating them as nonexistent people.
+
+## Phase 06: management intelligence
+
+Simulation owns read-only `asset_performance`, `reserve_report` and purchase
+planning. Settled asset handle subtracts live stakes; payouts include returned
+stake. Gaming win is settled handle minus payouts. Guest contribution additionally
+excludes visitor results, direct upkeep, repairs and assigned dealer payroll;
+capital and shared service costs remain separate. Asset activity includes all
+participants, and utilization means minutes with any participant divided by
+available operating minutes, not occupied seat percentage. Comparisons group
+owned slots by profile and tables by game, with available asset-hour samples and
+normalized throughput/contribution. Finance reveals comparisons and reserve
+breakdowns on expansion, then links to individual inspectors and Build.
+
+Reserve advice uses free cash after pending stakes, a large-asset payout buffer,
+a partial buffer for remaining assets, four hours of wages/upkeep and known
+repair bills. Transient severity-change notifications are rate-limited. Purchase
+plans include new equipment, hires after available standby dealers, incremental
+payroll/upkeep and the enlarged floor buffer. These estimates never affect
+outcomes, purchase permissions or progression. No schema changes or migrations.

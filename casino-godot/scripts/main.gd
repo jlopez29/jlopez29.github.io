@@ -42,6 +42,7 @@ var hud_summary: Label
 var objective: VBoxContainer
 var asset_details := false
 var expanded_slot_details := ""
+var expanded_table_plan := ""
 var status: Label
 var mode_hint: Label
 var inspector: VBoxContainer
@@ -74,6 +75,7 @@ var floor_fit: Button
 var responsive_state := "desktop"
 var finance_section := ""
 var finance_advanced := false
+var finance_compare_group := ""
 var table_scroll: ScrollContainer
 var table_options := false
 var chip_value := 25.0
@@ -817,6 +819,8 @@ func render_build() -> void:
 			continue
 		if Games.COSTS.has(feature):
 			add_button(inspector, "%s | $%d" % [milestone.name, sim.feature_cost(feature)], func(): build_kind = feature; toggle_build(), sim.cash < sim.feature_cost(feature))
+			add_button(inspector, "Hide purchase plan" if expanded_table_plan == feature else "Table + crew + reserve", func(): expanded_table_plan = "" if expanded_table_plan == feature else feature; refresh())
+			if expanded_table_plan == feature: render_purchase_readiness(inspector, feature)
 		elif feature == "service":
 			add_button(inspector, "Drink service | Staff & coverage", func(): open_page("staff"))
 		else:
@@ -829,6 +833,7 @@ func render_build() -> void:
 func render_slot_catalog() -> void:
 	add_label(inspector, "SLOT MACHINES", 16, GOLD)
 	add_label(inspector, "Add seats, improve machines, or protect your reserve.", 13, MUTED)
+	render_purchase_readiness(inspector, "blackjack")
 	for id in CasinoTuning.SLOT_PROFILES:
 		var profile := CasinoTuning.slot_profile(id)
 		var available: bool = sim.slot_unlocked(id)
@@ -840,6 +845,7 @@ func render_slot_catalog() -> void:
 		add_button(inspector, "Place machine - " + money(profile.cost) if available else "Locked", func(): build_kind = "slots"; build_slot_profile = id; toggle_build(), not available or sim.cash < float(profile.cost))
 		add_button(inspector, "Hide specifications" if expanded_slot_details == id else "Specifications & running costs", func(): expanded_slot_details = "" if expanded_slot_details == id else id; refresh())
 		if expanded_slot_details == id:
+			render_purchase_readiness(inspector, "slots", id)
 			add_label(inspector, "RTP %.2f%%   House edge %.2f%%
 Appeal %.2fx   Development %.0f
 Upkeep %s per hour
@@ -860,9 +866,10 @@ func render_table() -> void:
 	var kind := sim.table_kind(table)
 	var guests := sim.seated(selected)
 	add_label(inspector, "Gaming Win", 13, MUTED)
-	var gaming_win := float(table.wagers) - float(table.payouts)
-	var win_label := add_label(inspector, FinancialText.cash(gaming_win, 0), 30, TEAL if gaming_win >= 0 else Color("ff9486"))
-	win_label.tooltip_text = "Settled gaming win before expenses: " + FinancialText.cash(gaming_win)
+	var performance := sim.asset_performance(table)
+	var gaming_win := float(performance.gaming_win)
+	var win_label := finance_value(inspector, FinancialText.house_result(gaming_win), 30, finance_color(gaming_win))
+	win_label.tooltip_text = "All participants; excludes pending stakes. Settled gaming win before expenses: " + FinancialText.cash(gaming_win)
 	add_label(inspector, "Before operating expenses", 12, MUTED)
 	add_gap(inspector, 8)
 	if guests.is_empty(): add_label(inspector, "Occupied by you" if sim.joined == selected else "Waiting for guests" if sim.ready_for_play(table) and sim.opened else "Not accepting play", 15, TEXT)
@@ -873,11 +880,22 @@ func render_table() -> void:
 	add_button(inspector, ("Hide " if asset_details else "Show ") + ("machine details" if kind == "slots" else "game details"), func(): asset_details = not asset_details; refresh())
 	if asset_details:
 		add_label(inspector, "PERFORMANCE", 12, MUTED)
-		add_label(inspector, "Operating contribution " + FinancialText.cash(sim.asset_operating_profit(table)) + "\nDealer payroll " + FinancialText.cash(table.payroll_expense), 14, TEAL if sim.asset_operating_profit(table) >= 0 else GOLD)
-		add_label(inspector, "Excludes visitor play and purchase price. Shared service payroll and comps are shown in Finance.", 12, MUTED)
-		add_label(inspector, "Wagers %s
-Payouts %s
-%s %d" % [FinancialText.cash(table.wagers), FinancialText.cash(table.payouts), "Spins" if kind == "slots" else "Rounds", table.rolls], 14)
+		finance_row(inspector, "Guest gaming win", float(performance.guest_win), false)
+		finance_row(inspector, "Operating contribution", float(performance.contribution), false)
+		finance_short_metric(inspector, "Settled handle", FinancialText.cash(float(performance.handle)))
+		finance_short_metric(inspector, "Returned to players", FinancialText.cash(float(performance.payouts)))
+		finance_row(inspector, "Dealer payroll", -float(table.payroll_expense))
+		finance_row(inspector, "Repairs", -float(table.repair_expense))
+		finance_row(inspector, "Upkeep", -float(table.operating_expense))
+		add_label(inspector, "Contribution excludes visitor play and purchase price. Handle, payouts and activity include all participants. Shared service costs are in Finance.", 12, MUTED)
+		finance_short_metric(inspector, "Spins" if kind == "slots" else "Rolls" if kind == "craps" else "Resolved hands / spins", str(table.rolls))
+		finance_short_metric(inspector, "Busy time / available time", "%.0f%%" % float(performance.utilization))
+		finance_short_metric(inspector, "Available hours", "%.1f" % float(performance.hours))
+		finance_short_metric(inspector, "Repair count / downtime", "%d / %d min" % [table.repairs, table.downtime_minutes])
+		if float(performance.hours) > 0:
+			finance_short_metric(inspector, "Handle / available hour", FinancialText.cash(float(performance.handle_hour)) + "/hr")
+			finance_short_metric(inspector, "Contribution / available hour", FinancialText.house_result(float(performance.contribution_hour)) + "/hr")
+		else: add_label(inspector, "No operating sample yet.", 12, MUTED)
 		if kind == "slots":
 			var profile := sim.slot_profile(table)
 			add_label(inspector, "RTP %.2f%%   House edge %.2f%%
@@ -886,11 +904,6 @@ Payouts %s
 Appeal %.2fx   Prestige %d" % [profile.development, profile.development_cap, profile.appeal, profile.prestige], 13, MUTED)
 			add_label(inspector, "Maximum total return %s
 Suggested reserve %s" % [money(profile.top_return * profile.maximum), money(profile.reserve)], 13, GOLD)
-			var utilization := float(table.occupied_minutes) / maxf(1, float(table.available_minutes)) * 100
-			add_label(inspector, "Utilization %.0f%%
-Downtime %d min
-Repairs %d (%s)
-Upkeep %s" % [utilization, table.downtime_minutes, table.repairs, FinancialText.cash(table.repair_expense), FinancialText.cash(table.operating_expense)], 13, MUTED)
 		add_label(inspector, table.result.replace(" · ", " - "), 13, MUTED)
 	if sim.table_kind(table) == "craps": add_label(inspector, "POINT: %s" % ("OFF / COME-OUT" if int(table.point) == 0 else str(int(table.point))), 12, GOLD)
 	add_gap(inspector, 10)
@@ -975,6 +988,18 @@ func finance_metric(parent: Node, title: String, amount: float, signed: bool = t
 	var value := finance_value(body, summary, 24, finance_color(amount) if signed else TEXT)
 	value.tooltip_text = FinancialText.cash(amount)
 
+func finance_short_metric(parent: Node, title: String, text: String) -> void:
+	var line := finance_line(parent)
+	add_label(line, title, 13, MUTED)
+	finance_value(line, text, 14, TEXT)
+
+func render_purchase_readiness(parent: Node, kind: String, profile_id: String = "starter") -> void:
+	var plan := sim.reserve_report(kind, profile_id)
+	add_label(parent, ("Blackjack readiness" if kind == "blackjack" else "After this purchase") + (" - buffer covered" if plan.level == "covered" else " - preserve more cash"), 13, TEAL if plan.level == "covered" else GOLD)
+	finance_short_metric(parent, "Purchase + dealer onboarding", FinancialText.cash(float(plan.purchase) + float(plan.onboarding), 0))
+	finance_short_metric(parent, "Cash above / below planned buffer", FinancialText.house_result(float(plan.margin)))
+	add_label(parent, "Includes the existing floor, payout swings and four hours of payroll/upkeep. Access requirements remain separate; purchase is optional.", 12, MUTED)
+
 func finance_row(parent: Node, title: String, amount: float, hide_zero: bool = true) -> void:
 	if hide_zero and absf(amount) < 0.005: return
 	var line := finance_line(parent)
@@ -994,7 +1019,9 @@ func finance_card(id: String, title: String, amount: float) -> VBoxContainer:
 		finance_section = "" if finance_section == id else id
 		refresh())
 	header.tooltip_text = "Expand " + title if finance_section != id else "Collapse " + title
-	if id == "operations": header.tooltip_text += ". Upkeep, repairs and complaint comps; drink products are in Bar and payroll is separate."
+	if id == "reserve": header.tooltip_text = "Free cash minus suggested payout, payroll, upkeep and repair buffer. Advisory, not a guarantee."
+	elif id == "assets": header.tooltip_text = "Owned asset guest operating contribution after direct upkeep, repairs and dealer payroll."
+	elif id == "operations": header.tooltip_text += ". Upkeep, repairs and complaint comps; drink products are in Bar and payroll is separate."
 	elif id == "bar": header.tooltip_text += ". Sales minus paid and complimentary product costs, before service payroll."
 	elif id == "investment": header.tooltip_text += ". Capital purchases minus sales, plus hiring; excluded from operating profit."
 	elif id == "gaming": header.tooltip_text += ". Settled guest gaming win, excluding visitor play and pending stakes."
@@ -1091,6 +1118,64 @@ func render_finance_advanced(parent: Node) -> void:
 			finance_row(parent, state.name, -float(states[state.key]))
 	if speed > 4: add_label(parent, "DEV: leave manual games during long-run comparisons.", 12, GOLD)
 
+func render_finance_reserve(parent: Node, report: Dictionary) -> void:
+	finance_short_metric(parent, "Treasury less pending stakes", FinancialText.cash(float(report.available)))
+	finance_short_metric(parent, "Pending stakes held", FinancialText.cash(float(report.pending)))
+	finance_short_metric(parent, "Suggested payout buffer", FinancialText.cash(float(report.payouts)))
+	finance_short_metric(parent, "Four hours of payroll", FinancialText.cash(float(report.payroll)))
+	finance_short_metric(parent, "Four hours of upkeep", FinancialText.cash(float(report.upkeep)))
+	finance_short_metric(parent, "Known repair bills", FinancialText.cash(float(report.repairs)))
+	finance_short_metric(parent, "Suggested total buffer", FinancialText.cash(float(report.required)))
+	add_label(parent, "Largest exposure: " + str(report.largest), 12, GOLD)
+	add_label(parent, "Planning estimate: one large payout plus a partial buffer for other assets. Rare simultaneous wins can exceed it. Outcomes are never capped or changed.", 12, MUTED)
+	render_purchase_readiness(parent, "blackjack")
+	add_button(parent, "Plan purchases", func(): open_page("build"))
+
+func render_finance_assets(parent: Node) -> void:
+	var groups := {}
+	for asset in sim.tables:
+		var key: String = str(asset.slot_profile) if sim.table_kind(asset) == "slots" else sim.table_kind(asset)
+		if not groups.has(key): groups[key] = []
+		groups[key].append(asset)
+	add_label(parent, "Compare actual contribution and throughput; RTP alone does not determine earnings.", 12, MUTED)
+	for key in groups:
+		var assets: Array = groups[key]
+		var contribution := 0.0
+		for asset in assets: contribution += sim.asset_operating_profit(asset)
+		var handle := 0.0
+		var payouts := 0.0
+		var win := 0.0
+		var hours := 0.0
+		var busy := 0.0
+		var repairs := 0.0
+		for asset in assets:
+			var data := sim.asset_performance(asset)
+			handle += float(data.handle)
+			payouts += float(data.payouts)
+			win += float(data.guest_win)
+			hours += float(data.hours)
+			busy += float(asset.occupied_minutes) / 60.0
+			repairs += float(asset.repair_expense)
+		finance_row(parent, "%s (%d)" % [sim.asset_name(assets[0]), assets.size()], contribution, false)
+		if hours > 0:
+			finance_short_metric(parent, "Handle / available asset hour", FinancialText.cash(handle / hours) + "/hr")
+			finance_short_metric(parent, "Contribution / available asset hour", FinancialText.house_result(contribution / hours) + "/hr")
+		else: add_label(parent, "No operating sample yet.", 12, MUTED)
+		add_button(parent, "Hide breakdown" if finance_compare_group == key else "Expand breakdown", func(): finance_compare_group = "" if finance_compare_group == key else key; refresh())
+		if finance_compare_group != key: continue
+		finance_short_metric(parent, "Settled handle (all players)", FinancialText.cash(handle))
+		finance_short_metric(parent, "Returned to players", FinancialText.cash(payouts))
+		finance_row(parent, "Guest gaming win", win, false)
+		finance_row(parent, "Repair cost", -repairs, false)
+		if hours > 0:
+			finance_short_metric(parent, "Busy / available asset time", "%.0f%%" % (busy / hours * 100))
+			finance_short_metric(parent, "Available asset-hour sample", "%.1f" % hours)
+		else: add_label(parent, "No operating sample yet.", 12, MUTED)
+		add_label(parent, "Lifetime figures; short samples reflect variance. Contribution excludes purchase price, visitor play and shared service costs. Compare similar operating samples.", 12, MUTED)
+		for asset in assets:
+			finance_row(parent, "%s #%d" % [sim.asset_name(asset), asset.id], sim.asset_operating_profit(asset), false)
+			add_button(parent, "Inspect #%d" % asset.id, func(): selected = int(asset.id); asset_details = true; open_page("table"))
+
 func render_finance() -> void:
 	add_label(inspector, "FINANCE", 12, GOLD)
 	add_label(inspector, "Lifetime operations / %.1f game hours" % (float(sim.elapsed) / 60.0), 12, MUTED)
@@ -1104,6 +1189,15 @@ func render_finance() -> void:
 	var costs_value := finance_value(costs_line, FinancialText.house_result(-sim.recurring_costs()), 14, MUTED)
 	costs_value.size_flags_horizontal = SIZE_FILL
 	costs_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	var report := sim.reserve_report()
+	var reserve_title := "Reserve short" if report.level == "short" else "Reserve thin" if report.level == "thin" else "Reserve headroom"
+	var reserve_detail := finance_card("reserve", reserve_title, float(report.margin))
+	if reserve_detail != null: render_finance_reserve(reserve_detail, report)
+	if not sim.tables.is_empty():
+		var owned_contribution := 0.0
+		for asset in sim.tables: owned_contribution += sim.asset_operating_profit(asset)
+		var asset_detail := finance_card("assets", "Asset contribution", owned_contribution)
+		if asset_detail != null: render_finance_assets(asset_detail)
 	var detail := finance_card("gaming", "Gaming", sim.guest_gaming_profit())
 	if detail != null: render_finance_gaming(detail)
 	var bar_relevant: bool = sim.staff.any(func(employee): return employee.role == "Service") or int(sim.bar_totals.sold) + int(sim.bar_totals.comped) > 0 or float(sim.expense_totals.service_payroll) > 0
@@ -1121,6 +1215,8 @@ func render_finance() -> void:
 	if absf(float(sim.expense_totals.construction)) + absf(float(sim.expense_totals.sales)) + float(sim.expense_totals.hiring) > 0:
 		detail = finance_card("investment", "Investment / setup", -investment)
 		if detail != null: render_finance_investment(detail)
+	finance_row(inspector, "Net cash flow", sim.net_profit(), false)
+	if not finance_advanced: add_label(inspector, "Cash flow includes visitor transfers and pending stakes.", 12, MUTED)
 	var advanced := add_button(inspector, "Advanced accounting -" if finance_advanced else "Advanced accounting >", func(): finance_advanced = not finance_advanced; refresh())
 	advanced.tooltip_text = "Reconciliation and payroll diagnostics"
 	if finance_advanced: render_finance_advanced(inspector)

@@ -1095,6 +1095,7 @@ func step() -> void:
 		log_event("Guests are asking for drinks. Hire service staff or offer a comp.")
 
 	refresh_progression()
+	update_reserve_warning()
 
 func take_bet(table: Dictionary, bettor: Dictionary, kind: String, amount: float, owner: bool) -> bool:
 	var funds: float = wallet if owner else float(bettor.wallet)
@@ -1439,11 +1440,91 @@ func guest_gaming_profit() -> float:
 func operating_profit() -> float:
 	return guest_gaming_profit() + float(bar_totals.revenue) - recurring_costs()
 
-func asset_operating_profit(table: Dictionary) -> float:
+func asset_pending_stakes(table: Dictionary) -> float:
 	var pending := game_liability(table) + CrapsRules.exposure(table.owner)
 	for guest in guests:
 		if int(guest.table) == int(table.id): pending += CrapsRules.exposure(guest.bets)
-	return float(table.wagers) - float(table.payouts) - pending - float(table.visitor_gaming_win) - float(table.operating_expense) - float(table.repair_expense) - float(table.payroll_expense)
+	return pending
+
+func asset_performance(table: Dictionary) -> Dictionary:
+	var handle := float(table.wagers) - asset_pending_stakes(table)
+	var gaming_win := handle - float(table.payouts)
+	var hours := float(table.available_minutes) / 60.0
+	return {"handle": handle, "payouts": float(table.payouts), "gaming_win": gaming_win,
+		"guest_win": gaming_win - float(table.visitor_gaming_win),
+		"contribution": asset_operating_profit(table), "hours": hours,
+		"utilization": float(table.occupied_minutes) / maxf(1, float(table.available_minutes)) * 100.0,
+		"handle_hour": handle / hours if hours > 0 else 0.0,
+		"contribution_hour": asset_operating_profit(table) / hours if hours > 0 else 0.0}
+
+func asset_payout_buffer(kind: String, profile_id: String = "starter", pending: float = 0.0) -> float:
+	if kind == "slots":
+		var profile := CasinoTuning.slot_profile(profile_id)
+		return maxf(float(profile.reserve), float(profile.top_return) * float(profile.maximum))
+	var profile: Dictionary = CasinoTuning.TABLE_RESERVE_PROFILES[kind]
+	var seats := 1.0 + CasinoTuning.RESERVE_ADDITIONAL_SEAT_WEIGHT * float(capacity({"kind": kind}) - 1)
+	var swing := float(CasinoTuning.GAME_LIMITS[kind].maximum) * float(profile.return_multiple) * seats
+	return maxf(float(profile.base), maxf(swing, pending * float(profile.return_multiple)))
+
+func reserve_report(add_kind: String = "", profile_id: String = "starter") -> Dictionary:
+	var total := 0.0
+	var largest := 0.0
+	var largest_name := "No gaming assets"
+	var upkeep := 0.0
+	var repairs := 0.0
+	for table in tables:
+		var kind := table_kind(table)
+		upkeep += float(slot_profile(table).overhead) if kind == "slots" else CasinoTuning.TABLE_OVERHEAD
+		if table.broken: repairs += repair_cost(table)
+		if not ready_for_play(table) and not table.broken and asset_pending_stakes(table) <= 0: continue
+		var buffer := asset_payout_buffer(kind, str(table.slot_profile), asset_pending_stakes(table))
+		total += buffer
+		if buffer > largest:
+			largest = buffer
+			largest_name = "%s #%d" % [asset_name(table), table.id]
+	var purchase := 0.0
+	var onboarding := 0.0
+	var extra_payroll := 0.0
+	if add_kind != "":
+		purchase = purchase_cost(add_kind, profile_id)
+		var crew_needed := required_crew({"kind": add_kind})
+		var standby := staff.filter(func(employee): return employee.role == "Dealer" and int(employee.table) == -1).size()
+		var hires := maxi(0, crew_needed - standby)
+		onboarding = hires * CasinoTuning.HIRING_COST
+		extra_payroll = hires * CasinoTuning.DEALER_WAGE
+		upkeep += float(CasinoTuning.slot_profile(profile_id).overhead) if add_kind == "slots" else CasinoTuning.TABLE_OVERHEAD
+		var buffer := asset_payout_buffer(add_kind, profile_id)
+		total += buffer
+		if buffer > largest:
+			largest = buffer
+			largest_name = "Proposed " + (str(CasinoTuning.slot_profile(profile_id).name) if add_kind == "slots" else str(Games.NAMES[add_kind]))
+	var payouts_buffer := largest + (total - largest) * CasinoTuning.RESERVE_ADDITIONAL_ASSET_WEIGHT
+	var payroll_buffer := (payroll_rate() + extra_payroll) * CasinoTuning.RESERVE_OPERATING_HOURS
+	var upkeep_buffer := upkeep * CasinoTuning.RESERVE_OPERATING_HOURS
+	var required := payouts_buffer + payroll_buffer + upkeep_buffer + repairs
+	var pending := live_stakes()
+	var available := cash - pending - purchase - onboarding
+	var margin := available - required
+	var level := "short" if margin < 0 else "thin" if required > 0 and margin < required * CasinoTuning.RESERVE_THIN_FRACTION else "covered"
+	return {"pending": pending, "available": available, "required": required, "margin": margin,
+		"payouts": payouts_buffer, "payroll": payroll_buffer, "upkeep": upkeep_buffer, "repairs": repairs,
+		"purchase": purchase, "onboarding": onboarding, "largest": largest_name, "level": level}
+
+var reserve_alert_level := "covered"
+var reserve_alert_at := -CasinoTuning.RESERVE_ALERT_MINUTES
+
+func update_reserve_warning() -> void:
+	var report := reserve_report()
+	if report.level == reserve_alert_level or elapsed - reserve_alert_at < CasinoTuning.RESERVE_ALERT_MINUTES: return
+	reserve_alert_level = report.level
+	reserve_alert_at = elapsed
+	if report.level == "covered":
+		log_event("RESERVE - Operating buffer restored. Estimates do not guarantee coverage of every payout.")
+	else:
+		log_event("RESERVE - %s: free cash $%.0f / suggested $%.0f. Main payout exposure: %s." % ["Buffer short" if report.level == "short" else "Thin buffer", report.available, report.required, report.largest])
+
+func asset_operating_profit(table: Dictionary) -> float:
+	return float(table.wagers) - float(table.payouts) - asset_pending_stakes(table) - float(table.visitor_gaming_win) - float(table.operating_expense) - float(table.repair_expense) - float(table.payroll_expense)
 
 func operating_costs() -> float:
 	return payroll + overhead
@@ -1628,6 +1709,8 @@ func restore(data: Dictionary) -> bool:
 	cashout_effects.clear()
 	recent_financial_events.clear()
 	house_activity.clear()
+	reserve_alert_level = "covered"
+	reserve_alert_at = elapsed - CasinoTuning.RESERVE_ALERT_MINUTES
 	arrival_in = int(data.arrival_in)
 	opened = bool(data.opened)
 	for key in ["tables", "guests", "staff", "alerts", "incidents"]:

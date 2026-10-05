@@ -475,3 +475,29 @@ compare equally developed/staffed casinos over equal executed game hours, spawn
 within usable capacity, open affordable Blackjack/craps while slots are active,
 observe varied sessions/migration/waits/watchers/drink breaks, then compare missing
 service, empty bankrolls, broken assets and deliberate over-capacity spawning.
+
+## Phase 06 reserve advice
+
+Advisory buffer = largest asset payout buffer + 25% of the other asset buffers,
+plus four hours of current payroll/upkeep and known repair bills. Free cash
+excludes pending stakes. Slot buffers use the larger of profile reserve and
+maximum total return, so denomination and volatility raise risk independently
+of RTP. Table buffers use centralized plausible-return multiples, maximum wager,
+a partial allowance for additional seats, and current unresolved exposure.
+These are planning allowances, not worst-case solvency guarantees. A shortfall
+or headroom below 25% of the suggested buffer prompts a rate-limited warning.
+
+Purchase readiness includes the current floor and any necessary new dealer
+hires; paid standby dealers can be assigned without additional onboarding.
+Blackjack's existing unlock requirements and all balances/probabilities are
+unchanged. A player can unlock before comfortably funding expansion, or choose
+to buy below the advisory buffer. Compare slots using actual handle, utilization,
+repair burden and contribution per available asset hour; small samples can lose
+through variance. Purchase price is excluded from recurring contribution.
+
+Manual checks: compare owned tiers after similar operating samples; inspect a
+slot and each table game while stakes are unresolved and after settlement; check
+visitor separation, repaired/broken assets and assigned payroll. Spend toward a
+premium machine or table and observe reserve guidance; compare Blackjack plans
+with and without standby dealers. Recheck expanded Finance at 320px portrait,
+landscape and desktop. No automated tests were run for Phase 06.

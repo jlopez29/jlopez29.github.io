@@ -115,6 +115,18 @@ const DEVELOPMENT_VALUES := {"blackjack": 4.0, "roulette": 5.0, "craps": 7.0, "h
 const SLOT_DEVELOPMENT_CAP := 30.0 # A developed slot floor can reach the highest Rating; each profile also has a cap.
 const RATING_HANDLE_UNIT := 3000.0
 const RATING_GUEST_UNIT := 20.0
+# Advisory liquidity planning only; never consulted by settlement or unlock rules.
+const RESERVE_OPERATING_HOURS := 4.0
+const RESERVE_ADDITIONAL_ASSET_WEIGHT := 0.25
+const RESERVE_ADDITIONAL_SEAT_WEIGHT := 0.15
+const RESERVE_THIN_FRACTION := 0.25
+const RESERVE_ALERT_MINUTES := 60
+const TABLE_RESERVE_PROFILES := {
+	"blackjack": {"base": 650.0, "return_multiple": 3.0},
+	"roulette": {"base": 1200.0, "return_multiple": 36.0},
+	"craps": {"base": 2500.0, "return_multiple": 35.0},
+	"holdem": {"base": 3000.0, "return_multiple": 100.0},
+}
 const BLACKJACK_REQUIREMENTS := {"rating": 16.0, "development": 4.0, "capacity": 3, "handle": 12000.0, "guests": 80, "cash": 2450.0}
 const BLACKJACK_RESERVE := 650.0 # Suggested after table + onboarding; includes payroll and payouts.
 const GUEST_BUDGETS := [
