@@ -54,10 +54,47 @@ Financial visual feedback must represent real simulation transactions and actual
 
 Normal difficulty starts with a small slot operation and progresses toward table games, service, VIPs, and larger casino systems. Avoid giving everything immediately. Easy offers more freedom to start with preferred casino games without the full Normal progression grind. Progression should provide anticipation, meaningful purchases, financial tradeoffs, visible growth, and increasing operational complexity.
 
+## UI text / character safety
+
+- Prefer ASCII-safe UI text; use non-ASCII only when intentionally required and confirmed to render in the current Godot fonts and web export.
+- Avoid decorative Unicode, emoji, uncommon bullets, separators and icon-like glyphs without rendering confirmation. Prefer `|`, `-`, `/`, `+` and `>`.
+- Treat replacement characters, boxes, mojibake and corrupted glyphs as bugs; clean up obvious instances in nearby UI text being modified.
+- Do not change the project font system to fix a decorative character unless explicitly requested.
+- Keep source files correctly UTF-8 encoded, including when visible UI text is ASCII-safe.
+
+## House Activity vs money feedback
+
+Routine individual gambling settlements belong in floating/toast money feedback, not House Activity. House Activity is a filtered management feed for cage cash-outs, major wins/losses, unlocks, rating changes, VIP events, breakdowns, staffing/service issues, reserve warnings and other important operational events. Do not turn it into a transaction ledger. Preserve detailed internal financial events for analytics even when the feed hides them.
+
+## Developer testing tools
+
+Prefer development-only state controls when progression makes repeated manual testing cumbersome; do not weaken Normal progression, temporarily rebalance production, or use extreme simulation speeds as a substitute for progression controls. Debug-only extreme speeds may be provided for stress and long-duration checks.
+
+- Use real gameplay systems where practical and avoid duplicating major gameplay logic.
+- Keep tools separate from normal progression and unavailable in production release builds.
+- Extend the panel only for an actual testing need; consider a small control when adding progression-heavy features.
+- Keep developer actions visibly marked and distinguish prerequisite preparation from forced access.
+- Build release `casino/` and local debug `casino-debug/` from the same `casino-godot/` source. Guard tools with `OS.is_debug_build()`; use `export_web.py --both` when both exports are needed.
+
 ## Code and workflow
 
 Prefer clear system ownership, small focused functions, signals/events between simulation and presentation when appropriate, centralized tuning, data-driven progression where practical, and reusable systems. Avoid giant conditional chains, UI-owned simulation rules, duplicated economy logic, scattered magic numbers, compatibility spaghetti, and premature abstraction for hypothetical systems.
 
 Read the task, inspect relevant source, implement the smallest clean solution, avoid unrelated scope, and provide concise manual verification steps. Briefly plan complex architectural changes before editing. Related cleanup can remove dead code or obsolete compatibility branches, consolidate duplication, rename misleading fields, or move tuning into `tuning.gd`.
 
+After each V0.3 update step, rebuild the playable web export with `casino-godot/export_web.py` so the developer can manually test it. Use the installed Godot binary with matching export templates; resolve any build errors before reporting completion. This does not authorize automated tests.
+
 Keep completion summaries brief: what changed, important design decisions, files changed, and what the developer should manually verify. Avoid large implementation essays or restating the task; stop when the requested work is complete.
+
+## BUILD / EXPORT REQUIREMENT
+
+After completing the requested source changes, produce the current playable build using the repository’s existing Godot build/export workflow.
+Do not manually edit generated files in casino/.
+Source changes belong in casino-godot/; generated web output should only change as a result of the normal export/build process.
+If the environment cannot perform the export, explicitly say so in the final response and provide the exact build/export command or action the developer must run.
+Do not report the phase as ready for manual gameplay verification without stating whether the playable build was successfully regenerated.
+Final report must include:
+- Source changes completed
+- Build/export: SUCCESS / NOT RUN / FAILED
+- Generated playable build updated: YES / NO
+- Manual gameplay checks

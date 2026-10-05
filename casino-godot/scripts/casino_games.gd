@@ -6,9 +6,6 @@ const COSTS := CasinoTuning.GAME_COSTS
 const RED := [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]
 const WHEEL := [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26]
 const SYMBOLS := ["CHERRY", "LEMON", "BELL", "BAR", "SEVEN"]
-# Each reel has 20 equally likely stops. Awards include the wager.
-const REEL := [0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,3,3,3,4,4]
-const SLOT_PAY := [5,8,15,30,100]
 
 static func deck(rng: RandomNumberGenerator, packs: int = 1) -> Array:
 	var result: Array = []
@@ -69,12 +66,14 @@ static func spin_roulette(bets: Dictionary, rng: RandomNumberGenerator, forced: 
 		if options.has(name) and number in options[name].numbers: credit += float(bets[name]) * (1 + int(options[name].pay))
 	return {"phase": "done", "kind": "roulette", "number": number, "credit": credit, "message": "%d %s · returned $%.2f" % [number, "GREEN" if number == 0 else ("RED" if number in RED else "BLACK"), credit]}
 
-static func spin_slots(bet: float, rng: RandomNumberGenerator) -> Dictionary:
-	var reels := [REEL[rng.randi_range(0, 19)], REEL[rng.randi_range(0, 19)], REEL[rng.randi_range(0, 19)]]
+static func spin_slots(bet: float, rng: RandomNumberGenerator, profile: Dictionary) -> Dictionary:
+	# Total returns include stake. Outcome probabilities never depend on treasury.
+	var reel: Array = profile.reel
+	var reels := [reel[rng.randi_range(0, reel.size() - 1)], reel[rng.randi_range(0, reel.size() - 1)], reel[rng.randi_range(0, reel.size() - 1)]]
 	var award := 0
-	if reels[0] == reels[1] and reels[1] == reels[2]: award = SLOT_PAY[reels[0]]
-	elif reels.count(0) == 2: award = 1
-	elif reels.count(0) == 1 and reels[0] == 0: award = 1
+	if reels[0] == reels[1] and reels[1] == reels[2]: award = profile.pays[reels[0]]
+	elif reels.count(0) == 2: award = profile.cherry_return
+	elif reels.count(0) == 1 and reels[0] == 0: award = profile.cherry_return
 	return {"phase": "done", "kind": "slots", "reels": reels, "credit": bet * award, "message": "%s / %s / %s · %s" % [SYMBOLS[reels[0]], SYMBOLS[reels[1]], SYMBOLS[reels[2]], "Returned $%.2f" % (bet * award) if award else "No win"]}
 
 static func blackjack(bet: float, rng: RandomNumberGenerator, participants: Array = []) -> Dictionary:

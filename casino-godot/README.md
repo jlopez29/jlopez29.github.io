@@ -218,3 +218,78 @@ The app does not prove commercial viability: watch real playtesters and use
 
 See [architecture](ARCHITECTURE.md), [balance](BALANCING.md),
 [roadmap](ROADMAP.md), [assets](ASSETS.md), and [Steam notes](STEAM.md).
+
+## V0.3 development controls
+
+Godot editor runs and debug builds support **F10** after choosing a casino to
+open/close the developer panel. It starts hidden. `DEV MODE` remains visible
+after an action even if the panel closes, until starting a new casino.
+
+Controls: add $1,000/$10,000, spawn one/five normal guests, prepare Rating +1,
+advance to the next locked milestone, and force access to an implemented feature.
+Advance supplies actual placed capacity/crews, prerequisite purchases, supporting
+activity counters and funds as needed, then uses normal progression detection.
+Rating +1 similarly prepares underlying development/activity instead of setting
+a rating that the next simulation tick would erase. Normal costs, placement and
+staff limits still apply; if space is insufficient, move equipment and retry.
+These actions intentionally produce artificial development state; grants are not
+gaming revenue, and activity counters do not simulate wagers or cash-outs.
+
+Force Unlock only changes session access, without purchases or prerequisites.
+Forced access clears on successful Load or New Casino and is never saved.
+Prepared property, activity and treasury changes use the current save schema.
+Release builds do not create the panel and reject developer action handlers and
+forced access through `OS.is_debug_build()`.
+
+Build the separate local development export (never overwrites `casino/`):
+
+```sh
+python3 casino-godot/export_web.py --godot /home/codespace/.cache/neon-house-tools/Godot_v4.7.2-stable_linux.x86_64 --debug
+python3 -m http.server 8081 --bind 0.0.0.0 --directory casino-debug
+```
+
+Run those commands from the repository root. The Godot path above is the installed
+Codespaces binary; use your own matching binary on other machines.
+Open `http://localhost:8081/game.html` (forward port 8081 in Codespaces).
+Use the existing export command without `--debug` for the public release.
+`--both` builds `casino-debug/game.html` and `casino/game.html` from the exact
+same `casino-godot/` source/import/build timestamp. Only Godot's debug/release
+export mode differs. `casino-debug/` is ignored by Git so local tools do not get
+published through the existing GitHub Pages workflow.
+Normal speed controls and balance remain unchanged; automated tests are opt-in.
+
+The F10 panel offers 1x, 4x, 100x and 1000x. Extreme speeds are debug-only
+stress tools; use Advance / Force Unlock for progression checks. The HUD shows
+DEV 100x or DEV 1000x. Movement is substepped at at most 0.1 seconds, interleaved
+with economic ticks; UI animations remain in real time. Work is limited to an
+8 ms budget per frame (individual operations can exceed it), with at most 60
+seconds of pending simulation time. Busy floors may run below the requested
+speed; excess requested time is discarded rather than skipping economic ticks.
+Loading a save, starting a casino or resetting the dev session resets speed to
+1x. Extreme speed is not saved. Closing the panel does not stop acceleration;
+use the normal speed buttons or pause.
+
+## V0.3 Phase 02 money feedback
+
+Floating HOUSE amounts are net casino results, not gross wagers or gross payouts:
+$5 staked/$0 returned shows +$5; $5/$20 shows -$15. They rise/fade near the actual
+machine/table, remain readable while walking, and prioritize larger swings.
+Small same-sign bursts may show an explicitly counted aggregate. Guest and visitor
+money stay distinct. Slot spins, blackjack/UTH hands, roulette guest spins and
+craps rolls feed the same simulation-owned event signal. Pushes remain in recent
+activity but do not create floating $0 labels. SESSION cage summaries repeat a
+settled visit total, without another treasury transaction or gaming event.
+
+The treasury number smoothly approaches actual cash with a subtle change pulse;
+its tooltip shows the authoritative value. Cash includes expenses and unsettled
+stakes, while HOUSE labels report completed gambling results. Compact recent house
+activity is available in the floor report and game views. Load/New Casino clear
+transient feedback. Balance, probabilities and 1x/4x operation are unchanged.
+
+Manual checks: watch slots at 1x and 4x, walk/zoom during payouts, compare a losing
+wager and winning return against HOUSE net, then use Easy/debug tools to observe
+blackjack, roulette, craps and UTH. Check blackjack extra stakes/pushes, UTH raises,
+roulette multiple guests, and craps unresolved/standing contracts. Confirm cage
+visits and removable-bet refunds do not add duplicate net results; observe genuine
+large wins/losses, busy-table overlap, purchase/payroll treasury motion, and fresh
+visuals after Load/New Casino. No automated tests or spin suites are required.

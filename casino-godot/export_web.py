@@ -9,9 +9,21 @@ import subprocess
 from zoneinfo import ZoneInfo
 
 
+def run_godot(command):
+    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    print(result.stdout, end="", flush=True)
+    result.check_returncode()
+    # Godot can report script errors while returning zero. Never label that a build success.
+    if "SCRIPT ERROR:" in result.stdout or "ERROR:" in result.stdout:
+        raise RuntimeError("Godot reported errors; export is not ready for manual verification")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--godot", default="godot", help="Godot binary with matching export templates")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--both", action="store_true", help="Build release and debug from one source/import/build timestamp")
+    mode.add_argument("--debug", action="store_true", help="Export to casino-debug/ with developer tooling; leave casino/ unchanged")
     parser.add_argument("--version", default="0.3", help="Player-facing version")
     args = parser.parse_args()
     project = Path(__file__).resolve().parent
@@ -24,8 +36,15 @@ def main():
         f"const UPDATED_AT := {json.dumps(timestamp)}\n"
     )
     (project / "scripts" / "build_info.gd").write_text(metadata, encoding="utf-8")
-    subprocess.run([args.godot, "--headless", "--path", str(project), "--editor", "--import", "--quit"], check=True)
-    subprocess.run([args.godot, "--headless", "--path", str(project), "--export-release", "Web"], check=True)
+    run_godot([args.godot, "--headless", "--path", str(project), "--editor", "--import", "--quit"])
+    if args.debug or args.both:
+        output = project.parent / "casino-debug" / "game.html"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        run_godot([args.godot, "--headless", "--path", str(project), "--export-debug", "Web", str(output)])
+        print(f"Built Neon House {args.version} DEVELOPMENT. F10 enables tools. Output: {output}")
+        if args.debug:
+            return
+    run_godot([args.godot, "--headless", "--path", str(project), "--export-release", "Web"])
     wrapper = project.parent / "casino" / "index.html"
     html = wrapper.read_text(encoding="utf-8")
     html, count = re.subn(r"(NEON HOUSE <small>)[^<]*(</small>)", lambda match: match[1] + args.version + match[2], html, count=1)

@@ -1,6 +1,7 @@
 extends "res://scripts/game_art.gd"
 signal command(action: String)
 signal chip_added(spot: String, amount: float)
+var table_guests: Array = []
 var wallet := 0.0
 var wager := 10.0
 var side_bet := false
@@ -43,13 +44,12 @@ func configure() -> void:
 
 func arrange() -> void:
 	if kind == "roulette": return
-	zoom = minf(1.2, size.x / 760.0)
-	origin = Vector2((size.x - 760 * zoom)/2,0)
-	var extra := 0.0
-	if kind == "blackjack": extra = maxf(0, round.get("hands",[]).size()-1)*100
-	var base := 620.0 + extra
-	custom_minimum_size.y = base * zoom + ceilf(buttons.size()/2.0)*50 + 12
-	var cols := 2 if size.x < 600 else maxi(1,buttons.size())
+	var canvas_width := 440.0 if kind == "blackjack" and size.x < 600 else 760.0
+	zoom = minf(1.0 if kind == "blackjack" else 1.2, size.x / canvas_width)
+	origin = Vector2((size.x - canvas_width * zoom)/2,0)
+	var base := blackjack_height() + 16 if kind == "blackjack" else 620.0
+	var cols := 1 if kind == "blackjack" and size.x < 400 else (2 if size.x < 600 else maxi(1, buttons.size()))
+	custom_minimum_size.y = base * zoom + ceili(buttons.size() / float(cols)) * 50 + 12
 	for i in range(buttons.size()):
 		buttons[i].position = Vector2(8+(i%cols)*(size.x-16)/cols,base*zoom+int(i/cols)*50)
 		buttons[i].size = Vector2((size.x-16)/cols-6,46)
@@ -58,14 +58,24 @@ func arrange() -> void:
 func centered(at: Vector2, value: String, fs: int, color: Color = GOLD) -> void:
 	text(at-Vector2(font.get_string_size(value,HORIZONTAL_ALIGNMENT_LEFT,-1,fs).x/2,0),value,fs,color)
 
-func stack(at: Vector2, amount: float, color: Color = Color("b8394f")) -> void:
-	for i in range(mini(5,maxi(1,int(amount/10)))):
-		var p := at-Vector2(0,i*3)
-		draw_circle(p,22,Color("f4e9c4")); draw_circle(p,19,color)
+func stack(at: Vector2, amount: float, color: Color = Color("b8394f"), radius: float = 22.0) -> void:
+	var count := mini(5, maxi(1, int(amount / 10)))
+	var top := at
+	for i in range(count):
+		var position := at - Vector2(0, i * 3)
+		top = position
+		draw_circle(position, radius, Color("f4e9c4"))
+		draw_circle(position, radius - 3, color)
 		for j in range(8):
-			var d := Vector2.from_angle(j*TAU/8)
-			draw_line(p+d*15,p+d*20,Color("f4e9c4"),3)
-	centered(at+Vector2(0,4),"$%d" % amount,13,Color.WHITE)
+			var direction := Vector2.from_angle(j * TAU / 8)
+			draw_line(position + direction * (radius - 7), position + direction * (radius - 2), Color("f4e9c4"), 3)
+	var value := "$%d" % amount
+	var font_size := maxi(13, floori(radius * 0.6))
+	var available_width := (radius - 5) * 2
+	while font_size > 7 and font.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > available_width:
+		font_size -= 1
+	var baseline := (font.get_ascent(font_size) - font.get_descent(font_size)) / 2
+	centered(top + Vector2(0, baseline), value, font_size, Color.WHITE)
 
 func symbol(at: Vector2, value: int, s: float = 1.0) -> void:
 	if value == 0:
@@ -136,7 +146,10 @@ func draw_cabinet() -> void:
 	centered(Vector2(380,581),"3 matching symbols win • cherries can pay on their own",13,Color("c7bfae"))
 
 func draw_table_surface() -> void:
-	var extra := maxf(0,round.get("hands",[]).size()-1)*100 if kind == "blackjack" else 0.0
+	if kind == "blackjack":
+		draw_blackjack_surface()
+		return
+	var extra := 0.0
 	panel(Rect2(4,4,752,602+extra),Color("372821"),55)
 	panel(Rect2(19,18,722,574+extra),Color("172629"),48)
 	panel(Rect2(34,30,692,547+extra),Color("105447") if kind == "blackjack" else Color("163d66"),42)
@@ -150,35 +163,19 @@ func draw_table_surface() -> void:
 		for i in range(round.dealer.size()): card(Vector2(328+i*55,130),int(round.dealer[i]),not done and (kind == "holdem" or i > 0))
 	else:
 		card(Vector2(328,130),0,true); card(Vector2(383,130),0,true)
-	if kind == "holdem":
-		var count := 5 if done or round.get("phase","") == "river" else (3 if round.get("phase","") == "flop" else 0)
-		for i in range(5): card(Vector2(242+i*56,230),int(round.get("board",[0,0,0,0,0])[i]),i >= count)
-		centered(Vector2(380,218),"COMMUNITY CARDS",12)
-		for i in range(2): card(Vector2(328+i*55,335),int(round.get("player",[0,0])[i]),round.is_empty())
-		for i in range(4):
-			var name: String = ["Ante","Blind","Trips","Play"][i]
-			var at := Vector2(185+i*130,458)
-			zones[name] = at
-			draw_arc(at,39,0,TAU,60,GOLD,2)
-			centered(at+Vector2(0,-46),name.to_upper(),14)
-			var amount := wager if name in ["Ante","Blind"] else (wager if name == "Trips" and side_bet else 0.0)
-			if pending: amount = float(round.get("play",0)) if name == "Play" else (float(round.get("trips",0)) if name == "Trips" else float(round.get("base",wager)))
-			if amount > 0: stack(at,amount)
-	else:
-		centered(Vector2(380,237),"BLACKJACK PAYS 3 TO 2",24)
-		centered(Vector2(380,260),"DEALER STANDS ON ALL 17s  •  INSURANCE PAYS 2 TO 1",12)
-		var hands: Array = round.get("hands",[])
-		for h in range(maxi(1,hands.size())):
-			var y := 290+h*100
-			if h < hands.size():
-				var hand: Dictionary = hands[h]
-				var gap := minf(52,460.0/maxi(1,hand.cards.size()))
-				for i in range(hand.cards.size()): card(Vector2(380-hand.cards.size()*gap/2+i*gap,y),int(hand.cards[i]))
-				centered(Vector2(380,y+86),"HAND %d • %d%s" % [h+1,Games.total(hand.cards)," • YOUR TURN" if pending and int(round.active)==h else ""],13)
-		var at := Vector2(380,455+extra)
-		zones["Bet"] = at
-		draw_arc(at,40,0,TAU,60,GOLD,2); stack(at,wager)
-		centered(at+Vector2(0,-47),"PLACE BET",13)
+	var count := 5 if done or round.get("phase","") == "river" else (3 if round.get("phase","") == "flop" else 0)
+	for i in range(5): card(Vector2(242+i*56,230),int(round.get("board",[0,0,0,0,0])[i]),i >= count)
+	centered(Vector2(380,218),"COMMUNITY CARDS",12)
+	for i in range(2): card(Vector2(328+i*55,335),int(round.get("player",[0,0])[i]),round.is_empty())
+	for i in range(4):
+		var name: String = ["Ante","Blind","Trips","Play"][i]
+		var at := Vector2(185+i*130,458)
+		zones[name] = at
+		draw_arc(at,39,0,TAU,60,GOLD,2)
+		centered(at+Vector2(0,-46),name.to_upper(),14)
+		var amount := wager if name in ["Ante","Blind"] else (wager if name == "Trips" and side_bet else 0.0)
+		if pending: amount = float(round.get("play",0)) if name == "Play" else (float(round.get("trips",0)) if name == "Trips" else float(round.get("base",wager)))
+		if amount > 0: stack(at,amount)
 	for i in range(4):
 		var amount: int = [5,10,25,100][i]
 		var at := Vector2(245+i*90,545+extra)
@@ -203,3 +200,106 @@ func _gui_input(event: InputEvent) -> void:
 					if at.distance_to(zones[name]) < 42: chip_added.emit(name,selected_chip)
 			dragging = false
 		accept_event(); queue_redraw()
+
+func blackjack_seat_rows() -> int:
+	var columns := 2 if size.x < 600 else 4
+	return ceili(table_guests.size() / float(columns))
+
+func blackjack_height() -> float:
+	var extra_hands := maxi(0, round.get("hands", []).size() - 1)
+	return 640.0 + blackjack_seat_rows() * 150 + extra_hands * 128
+
+func draw_blackjack_surface() -> void:
+	var compact := size.x < 600
+	var width := 440.0 if compact else 760.0
+	var center := width / 2
+	var height := blackjack_height()
+	panel(Rect2(4, 4, width - 8, height - 8), Color("372821"), 45)
+	panel(Rect2(19, 18, width - 38, height - 34), Color("172629"), 38)
+	panel(Rect2(34, 30, width - 68, height - 66), Color("105447"), 32)
+	for y in range(42, int(height - 42), 7):
+		draw_line(Vector2(49, y), Vector2(width - 49, y), Color(1, 1, 1, 0.018), 1)
+	centered(Vector2(center, 59), "NEON HOUSE / BLACKJACK", 20)
+	var done: bool = round.get("phase", "") == "done"
+	var dealer: Array = round.get("dealer", [])
+	var dealer_text := "DEALER - waiting for deal"
+	if not dealer.is_empty():
+		# Match the existing hole-card rendering: only card zero is exposed in play.
+		var visible_cards: Array = dealer if done else [dealer[0]]
+		dealer_text = "DEALER - %d%s" % [Games.total(visible_cards), "" if done else " (showing)"]
+	centered(Vector2(center, 98), dealer_text, 24)
+	if dealer.is_empty():
+		card(Vector2(center - 52, 115), 0, true)
+		card(Vector2(center + 3, 115), 0, true)
+	else:
+		var gap := minf(55, (width - 110) / maxi(1, dealer.size()))
+		var span: float = (dealer.size() - 1) * gap + 49
+		for i in range(dealer.size()): card(Vector2(center - span / 2 + i * gap, 115), int(dealer[i]), not done and i > 0)
+	var guest_top := 200.0
+	var columns := 2 if compact else 4
+	var column_width := (width - 90) / columns
+	for index in range(table_guests.size()):
+		var guest: Dictionary = table_guests[index]
+		var at := Vector2(45 + (index % columns) * column_width, guest_top + (index / columns) * 150)
+		draw_blackjack_guest(guest, Rect2(at, Vector2(column_width - 8, 136)), done)
+	var hand_top := guest_top + blackjack_seat_rows() * 150
+	var hands: Array = round.get("hands", [])
+	for index in range(maxi(1, hands.size())):
+		var y := hand_top + index * 128
+		var active := pending and int(round.get("active", 0)) == index
+		var name := "YOUR HAND" if hands.size() <= 1 else "HAND %d" % (index + 1)
+		var title := name + " - waiting for deal"
+		if index < hands.size(): title = "%s - %d" % [name, Games.total(hands[index].cards)]
+		centered(Vector2(center, y + 34), title, 36 if index < hands.size() else 25, Color("fff3cb"))
+		if index < hands.size():
+			var hand: Dictionary = hands[index]
+			var gap := minf(52, (width - 110) / maxi(1, hand.cards.size()))
+			var span: float = (hand.cards.size() - 1) * gap + 49
+			for i in range(hand.cards.size()): card(Vector2(center - span / 2 + i * gap, y + 46), int(hand.cards[i]))
+			var state := "YOUR TURN" if active else ("FINISHED" if done else "WAITING")
+			if Games.total(hand.cards) > 21: state = "BUSTED"
+			elif hand.surrender: state = "SURRENDERED"
+			elif not hand.split and hand.cards.size() == 2 and Games.total(hand.cards) == 21: state = "BLACKJACK"
+			centered(Vector2(center, y + 127), state, 14, GOLD)
+	var bet_at := Vector2(center, hand_top + maxi(1, hands.size()) * 128 + 68)
+	zones["Bet"] = bet_at
+	draw_arc(bet_at, 36, 0, TAU, 60, GOLD, 2)
+	stack(bet_at, wager)
+	centered(bet_at + Vector2(0, -45), "BET", 13)
+	var tray_y := bet_at.y + 92
+	var step := minf(90, (width - 120) / 3)
+	for i in range(4):
+		var amount: int = [5, 10, 25, 100][i]
+		var at := Vector2(center + (i - 1.5) * step, tray_y)
+		tray[amount] = at
+		stack(at, amount, Color("2b7ea0") if selected_chip == amount else Color("b8394f"), 28 if compact else 22)
+	centered(Vector2(center, tray_y + 47), "Drag chips to BET | tap chip then BET", 13, Color("cbd8c8"))
+	centered(Vector2(center, tray_y + 68), "Reset Bets clears your wager selection", 12, Color("cbd8c8"))
+	centered(Vector2(center, height - 41), "Blackjack pays 3:2 | dealer stands on 17", 13)
+	centered(Vector2(center, height - 23), "Insurance pays 2:1", 12)
+
+func draw_blackjack_guest(guest: Dictionary, rect: Rect2, done: bool) -> void:
+	panel(rect, Color("16463d"), 8)
+	var center := rect.get_center().x
+	var name := "SEAT %d - %s" % [int(guest.seat) + 1, str(guest.name).replace(" · ", " | ")]
+	var name_size := 13
+	while name_size > 10 and font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, name_size).x > rect.size.x - 10: name_size -= 1
+	centered(Vector2(center, rect.position.y + 19), name, name_size, Color("dce8d9"))
+	var participant: Dictionary = {}
+	for npc in round.get("npcs", []):
+		if int(npc.id) == int(guest.id): participant = npc; break
+	if participant.is_empty():
+		centered(Vector2(center, rect.position.y + 67), "NEXT HAND", 14)
+		return
+	centered(Vector2(center, rect.position.y + 38), "$%d BET" % participant.bet, 12)
+	var cards: Array = participant.cards
+	var scale := 0.65
+	var gap := minf(26, (rect.size.x - 20 - 49 * scale) / maxi(1, cards.size() - 1))
+	var span: float = (cards.size() - 1) * gap + 49 * scale
+	for i in range(cards.size()): card(Vector2(center - span / 2 + i * gap, rect.position.y + 46), int(cards[i]), false, scale)
+	var value := Games.total(cards)
+	var state := "STOOD" # Current NPC rules complete their draws before owner actions.
+	if value > 21: state = "BUSTED"
+	elif value == 21 and cards.size() == 2: state = "BLACKJACK"
+	elif done: state = "FINISHED"
+	centered(Vector2(center, rect.position.y + 111), "%d - %s" % [value, state], 15, Color("edf2d9"))

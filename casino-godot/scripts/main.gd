@@ -1,5 +1,7 @@
 extends Control
 
+const FinancialText = preload("res://scripts/financial_text.gd")
+const DeveloperPanel = preload("res://scripts/developer_panel.gd")
 const BuildInfo = preload("res://scripts/build_info.gd")
 const FloorScript = preload("res://scripts/floor.gd")
 const Games = preload("res://scripts/casino_games.gd")
@@ -10,6 +12,11 @@ const TEAL := Color("57d6b1")
 const MUTED := Color("8195a9")
 const TEXT := Color("dbe5ed")
 
+var displayed_cash := 0.0
+var treasury_target := 0.0
+var treasury_flash := 0.0
+var treasury_direction := 0.0
+var developer_panel: PanelContainer
 var sim := CasinoSimulation.new()
 var floor_view: Control
 var selected := 1
@@ -21,6 +28,10 @@ var game_view: Control
 var moving := -1
 var speed := 1
 var previous_speed := 1
+var dev_time_pending := 0.0
+const DEV_TIME_STEP := 0.1 # Movement stays below one navigation-cell distance per update.
+const DEV_FRAME_BUDGET_USEC := 8000
+const DEV_MAX_PENDING_SECONDS := 60.0
 var tick := 0.0
 var refresh_timer := 0.0
 var rolling := 0.0
@@ -58,6 +69,8 @@ var craps_category := "Line"
 var active_roll_table := -1
 
 func _ready() -> void:
+	displayed_cash = sim.cash
+	treasury_target = sim.cash
 	var theme := Theme.new()
 	theme.default_font_size = 15
 	theme.set_color("font_color", "Label", TEXT)
@@ -101,7 +114,7 @@ func _ready() -> void:
 	left_scroll.add_child(left)
 	add_label(left, "YOUR CASINO", 13, GOLD)
 	doors_button = add_button(left, "Open casino", toggle_doors)
-	build_button = add_button(left, "+ Build games…", func():
+	build_button = add_button(left, "+ Build games...", func():
 		if building: toggle_build()
 		else: open_page("build"))
 	walk_button = add_button(left, "Walk the floor", toggle_walk)
@@ -117,11 +130,11 @@ func _ready() -> void:
 	pause_button = add_button(speeds, "Pause", toggle_pause)
 	pause_button.size_flags_stretch_ratio = 1.8
 	for multiplier in [1, 2, 4]:
-		add_button(speeds, "%d×" % multiplier, func(): speed = multiplier; previous_speed = multiplier; refresh())
+		add_button(speeds, "%dx" % multiplier, func(): speed = multiplier; previous_speed = multiplier; refresh())
 	add_label(left, "Tap a table to inspect.
 Tap the floor to walk.
-Space: pause · R: rotate", 12, MUTED)
-	add_button(left, "New casino…", confirm_reset)
+Space: pause | R: rotate", 12, MUTED)
+	add_button(left, "New casino...", confirm_reset)
 	floor_view = FloorScript.new()
 	floor_view.sim = sim
 	floor_view.table_clicked.connect(select_table)
@@ -175,6 +188,14 @@ Space: pause · R: rotate", 12, MUTED)
 	for tab in ["Floor", "Table", "Manage", "Log"]:
 		add_button(bottom_nav, tab, func(): switch_mobile(tab.to_lower()))
 	get_viewport().size_changed.connect(func(): call_deferred("layout_ui"))
+	if OS.is_debug_build():
+		developer_panel = DeveloperPanel.new(sim)
+		add_child(developer_panel)
+		developer_panel.changed.connect(refresh)
+		developer_panel.speed_requested.connect(set_dev_speed)
+		developer_panel.session_reset.connect(reset_dev_speed)
+		developer_panel.visibility_changed.connect(refresh)
+		developer_panel.hide()
 	layout_ui()
 	refresh()
 	show_new_game_setup(true)
@@ -371,11 +392,16 @@ func clear(parent: Node) -> void:
 		child.queue_free()
 
 func _process(delta: float) -> void:
+	animate_treasury(delta)
 	if OS.has_feature("web") and OS.is_debug_build():
 		publish_debug()
 	if modal != null:
 		return
-	if speed > 0:
+	if not OS.is_debug_build() and (speed > 4 or previous_speed > 4): reset_dev_speed()
+	if speed > 4 and OS.is_debug_build():
+		advance_dev_time(delta)
+	elif speed > 0:
+		dev_time_pending = 0
 		sim.move_guests(delta * speed)
 		tick += delta * speed
 		while tick >= 1:
@@ -391,7 +417,44 @@ func _process(delta: float) -> void:
 		refresh_timer = 0
 		refresh()
 
+func set_dev_speed(multiplier: int) -> void:
+	# Guard the action as well as the controls; release cannot enter this path.
+	if not OS.is_debug_build() or not is_instance_valid(developer_panel): return
+	if multiplier not in [1, 4, 100, 1000]: return
+	speed = multiplier
+	previous_speed = multiplier
+	dev_time_pending = 0
+	refresh()
+
+func reset_dev_speed() -> void:
+	speed = 1
+	previous_speed = 1
+	dev_time_pending = 0
+
+func advance_dev_time(delta: float) -> void:
+	if not OS.is_debug_build() or speed not in [100, 1000]: return
+	# Bounded catch-up: retain a short backlog but never freeze the UI chasing it.
+	dev_time_pending = minf(DEV_MAX_PENDING_SECONDS, dev_time_pending + delta * speed)
+	var deadline := Time.get_ticks_usec() + DEV_FRAME_BUDGET_USEC
+	while dev_time_pending >= DEV_TIME_STEP and Time.get_ticks_usec() < deadline:
+		var amount := minf(DEV_TIME_STEP, 1.0 - tick)
+		sim.move_guests(amount)
+		tick += amount
+		dev_time_pending -= amount
+		if tick >= 1.0:
+			tick = 0
+			sim.step()
+
+func _input(event: InputEvent) -> void:
+	if not OS.is_debug_build() or not is_instance_valid(developer_panel): return
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F10:
+		if modal != null: return
+		developer_panel.visible = not developer_panel.visible
+		get_viewport().set_input_as_handled()
+		refresh()
+
 func _unhandled_key_input(event: InputEvent) -> void:
+	if is_instance_valid(developer_panel) and developer_panel.visible: return
 	if not event is InputEventKey or not event.pressed or event.echo or modal != null:
 		return
 	if event.keycode == KEY_SPACE:
@@ -412,16 +475,51 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func money(amount: float) -> String:
 	return ("-$" if amount < 0 else "$") + String.num(absf(amount), 0)
 
+func reset_treasury_display() -> void:
+	displayed_cash = sim.cash
+	treasury_target = sim.cash
+	treasury_flash = 0.0
+	treasury_direction = 0.0
+
+func animate_treasury(delta: float) -> void:
+	if not is_instance_valid(stats): return
+	if treasury_target != sim.cash:
+		treasury_direction = signf(sim.cash - treasury_target)
+		treasury_target = sim.cash
+		treasury_flash = CasinoTuning.TREASURY_FLASH_SECONDS
+	displayed_cash = lerpf(displayed_cash, treasury_target, 1.0 - exp(-CasinoTuning.TREASURY_SMOOTHING * delta))
+	if absf(displayed_cash - treasury_target) < 0.005: displayed_cash = treasury_target
+	treasury_flash = maxf(0, treasury_flash - delta)
+	render_treasury()
+
+func render_treasury() -> void:
+	stats.text = "%s / %d guests / %d-star casino" % [FinancialText.cash(displayed_cash), sim.guests.size(), sim.stars()]
+	stats.tooltip_text = "Treasury display animates toward actual cash: %s. Gambling popups show settled net house results." % FinancialText.cash(sim.cash)
+	var change_color := TEAL if treasury_direction >= 0 else Color("ff9486")
+	stats.add_theme_color_override("font_color", TEXT.lerp(change_color, 0.45 * treasury_flash / CasinoTuning.TREASURY_FLASH_SECONDS))
+
+func render_asset_financial_activity(parent: Node, asset_id: int = -1, limit: int = 2) -> void:
+	var shown := 0
+	for event in sim.recent_financial_events:
+		if asset_id >= 0 and int(event.asset_id) != asset_id: continue
+		var game_name := str(Games.NAMES[event.game]).replace("’", "'")
+		var text := "HOUSE %s | %s #%d%s" % [FinancialText.house_result(float(event.amount)), game_name, event.asset_id, " | visitor" if event.actor == "visitor" else ""]
+		add_label(parent, text, 12, TEAL if float(event.amount) > 0 else (MUTED if float(event.amount) == 0 else Color("ff9486")))
+		shown += 1
+		if shown >= limit: break
+
 func refresh() -> void:
-	stats.text = "%s  /  %d guests  /  %d★ casino" % [money(sim.cash), sim.guests.size(), sim.stars()]
+	var dev_active: bool = OS.is_debug_build() and is_instance_valid(developer_panel) and (developer_panel.visible or developer_panel.actions.used or speed > 4 or previous_speed > 4)
+	subtitle.text = ("DEV MODE | " if dev_active else "") + "CASINO TYCOON / " + BuildInfo.VERSION
+	render_treasury()
 	var gaming := sim.gaming_profit()
 	var gaming_text := ("+" if gaming > 0 else "") + money(gaming)
-	status.text = "DAY %d  ·  %02d:%02d    |    GAMES %s    |    COSTS %s    |    %s" % [sim.day, sim.minute / 60, sim.minute % 60, gaming_text, money(sim.operating_costs()), "PAUSED" if speed == 0 else "%d× SPEED" % speed]
+	status.text = "DAY %d  |  %02d:%02d    |    GAMES %s    |    COSTS %s    |    %s" % [sim.day, sim.minute / 60, sim.minute % 60, gaming_text, money(sim.operating_costs()), "PAUSED" if speed == 0 else ("DEV %dx" % speed if speed > 4 else "%dx SPEED" % speed)]
 	if mobile:
-		status.text = "GAMES %s  |  COSTS %s  |  %s" % [gaming_text, money(sim.operating_costs()), "PAUSED" if speed == 0 else "%d×" % speed]
+		status.text = "GAMES %s  |  COSTS %s  |  %s" % [gaming_text, money(sim.operating_costs()), "PAUSED" if speed == 0 else ("DEV %dx" % speed if speed > 4 else "%dx" % speed)]
 	status.tooltip_text = "Lifetime settled gaming P/L, before expenses. Costs include payroll, operations, hiring and net construction spending. See Finance for the overall net."
 	doors_button.text = "Close to new arrivals" if sim.opened else "Open casino"
-	build_button.text = "Cancel placement" if building else "+ Build games…"
+	build_button.text = "Cancel placement" if building else "+ Build games..."
 	walk_button.text = "Manage casino" if visitor else "Walk the floor"
 	pause_button.text = "Play" if speed == 0 else "Pause"
 	floor_view.visitor_mode = visitor
@@ -430,22 +528,24 @@ func refresh() -> void:
 	floor_view.moving_id = moving
 	game_view.paused = speed == 0
 	floor_view.selected = selected
-	mode_hint.text = "Click to place · R to rotate · Esc to cancel" if building else ("Tap to walk · tap a table to approach · E or Join to play" if visitor else "Select a table or guest to inspect · build and staff to expand")
+	mode_hint.text = "Click to place | R to rotate | Esc to cancel" if building else ("Tap to walk | tap a table to approach | E or Join to play" if visitor else "Select a table or guest to inspect | build and staff to expand")
 	layout_ui()
 	felt.chip = chip_value
 	felt.locked = rolling > 0 or speed == 0 or table_options or modal != null
 	felt.queue_redraw()
 	clear(feed)
-	add_label(feed, "FLOOR REPORT   /   %d unresolved incidents" % sim.incidents.size(), 11, GOLD)
-	for i in range(mini(8 if mobile else 3, sim.alerts.size())):
-		add_label(feed, "• " + sim.alerts[i], 13, TEXT if i == 0 else MUTED)
+	add_label(feed, "HOUSE ACTIVITY | %d incidents" % sim.incidents.size(), 11, GOLD)
+	if sim.house_activity.is_empty():
+		add_label(feed, "No recent operational events.", 13, MUTED)
+	for i in range(mini(6 if mobile else 3, sim.house_activity.size())):
+		add_label(feed, "- " + sim.house_activity[i], 13, TEXT if i == 0 else MUTED)
 	var scroll: ScrollContainer = inspector.get_parent()
 	var scroll_position := scroll.scroll_vertical
 	var live_inspector := inspector
 	inspector = VBoxContainer.new()
 	if sim.joined < 0:
-		add_label(inspector, "%s · %d★ %s" % [CasinoTuning.DIFFICULTIES[sim.difficulty].name, sim.stars(), CasinoTuning.STAR_NAMES[sim.stars() - 1]], 13, TEAL)
-		add_label(inspector, "Casino Rating %.1f / 100 · Reputation %.0f%%" % [sim.casino_rating, sim.reputation], 12, MUTED)
+		add_label(inspector, "%s | %d-star %s" % [CasinoTuning.DIFFICULTIES[sim.difficulty].name, sim.stars(), CasinoTuning.STAR_NAMES[sim.stars() - 1]], 13, TEAL)
+		add_label(inspector, "Casino Rating %.1f / 100 | Reputation %.0f%%" % [sim.casino_rating, sim.reputation], 12, MUTED)
 		add_label(inspector, sim.next_milestone_text(), 14, GOLD)
 		add_gap(inspector, 4)
 	if sim.joined >= 0 and page == "table":
@@ -472,21 +572,22 @@ func refresh() -> void:
 
 func render_build() -> void:
 	add_label(inspector, "GROW YOUR CASINO", 21, GOLD)
-	add_label(inspector, "Cash buys equipment; Casino Rating earns access. Slots need no dealer, table games need one, and craps needs two plus a larger footprint.", 14)
+	add_label(inspector, "Cash buys equipment; developed capacity and settled guest business earn access. Slots need no dealer, table games need one, and craps needs two plus a larger footprint.", 14)
+	add_label(inspector, sim.next_milestone_text(), 13, MUTED)
 	for milestone in CasinoTuning.MILESTONES:
 		var feature: String = milestone.id
 		if not sim.revealed(feature):
-			add_button(inspector, "LOCKED: ??? · Increase Casino Rating", func(): pass, true)
+			add_button(inspector, "LOCKED: ??? | Increase Casino Rating", func(): pass, true)
 			continue
 		if not sim.unlocked(feature):
-			add_button(inspector, "LOCKED: %s · Rating %.0f" % [milestone.name, milestone.rating], func(): pass, true)
+			add_button(inspector, "LOCKED: Blackjack | Develop the slot floor" if feature == "blackjack" else "LOCKED: %s | Rating %.0f" % [milestone.name, milestone.rating], func(): pass, true)
 			continue
 		if Games.COSTS.has(feature):
-			add_button(inspector, "%s · $%d" % [milestone.name, sim.feature_cost(feature)], func(): build_kind = feature; toggle_build(), sim.cash < sim.feature_cost(feature))
+			add_button(inspector, "%s | $%d" % [milestone.name, sim.feature_cost(feature)], func(): build_kind = feature; toggle_build(), sim.cash < sim.feature_cost(feature))
 		elif feature == "service":
-			add_button(inspector, "Drink service · Staff & coverage", func(): open_page("staff"))
+			add_button(inspector, "Drink service | Staff & coverage", func(): open_page("staff"))
 		else:
-			add_button(inspector, "%s · %s" % [milestone.name, "Purchased" if sim.feature_owned(feature) else "$%d" % sim.feature_cost(feature)], func(): sim.purchase_upgrade(feature); refresh(), sim.feature_owned(feature) or sim.cash < sim.feature_cost(feature))
+			add_button(inspector, "%s | %s" % [milestone.name, "Purchased" if sim.feature_owned(feature) else "$%d" % sim.feature_cost(feature)], func(): sim.purchase_upgrade(feature); refresh(), sim.feature_owned(feature) or sim.cash < sim.feature_cost(feature))
 	if not sim.expanded:
 		add_label(inspector, "The shaded wing opens after you purchase Floor expansion.", 12, MUTED)
 	if sim.unlocked("craps"):
@@ -507,13 +608,16 @@ func render_table() -> void:
 	if watchers > 0: add_label(inspector, "%d watching before buying in" % watchers, 12, TEAL)
 	add_gap(inspector, 4)
 	add_label(inspector, "Minimum %s\nWagers %s\nPayouts %s\nGaming win %s\nRounds %d" % [money(table.minimum), money(table.wagers), money(table.payouts), money(table.wagers - table.payouts), table.rolls], 16)
+	if sim.table_kind(table) == "slots":
+		var profile := sim.slot_profile(table)
+		add_label(inspector, "Starter reels | max $%d | RTP %.2f%% | edge %.2f%% | %s volatility" % [profile.maximum, profile.rtp * 100, profile.house_edge * 100, profile.volatility], 12, MUTED)
 	if sim.table_kind(table) == "craps": add_label(inspector, "POINT: %s" % ("OFF / COME-OUT" if int(table.point) == 0 else str(int(table.point))), 12, GOLD)
 	add_label(inspector, table.result, 13, MUTED)
 	add_gap(inspector, 6)
-	add_button(inspector, "Hire dealer · $%d" % CasinoTuning.HIRING_COST, func(): sim.hire("Dealer", selected); refresh(), sim.crew(selected).size() >= sim.required_crew(table) or not sim.unlocked("blackjack"))
+	add_button(inspector, "Hire dealer | $%d" % CasinoTuning.HIRING_COST, func(): sim.hire("Dealer", selected); refresh(), sim.crew(selected).size() >= sim.required_crew(table) or not sim.unlocked("blackjack"))
 	add_button(inspector, "Assign standby dealers", func(): sim.assign_standby(selected); refresh())
 	if table.broken:
-		add_button(inspector, "Repair rail · $120", func():
+		add_button(inspector, "Repair rail | $120", func():
 			for i in range(sim.incidents.size()):
 				if sim.incidents[i].type == "repair" and int(sim.incidents[i].table) == selected:
 					sim.resolve_incident(i, true)
@@ -527,27 +631,27 @@ func render_table() -> void:
 			add_button(inspector, "Walk to this table", func(): floor_view.walk_to_table(selected); mobile_pane = "floor"; refresh())
 	else:
 		add_button(inspector, "Experience this table", func(): toggle_walk())
-	var limits := "$5 / $10" if sim.table_kind(table) == "slots" else ("$25 / $50" if sim.table_kind(table) == "craps" else "$10 / $25 / $50")
-	if not sim.high_limit_enabled and sim.table_kind(table) != "slots":
-		limits = "$25" if sim.table_kind(table) == "craps" else "$10 / $25"
+	var limit_labels := PackedStringArray()
+	for minimum in sim.wager_limits(table): limit_labels.append(money(float(minimum)))
+	var limits := " / ".join(limit_labels)
 	add_button(inspector, "Minimum: " + limits, func(): sim.change_minimum(selected); refresh())
 
 	add_button(inspector, "Move table", begin_move, sim.busy(table))
-	add_button(inspector, "Sell · $%d" % (Games.COSTS[sim.table_kind(table)] / 2), func(): sim.sell(selected); refresh(), sim.busy(table))
+	add_button(inspector, "Sell | $%d" % (Games.COSTS[sim.table_kind(table)] / 2), func(): sim.sell(selected); refresh(), sim.busy(table))
 
 func render_staff() -> void:
 	add_label(inspector, "STAFF & COVERAGE", 11, GOLD)
 	add_label(inspector, "%d employees" % sim.staff.size(), 24)
-	add_label(inspector, "Craps: two dealers. Roulette / blackjack / hold’em: one dealer. Slots: no dealer. Service staff cover the floor.", 14, MUTED)
-	add_button(inspector, "Hire dealer · $%d" % CasinoTuning.HIRING_COST if sim.unlocked("blackjack") else "Dealers locked · Unlock blackjack", func(): sim.hire("Dealer", selected); refresh(), not sim.unlocked("blackjack"))
-	add_button(inspector, "Hire service · $%d" % CasinoTuning.HIRING_COST if sim.unlocked("service") else "Drink service locked · Increase Casino Rating", func(): sim.hire("Service", -1); refresh(), not sim.unlocked("service"))
+	add_label(inspector, "Craps: two dealers. Roulette / blackjack / hold'em: one dealer. Slots: no dealer. Service staff cover the floor.", 14, MUTED)
+	add_button(inspector, "Hire dealer | $%d" % CasinoTuning.HIRING_COST if sim.unlocked("blackjack") else "Dealers locked | Unlock blackjack", func(): sim.hire("Dealer", selected); refresh(), not sim.unlocked("blackjack"))
+	add_button(inspector, "Hire service | $%d" % CasinoTuning.HIRING_COST if sim.unlocked("service") else "Drink service locked | Increase Casino Rating", func(): sim.hire("Service", -1); refresh(), not sim.unlocked("service"))
 	add_gap(inspector, 4)
 	for employee in sim.staff:
-		add_label(inspector, "%s · %s" % [employee.name, employee.role], 15)
-		var assignment := "Table %d" % int(employee.table) if int(employee.table) > 0 else "Standby · recovering"
+		add_label(inspector, "%s | %s" % [employee.name, employee.role], 15)
+		var assignment := "Table %d" % int(employee.table) if int(employee.table) > 0 else "Standby | recovering"
 		if employee.role == "Service":
-			assignment = "%s · whole floor" % employee.get("service_state", "At bar") if not sim.guests.is_empty() else "At cocktail bar · recovering"
-		add_label(inspector, "%s · %.0f%% energy · $%d/hr" % [assignment, employee.energy, CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE], 12, MUTED)
+			assignment = "%s | whole floor" % employee.get("service_state", "At bar") if not sim.guests.is_empty() else "At cocktail bar | recovering"
+		add_label(inspector, "%s | %.0f%% energy | $%d/hr" % [assignment, employee.energy, CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE], 12, MUTED)
 		if employee.role == "Dealer" and employee.energy < 85:
 			add_button(inspector, "Relieve %s" % employee.name, func():
 				var standby := sim.staff.filter(func(s): return s.role == "Dealer" and int(s.table) == -1 and s.energy > employee.energy)
@@ -568,7 +672,7 @@ func render_finance() -> void:
 	var gaming := sim.gaming_profit()
 	add_label(inspector, "GAMING PROFIT / LOSS", 11, GOLD)
 	add_label(inspector, ("+" if gaming > 0 else "") + money(gaming), 28, TEAL if gaming >= 0 else GOLD)
-	add_label(inspector, "Settled games only · before operating costs", 12, MUTED)
+	add_label(inspector, "Settled games only | before operating costs", 12, MUTED)
 	add_label(inspector, "Wagers collected  %s\nPayouts returned  %s\nUnsettled stakes excluded  %s" % [money(sim.revenue), money(sim.payouts), money(liabilities)], 15)
 	add_gap(inspector, 10)
 	add_label(inspector, "OPERATING & BUILD COSTS", 11, GOLD)
@@ -581,7 +685,7 @@ func render_finance() -> void:
 	add_label(inspector, "Treasury change  %s\nLive stakes held  %s" % [money(sim.net_profit()), money(liabilities)], 15)
 	add_gap(inspector, 6)
 	add_label(inspector, "YOUR VISITOR ACCOUNT", 11, GOLD)
-	add_label(inspector, "Wallet %s · net %s" % [money(sim.wallet), money(sim.visitor_net)], 16)
+	add_label(inspector, "Wallet %s | net %s" % [money(sim.wallet), money(sim.visitor_net)], 16)
 	add_label(inspector, "Visitor bets move money against the same treasury. Keep this transfer in mind when judging profitability.", 12, MUTED)
 	if sim.cash < 1000:
 		add_label(inspector, "Low cash: slow expansion and protect payroll. A hot table can make this worse.", 14, GOLD)
@@ -595,9 +699,9 @@ func render_incidents() -> void:
 		var item: Dictionary = sim.incidents[i]
 		add_label(inspector, item.title, 17, GOLD)
 		add_label(inspector, item.detail, 14)
-		add_button(inspector, "Repair · $120" if item.type == "repair" else "Offer comp · $60", func(): sim.resolve_incident(i, true); refresh())
+		add_button(inspector, "Repair | $120" if item.type == "repair" else "Offer comp | $60", func(): sim.resolve_incident(i, true); refresh())
 		if item.type != "repair":
-			add_button(inspector, "Dismiss complaint · -3 rep", func(): sim.resolve_incident(i, false); refresh())
+			add_button(inspector, "Dismiss complaint | -3 rep", func(): sim.resolve_incident(i, false); refresh())
 		add_gap(inspector, 8)
 
 func render_guest() -> void:
@@ -611,7 +715,7 @@ func render_guest() -> void:
 	add_label(inspector, guest.state, 14, TEAL)
 	add_label(inspector, "Wallet %s\nSession net %s\nSatisfaction %.0f%%\nThirst %.0f%%\nPreferred game: %s" % [money(guest.wallet), money(guest.wallet + CrapsRules.exposure(guest.bets) - guest.start), guest.satisfaction, guest.thirst, Games.NAMES[guest.get("preference", "craps")]], 16)
 	add_gap(inspector, 8)
-	add_label(inspector, '“%s”' % guest.thought, 18, GOLD)
+	add_label(inspector, '"%s"' % guest.thought, 18, GOLD)
 	add_label(inspector, "Watch your guests for clues about staffing, limits, and service.", 13, MUTED)
 
 func row(parent: Node, columns: int = 0) -> Container:
@@ -665,7 +769,8 @@ func render_craps() -> void:
 	var table := sim.get_table(sim.joined)
 	var locked: bool = rolling > 0 or felt.busy() or speed == 0 or not sim.ready_for_play(table)
 	add_label(inspector, "CRAPS %02d  /  WALLET %s" % [sim.joined, money(sim.wallet)], 18, GOLD)
-	add_label(inspector, "SHOOTER: %s · hand roll %d" % [sim.shooter_name(table), int(table.hand_rolls)], 15, TEAL)
+	add_label(inspector, "SHOOTER: %s | hand roll %d" % [sim.shooter_name(table), int(table.hand_rolls)], 15, TEAL)
+	render_asset_financial_activity(inspector, int(table.id))
 	var heading := "COME-OUT" if int(table.point) == 0 else "POINT %d" % int(table.point)
 	dice_label = add_label(inspector, "[ %d ] [ %d ]    %s" % [table.dice[0], table.dice[1], heading], 23)
 	var roll_controls := row(inspector)
@@ -678,7 +783,7 @@ func render_craps() -> void:
 		refresh(), (rolling > 0 or felt.busy()))
 	if int(table.shooter) != 0:
 		var wait := "Betting held" if table.betting_hold else ("Paused" if speed == 0 else "Next roll ~%ds" % ceili(maxf(0, sim.roll_interval(table) - table.timer) / maxf(1, speed)))
-		add_label(inspector, "%s · %s" % [wait, "you're in rotation" if table.owner_queued else "you're betting only"], 12, MUTED)
+		add_label(inspector, "%s | %s" % [wait, "you're in rotation" if table.owner_queued else "you're betting only"], 12, MUTED)
 		add_button(inspector, "Skip my turns" if table.owner_queued else "Join shooter rotation", func():
 			if table.owner_queued: sim.pass_dice(sim.joined)
 			else: sim.queue_for_dice(sim.joined)
@@ -700,7 +805,7 @@ func render_craps() -> void:
 	match craps_category:
 		"Line":
 			kinds = ["pass", "odds", "dont_pass", "lay_odds", "field"]
-			explanation = "Pass / Don't Pass: even money; Don't pushes on 12. Odds: true odds, 3× limit (lay to win 3×). Field: double 2, triple 12."
+			explanation = "Pass / Don't Pass: even money; Don't pushes on 12. Odds: true odds, 3x limit (lay to win 3x). Field: double 2, triple 12."
 		"Place":
 			kinds = ["four", "five", "six", "eight", "nine", "ten"]
 			explanation = "Place 4/10 pays 9:5, 5/9 pays 7:5, 6/8 pays 7:6. Bets stay up on a hit. Stakes round up to the required multiple."
@@ -721,17 +826,17 @@ func render_craps() -> void:
 			kinds = CrapsRules.PROPS.keys()
 			explanation = "One roll only. Any craps 7:1; any seven 4:1; 3/11 pay 15:1; 2/12 pay 30:1."
 		"My bets":
-			add_label(inspector, "On layout: %s · wallet net: %s" % [money(CrapsRules.exposure(table.owner)), money(sim.visitor_net)], 14, GOLD)
+			add_label(inspector, "On layout: %s | wallet net: %s" % [money(CrapsRules.exposure(table.owner)), money(sim.visitor_net)], 14, GOLD)
 			for kind in table.owner:
 				if table.owner[kind] <= 0: continue
 				var removable := CrapsRules.removable(kind, int(table.point))
-				add_button(inspector, "%s · %s%s" % [CrapsRules.name_for(kind), money(table.owner[kind]), " · remove" if removable else " · locked"], func(): sim.remove_bet(sim.joined, kind); refresh(), not removable or (rolling > 0 or felt.busy()))
+				add_button(inspector, "%s | %s%s" % [CrapsRules.name_for(kind), money(table.owner[kind]), " | remove" if removable else " | locked"], func(): sim.remove_bet(sim.joined, kind); refresh(), not removable or (rolling > 0 or felt.busy()))
 			add_button(inspector, "Take down removable bets", func(): sim.reclaim(sim.joined); refresh(), (rolling > 0 or felt.busy()))
 			explanation = "Established Pass and Come contracts stay until resolved. Removing a Don't contract also returns its attached odds."
 		"History":
 			if table.history.is_empty(): add_label(inspector, "No rolls yet.")
 			for entry in table.history:
-				add_label(inspector, "%d + %d = %d  ·  %s%s" % [entry.a, entry.b, entry.total, entry.shooter, " · SEVEN OUT" if entry.seven_out else ""], 14, GOLD if entry.seven_out else TEXT)
+				add_label(inspector, "%d + %d = %d  |  %s%s" % [entry.a, entry.b, entry.total, entry.shooter, " | SEVEN OUT" if entry.seven_out else ""], 14, GOLD if entry.seven_out else TEXT)
 	var bets_grid := row(inspector, 2)
 	for kind in kinds:
 		var amount := sim.bet_amount(table, kind, chip_value)
@@ -892,6 +997,10 @@ func load_game() -> bool:
 	if not restored:
 		sim.log_event("Save is invalid or incompatible. Start a new casino.")
 	else:
+		reset_dev_speed()
+		if is_instance_valid(developer_panel): developer_panel.reset_session(sim)
+		reset_treasury_display()
+		floor_view.clear_financial_feedback()
 		visitor = sim.joined >= 0
 		page = "table"
 		mobile_pane = "table" if visitor else "floor"
@@ -942,7 +1051,7 @@ func dialog(title: String, body: String, confirm: String, action: Callable, canc
 	return layout
 
 func show_help() -> void:
-	var body := "Version %s · Last updated %s\n\n" % [BuildInfo.VERSION, BuildInfo.UPDATED_AT]
+	var body := "Version %s | Last updated %s\n\n" % [BuildInfo.VERSION, BuildInfo.UPDATED_AT]
 	body += sim.onboarding_text() + "\n\n" + sim.next_milestone_text()
 	body += "\n\nTap a game to inspect it. Walk mode: approach a game, then Join. Visitor play uses a separate $1,000 wallet; casino cash pays for construction, staff and payouts."
 	if sim.feature_owned("service"): body += "\n\nDrink staff cover the floor. Watch guest satisfaction, thirst and staff energy."
@@ -956,12 +1065,12 @@ func confirm_reset() -> void:
 
 func show_new_game_setup(initial: bool = false) -> void:
 	var mode := OptionButton.new()
-	mode.add_item("Normal · intended progression")
-	mode.add_item("Easy / Sandbox-lite · permissive access")
+	mode.add_item("Normal | intended progression")
+	mode.add_item("Easy / Sandbox-lite | permissive access")
 	mode.custom_minimum_size.y = 44
 	var games_box := VBoxContainer.new()
 	var choices: Array = []
-	add_label(games_box, "Easy starting games — choose one or more (equipment and required crews included):", 14, MUTED)
+	add_label(games_box, "Easy starting games - choose one or more (equipment and required crews included):", 14, MUTED)
 	for kind in ["slots", "blackjack", "roulette", "craps", "holdem"]:
 		var choice := CheckButton.new()
 		choice.text = Games.NAMES[kind]
@@ -972,7 +1081,7 @@ func show_new_game_setup(initial: bool = false) -> void:
 	games_box.hide()
 	mode.item_selected.connect(func(index: int): games_box.visible = index == 1)
 	var body := "Normal is the intended tycoon experience: $%d, two basic slots, no staff. Earn Casino Rating to access new games and services.\n\nEasy starts with $%d and your favorite games, ready crews, the full floor and unrestricted access. Wages, upkeep and real gaming outcomes still apply." % [CasinoTuning.STARTING_CASH, CasinoTuning.DIFFICULTIES.easy.cash]
-	var layout := dialog("New casino · choose your start", body, "Start casino", func():
+	var layout := dialog("New casino | choose your start", body, "Start casino", func():
 		var preferred: Array = []
 		for choice in choices:
 			if choice.button_pressed: preferred.append(str(choice.get_meta("game_kind")))
@@ -996,17 +1105,18 @@ func show_new_game_setup(initial: bool = false) -> void:
 
 func start_casino(mode: String, preferred: Array) -> void:
 	sim = CasinoSimulation.new(mode, preferred)
+	reset_treasury_display()
 	floor_view.sim = sim
 	felt.sim = sim
 	game_view.sim = sim
+	if is_instance_valid(developer_panel): developer_panel.reset_session(sim)
 	selected = int(sim.tables[0].id)
 	selected_guest = -1
 	visitor = false
 	building = false
 	moving = -1
 	floor_view.rotated = false
-	speed = 1
-	previous_speed = 1
+	reset_dev_speed()
 	tick = 0
 	rolling = 0
 	active_roll_table = -1

@@ -18,8 +18,8 @@ forecast of real casino finances.
 | Guest arrival | Parties of 1–2; 18–32 game minutes evening, otherwise 28–48 |
 | Observation | 65% consider watching first; watch 12–24 game minutes, then decide |
 | Crowd control | Arrivals ease off with waiting/browsing guests; floor target 7 per operating table + 3 |
-| Guest bankroll | $400–$1,500; VIP $5,000 |
-| Guest wager | Table minimum; VIP 4× minimum |
+| Guest bankroll | Normal starter $40–$140; developed property $100–$300 / $250–$700 / $400–$1,500; VIP $5,000 |
+| Guest wager | Minimum, capped by guest budget and machine/game maximum; starter max $5 |
 | Guest cap | 40 |
 | VIP arrival | 5% of ordinary arrivals; no separate stream |
 | Rail incident / repair | 3 operating days grace, then 8% daily chance per operating table / $120 |
@@ -54,31 +54,84 @@ headcount-based; service energy does not yet change delivery effectiveness.
 
 ## Additional games
 
-Purchase costs: slots $750, blackjack $1,800, roulette $2,500, craps $6,000, Ultimate Hold’em
-$8,000. Slots require no dealer; each new table game requires one. Slots have a
-$5 minimum and other new games $10. Reel weights are 6/5/4/3/2 out of 20 stops;
-the current one-line slot returns 91.725% theoretically. These prices and guest
-strategies are initial playtest tuning. Cage labels show individual gaming
-profit, not profit after operating expenses.
+Purchase costs: starter slots $750, blackjack $1,800, roulette $2,500, craps $6,000,
+Ultimate Hold’em $8,000. Slots require no dealer; new table games require one.
+Starter slots open at $5, can be set to $2, and accept at most $5, including owner
+and VIP play. Table base wagers are capped at $100 (roulette: total layout;
+craps: per bet, subject to its existing odds limit). Blackjack double/split and
+Hold’em raises remain additional funded stakes under their rules.
 
-## V0.3 progression
+Starter reels retain weights 6/5/4/3/2 out of 20. Triple returns are 7/10/16/22/30×,
+including stake. Two cherries, or exactly one cherry on reel one, return 1×.
+The exact return is `(216*7 + 125*10 + 64*16 + 27*22 + 8*30 + 2688) / 8000`
+= **91.35% RTP / 8.65% theoretical house edge**. A 30× top award has probability
+1/1,000 and returns at most $150. Standard deviation of the return is about
+2.64 wagers; variance remains real, with no treasury-dependent outcomes.
+At a $5 wager, expected gaming win is $0.4325 per spin before overhead.
+Starting cash remains $2,500. Wins and losing sessions are legitimate.
 
-Normal starts closed, with two $5 slots, no employees and a smaller placement
-area. Easy includes one of each selected game, required crews, the expanded
-floor and VIP/high-limit access; equipment is included in its $30,000 start.
-Casino Rating earns 0.08 per played guest round with satisfaction at least 65.
-Visitor play earns no Rating. Rating never changes game probabilities or payouts.
-Slot rounds take two game minutes to support the starter business with low upkeep.
-Other non-craps guest games take six minutes per round to support staffed progression.
+Slot economics live in a per-machine profile: cost, denominations, payout math,
+RTP/edge, volatility, top-award probability, development value, throughput,
+maintenance, reliability and appeal. Only the starter profile exists. Future
+profiles can have greater development value without requiring extra cheap units.
+Game rules for table payouts remain in `casino_games.gd` and `craps.gd`.
 
-Normal access thresholds: blackjack 8, drink service 14, roulette 28, expansion
-35, craps 45, VIP 55, high-limit 70, UTH 75. Content reveals six Rating points
-before access. Stars begin at 0 / 8 / 28 / 75 / 100; five-star content is deferred.
-Expansion costs $3,000, VIP access $2,500 and high-limit capability $3,500.
-Craps uses a 230×130 footprint; other tables use 190×100.
-High-limit access allows $50 table minimums; ordinary new table games use
-$10/$25 and craps $25. Only the current save schema is supported during pre-alpha.
-Service complaints and thirst dissatisfaction begin when service unlocks.
-The opening revenue objective is $100 in guest wagers, distinct from profit.
-These are initial progression settings awaiting playtesting, with Normal the
-primary balance target. Full bar economics remain deferred.
+## V0.3 Step 01.5 progression
+
+Normal starts closed with two slots, no staff and a small placement area.
+Easy retains unrestricted game access, chosen games/crews and $30,000.
+
+Reputation measures guest perception. Development Rating measures owned gaming
+value and upgrades, supported by settled guest handle and actual gamblers served.
+Activity contributions are capped by property development. Two starter slots
+start at Rating 4 and top out at 8 even with excellent reputation or endless play.
+Starter slot development contribution caps at four points, so cheap-machine spam
+cannot substitute for later property improvements. Table-game categories count
+once; service and purchased property upgrades add development value.
+
+Blackjack access requires all of:
+
+- Rating 16, at least four usable gaming development points and three usable seats.
+- $12,000 settled guest handle and 80 departing guests who actually gambled.
+- $2,450 available operating cash, excluding pending stakes and net owner gambling
+  losses transferred to the casino.
+
+Today, four starter slots satisfy the floor requirement; a future higher-value
+profile could satisfy it with three machines. No tier is implemented. Buying the
+two additional starter machines costs $1,500, leaving $1,000 before operations;
+this makes earning back a reserve part of the climb. There is no time gate.
+At the $12,000 handle minimum, theoretical gaming win is $1,038 before overhead,
+so cash readiness will commonly require further operation. This is a balance
+expectation, not guaranteed income or a measured playtest result.
+
+Unlock is retained once earned and never forces a purchase. At the $2,450 cash
+threshold, a $1,800 table and $150 dealer leave $500. The suggested reserve is
+$650 (full setup target $2,600), covering several payroll/overhead hours plus
+payout exposure. Unlock therefore approaches readiness; saving further is useful.
+The next-unlock display shows floor, seats, settled handle, served gamblers,
+Rating and operating funds without displaying the Rating formula.
+
+4× advances the same operations faster in real-world time; it never changes
+requirements, wager limits or outcome probabilities. Idling the original two
+slots cannot unlock Blackjack. Closed time earns no guest accomplishments and
+still incurs overhead/payroll. Ordinary guest bankroll/wager budgets increase
+at development Ratings 16 / 28 / 55; starter exposure stays capped even then.
+
+Access Ratings: Blackjack 16 plus requirements, service 20, roulette 28,
+expansion 35, craps 45, VIP 55, high limit 70, UTH 75. Later Normal access also
+requires the Blackjack accomplishment. Stars start at 0 / 16 / 28 / 75 / 100.
+Service thirst/complaints start only once service is accessible.
+
+Settlement records total debited stakes and returns including stake, exactly
+once. Cash-out presentation reports previously settled results and never moves
+house money again. Non-gamblers leave directly without a cage profit display or
+served credit. Unresolved craps rolls do not count as settled gaming activity.
+Schema 5 saves include machine profiles, settled handle, served gamblers and
+earned Blackjack access; development saves have no migration path.
+
+Manual playtest at both 1× and 4×: start fresh Normal, compare two-slot idling
+with staged capacity purchases, watch wins and treasury swings, record all
+Blackjack accomplishments and cash on unlock, then buy/onboard only when ready.
+Check paused/closed behavior, owner play exclusion, non-gambler exits, payout vs
+cash-out reconciliation and current-schema save/load. Timing and sustainable
+throughput still need manual validation. Step 02 and slot tiers remain deferred.

@@ -4,7 +4,15 @@ signal table_clicked(id: int)
 signal floor_clicked(at: Vector2)
 signal guest_clicked(id: int)
 
-var sim: CasinoSimulation
+const FinancialText = preload("res://scripts/financial_text.gd")
+var sim: CasinoSimulation:
+	set(value):
+		if sim == value: return
+		if sim != null and sim.financial_event.is_connected(_on_financial_event): sim.financial_event.disconnect(_on_financial_event)
+		sim = value
+		clear_financial_feedback()
+		if sim != null: sim.financial_event.connect(_on_financial_event)
+var floating_results: Array = []
 var visitor_mode := false
 var building := false
 var build_kind := "slots"
@@ -46,6 +54,8 @@ func _process(delta: float) -> void:
 	if sim == null:
 		return
 	pulse += delta
+	for effect in floating_results: effect.age += delta
+	floating_results = floating_results.filter(func(effect): return float(effect.age) < float(effect.lifetime))
 	var fit := minf(size.x / 850.0, size.y / 610.0)
 	zoom = lerpf(zoom, fit * (1.32 if visitor_mode else 1.0), minf(1, delta * 8))
 	var desired := size / 2 - sim.player * zoom if visitor_mode else (size - Vector2(850, 610) * zoom) / 2
@@ -132,7 +142,7 @@ func _draw() -> void:
 		draw_rect(Rect2(505, 100, 280, 400), Color(0.03, 0.05, 0.08, 0.8))
 		draw_line(Vector2(505, 100), Vector2(505, 500), GOLD, 2)
 		text_at(Vector2(550, 270), "FUTURE EXPANSION", GOLD, 13)
-		text_at(Vector2(545, 294), "Earn Rating · buy more space", Color("8293a5"), 10)
+		text_at(Vector2(545, 294), "Earn Rating | buy more space", Color("8293a5"), 10)
 	for table in sim.tables:
 		draw_table(table)
 	if building:
@@ -141,7 +151,7 @@ func _draw() -> void:
 		draw_rect(rect.grow(22), Color(0.3, 0.8, 0.6, 0.07) if valid else Color(1, 0.3, 0.3, 0.08))
 		draw_rect(rect, Color(0.3, 0.85, 0.6, 0.3) if valid else Color(1, 0.3, 0.3, 0.3))
 		draw_rect(rect, TEAL if valid else Color("f08484"), false, 2)
-		text_at(preview + Vector2(8, 26), "$%d · %s" % [CasinoGames.COSTS[build_kind], CasinoGames.NAMES[build_kind]], INK, 13)
+		text_at(preview + Vector2(8, 26), "$%d | %s" % [CasinoGames.COSTS[build_kind], CasinoGames.NAMES[build_kind]], INK, 13)
 	for guest in sim.guests:
 		var at := Vector2(guest.x, guest.y)
 		var color := GOLD if guest.vip else Color.from_hsv(fmod(float(guest.id) * 0.17, 1.0), 0.25, 0.8)
@@ -175,7 +185,7 @@ func _draw() -> void:
 		var at := Vector2(42, 113 + i * 36)
 		var color := TEAL if effect.net >= 0 else Color("f08484")
 		draw_rect(Rect2(at - Vector2(5, 17), Vector2(220, 34)), Color("101b26"))
-		text_at(at, "HOUSE %s$%d  ·  %s" % ["+" if effect.net >= 0 else "-", absf(effect.net), effect.name], color, 13)
+		text_at(at, "SESSION %s$%d | %s" % ["+" if effect.net >= 0 else "-", absf(effect.net), effect.name], color, 13)
 		text_at(at + Vector2(0, 13), "Cashed out $%d" % effect.cash, INK, 10)
 	if visitor_mode:
 		draw_circle(sim.player, 16 + sin(pulse * 4) * 1.5, Color(0.89, 0.74, 0.44, 0.17))
@@ -186,6 +196,7 @@ func _draw() -> void:
 		if move_target.x >= 0:
 			draw_arc(move_target, 8, 0, TAU, 20, GOLD, 1)
 	draw_set_transform(Vector2.ZERO)
+	draw_financial_feedback()
 
 func draw_table(table: Dictionary) -> void:
 	if sim.table_kind(table) != "craps":
@@ -214,7 +225,7 @@ func draw_table(table: Dictionary) -> void:
 	var label_pos := rect.position + Vector2(0, -39)
 	text_at(label_pos, "CRAPS %02d" % int(table.id), GOLD if selected == int(table.id) else INK, 13)
 	var players := sim.seated(int(table.id)).size() + (1 if sim.joined == int(table.id) else 0)
-	text_at(rect.position + Vector2(0, rect.size.y + 44), "%s · %d/8" % [sim.table_status(table), players], TEAL if active else Color("899aaa"), 11)
+	text_at(rect.position + Vector2(0, rect.size.y + 44), "%s | %d/8" % [sim.table_status(table), players], TEAL if active else Color("899aaa"), 11)
 	for i in range(sim.crew(int(table.id)).size()):
 		var pos := rect.position + Vector2(rect.size.x + 15, 28 + i * 27)
 		draw_circle(pos, 7, Color("e0e5df"))
@@ -263,6 +274,87 @@ func draw_other_game(table: Dictionary) -> void:
 			draw_rect(Rect2(at, Vector2(20, 29)), Color("ede6d8"))
 			text_at(at + Vector2(3, 19), ["A", "K", "Q"][i], Color("b64354"), 13)
 	text_at(rect.position + Vector2(0, -13), "%s %02d" % [CasinoGames.NAMES[kind], table.id], GOLD, 12)
-	text_at(rect.position + Vector2(0, rect.size.y + 17), "%s · %d/%d" % [sim.table_status(table), sim.seated(int(table.id)).size(), sim.capacity(table)], TEAL, 10)
+	text_at(rect.position + Vector2(0, rect.size.y + 17), "%s | %d/%d" % [sim.table_status(table), sim.seated(int(table.id)).size(), sim.capacity(table)], TEAL, 10)
 	for i in range(sim.crew(int(table.id)).size()):
 		draw_circle(rect.position + Vector2(rect.size.x + 15, 25 + i * 30), 8, INK)
+
+func clear_financial_feedback() -> void:
+	floating_results.clear()
+
+func _on_financial_event(event: Dictionary) -> void:
+	if event.category != "gaming" or absf(float(event.amount)) < 0.005: return
+	# Same-asset, same-sign small bursts can share a label; never cancel a win
+	# against a loss or merge visitor money into guest business.
+	for effect in floating_results:
+		if int(event.importance) < 2 and int(effect.importance) < 2 and effect.asset_id == event.asset_id and effect.actor == event.actor and signf(float(effect.amount)) == signf(float(event.amount)) and float(effect.age) < CasinoTuning.MONEY_POPUP_MERGE_SECONDS:
+			effect.amount += float(event.amount)
+			effect.count += 1
+			effect.importance = CasinoTuning.money_importance(float(effect.amount))
+			effect.lifetime = CasinoTuning.MONEY_POPUP_SECONDS + int(effect.importance) * CasinoTuning.MONEY_POPUP_IMPORTANCE_SECONDS
+			return
+	var effect := event.duplicate(true)
+	effect.age = 0.0
+	effect.count = 1
+	effect.lifetime = CasinoTuning.MONEY_POPUP_SECONDS + int(effect.importance) * CasinoTuning.MONEY_POPUP_IMPORTANCE_SECONDS
+	floating_results.append(effect)
+	# Preserve stronger swings when a floor is busy; underlying events remain intact.
+	var on_asset := floating_results.filter(func(item): return item.asset_id == event.asset_id)
+	if on_asset.size() > CasinoTuning.MONEY_POPUPS_PER_ASSET: _discard_smallest(on_asset)
+	if floating_results.size() > CasinoTuning.MONEY_POPUP_LIMIT: _discard_smallest(floating_results.duplicate())
+
+func _discard_smallest(candidates: Array) -> void:
+	var discard: Dictionary = candidates[0]
+	for effect in candidates:
+		if int(effect.importance) < int(discard.importance) or (effect.importance == discard.importance and float(effect.age) > float(discard.age)): discard = effect
+	floating_results.erase(discard)
+
+func draw_financial_feedback() -> void:
+	# Draw after resetting the world transform: fixed pixel size remains legible
+	# while walking/zooming, while each anchor continues to follow its asset.
+	var occupied: Array[Rect2] = []
+	var ordered := floating_results.duplicate()
+	ordered.sort_custom(func(a, b): return int(a.importance) > int(b.importance))
+	for effect in ordered:
+		var table := sim.get_table(int(effect.asset_id))
+		var anchor: Vector2 = effect.position
+		if not table.is_empty(): anchor = Vector2(sim.bounds(table).get_center().x, sim.bounds(table).position.y)
+		var at := screen_at(anchor)
+		if not Rect2(Vector2(-50, -50), size + Vector2(100, 100)).has_point(at): continue
+		var age := float(effect.age)
+		var lifetime := float(effect.lifetime)
+		var importance := int(effect.importance)
+		var text := "HOUSE " + FinancialText.house_result(float(effect.amount))
+		if effect.actor == "visitor": text += " (visitor)"
+		elif int(effect.count) > 1: text += " (%d results)" % int(effect.count)
+		var font_size: int = [12, 14, 17, 21][importance]
+		var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+		if width > size.x - 8:
+			font_size = maxi(12, floori(font_size * (size.x - 8) / width))
+			width = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+		at += Vector2(-width / 2, -CasinoTuning.MONEY_POPUP_OFFSET - CasinoTuning.MONEY_POPUP_RISE * age / lifetime)
+		at.x = clampf(at.x, 4, maxf(4, size.x - width - 4))
+		at.y = clampf(at.y, font_size + 6, maxf(font_size + 6, size.y - 6))
+		var rect := Rect2(at - Vector2(4, font_size + 2), Vector2(width + 8, font_size + 8))
+		var baseline := at.y
+		for attempt in range(6):
+			if not occupied.any(func(other): return other.intersects(rect)): break
+			var offset := (attempt / 2 + 1) * (font_size + 8) * (-1 if attempt % 2 == 0 else 1)
+			at.y = clampf(baseline + offset, font_size + 6, maxf(font_size + 6, size.y - 6))
+			rect.position.y = at.y - font_size - 2
+		if occupied.any(func(other): return other.intersects(rect)): continue
+		occupied.append(rect)
+		var alpha := 1.0 - smoothstep(lifetime * 0.45, lifetime, age)
+		var color := TEAL if float(effect.amount) > 0 else Color("ff9486")
+		color.a = alpha * (0.75 if importance == 0 else 1.0)
+		draw_style_box(_money_box(importance, alpha), rect)
+		draw_string_outline(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, 3, Color(0.03, 0.05, 0.07, alpha))
+		draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
+
+func _money_box(importance: int, alpha: float) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(0.04, 0.07, 0.10, alpha * (0.65 if importance < 2 else 0.92))
+	box.set_corner_radius_all(4)
+	if importance >= 2:
+		box.border_color = Color(0.89, 0.74, 0.44, alpha)
+		box.set_border_width_all(1 if importance == 2 else 2)
+	return box

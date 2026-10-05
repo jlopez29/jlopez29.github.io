@@ -63,3 +63,36 @@ Art is generated through drawing primitives and is replaceable independently of
 craps resolution. A later 3D view can consume the same domain state, but rendering
 and navigation would need significant work. A C# port is possible but is not
 necessary for native Godot/Steam builds.
+
+## Phase 02 financial feedback
+
+The simulation emits `financial_event(Dictionary)` after actual gambling settlement.
+Consumers must treat events as read-only. Fields include sequence, house-perspective
+`amount`, category, game, asset ID, slot profile, guest ID (0 visitor, -1 aggregate),
+actor, importance, elapsed minute, position, round, settled stake, returned credit,
+and cumulative asset wager/payout snapshots. Craps aggregates guest results per
+roll while preserving participant IDs, settled stakes, credits and net amounts.
+Visitor results remain separate. The category string leaves room for later bar,
+comp, payroll, repair, construction, hiring, sale and service events; this phase
+only emits gaming settlements. Audio or milestone listeners can subscribe to the
+same signal without reading UI or inferring treasury movement.
+
+House net is settled stake minus total returned credit, including returned stake.
+For craps, settled stake is exposure before resolution minus exposure afterward.
+Standing-bet wins therefore emit negative house profit without charging their
+still-live stake again; unresolved contracts emit nothing. Stake refunds and cage
+summaries never emit another gaming result. Existing per-asset wager, payout and
+round counters continue to persist. Recent events are bounded transient feedback,
+not a complete finance ledger, and are cleared on Load without replay.
+
+`floor.gd` consumes the signal for asset-anchored, fixed-pixel popup labels. Small
+same-asset/same-sign bursts may combine with a result count; guest and visitor
+money never mix, and losses never cancel gains for display. Caps, priority and
+collision placement limit spam while keeping large results readable. Lifetimes
+are 1.3-1.9 real seconds, independent of simulation speed. Cash-out summaries are
+explicitly marked SESSION. `financial_text.gd` formats monetary presentation;
+`main.gd` smoothly follows authoritative treasury cash and shows its exact target
+in a tooltip. Cash motion includes wagers, payouts, liabilities and expenses, so
+it deliberately differs from completed gambling net events. Game views and the
+floor report show compact recent settled house activity from the same events.
+New Casino/Load reset transient visuals; no save schema changes or migrations.
