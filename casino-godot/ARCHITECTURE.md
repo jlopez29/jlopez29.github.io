@@ -7,6 +7,10 @@ project, separate from the portfolio's HTML apps.
 
 - `scripts/craps.gd`: pure deterministic resolution of an ordered dice pair and
   a bettor's contracts. No rendering, input, files, or scene-tree dependencies.
+- `scripts/casino_games.gd`: slot, roulette, blackjack, and dealer hold’em rules,
+  card evaluation, legal actions, and saved-round validation.
+- `scripts/game_view.gd` and `scripts/game_art.gd`: scrolling game controls and
+  procedural reel, wheel, and card presentation.
 - `scripts/tuning.gd`: starting funds, capacity, timing, costs, wages, floor bounds.
 - `scripts/simulation.gd`: simulation state, treasury/wallet transfers, guests,
   staffing, table rounds, incidents, placement, clock, versioned snapshots.

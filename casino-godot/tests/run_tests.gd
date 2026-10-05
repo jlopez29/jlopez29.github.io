@@ -120,7 +120,7 @@ func run() -> void:
 	check(sim.guests.size() <= 40, "Guest population bounded")
 	var seats: Array = []
 	for guest in sim.guests:
-		if int(guest.table) == 1:
+		if int(guest.table) == 1 and int(guest.seat) >= 0:
 			check(int(guest.seat) not in seats, "Reserved guest seats are unique")
 			seats.append(int(guest.seat))
 	check(seats.size() <= 7, "Owner rail position stays available")
@@ -151,6 +151,7 @@ func run() -> void:
 	expanded_craps_tests()
 	shooter_tests()
 	migration_and_wear_tests()
+	crowd_tests()
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures else 0)
 
@@ -313,7 +314,7 @@ func migration_and_wear_tests() -> void:
 	resumed.guests[0].age = 2
 	check(resumed.restore(JSON.parse_string(JSON.stringify(resumed.snapshot()))), "Waiting guest loads from JSON")
 	resumed.step()
-	check(resumed.guests[0].state == "Walking" and resumed.tables[0].timer == 1, "Loaded guest assignment and CPU timer advance after JSON roundtrip")
+	check(resumed.guests[0].state in ["Walking", "Browsing"] and resumed.tables[0].timer == 1, "Loaded guest assignment and CPU timer advance after JSON roundtrip")
 	var handoff := CasinoSimulation.new()
 	handoff.hire("Dealer", 1)
 	handoff.hire("Dealer", 1)
@@ -338,3 +339,84 @@ func migration_and_wear_tests() -> void:
 	sim.incidents.append({"type": "repair", "table": 1, "title": "Worn rail", "detail": "Repair"})
 	sim.resolve_incident(sim.incidents.size() - 1, true)
 	check(not table.broken and table.service_minutes == 0, "Repair resets operating wear and grace")
+
+func crowd_tests() -> void:
+	var sim := CasinoSimulation.new()
+	sim.rng.seed = 121
+	sim.hire("Dealer", 1)
+	sim.hire("Dealer", 1)
+	sim.set_open(true)
+	for i in range(9): sim.step()
+	check(sim.guests.is_empty(), "Opening has a quiet gap before the first party")
+	sim.step()
+	check(sim.guests.size() in [1, 2], "First arrival is a party of one or two")
+	var party_size := sim.guests.size()
+	for i in range(17): sim.step()
+	check(sim.guests.size() == party_size, "No constant arrivals between parties")
+	# No motion leaves the entrance busy; new parties stop rather than pile up.
+	for i in range(180): sim.step()
+	check(sim.guests.size() <= 5, "Arrivals ease off while visitors are still waiting")
+	var count := sim.guests.size()
+	sim.set_open(false)
+	for i in range(60): sim.step()
+	check(sim.guests.size() <= count and sim.guests.all(func(g): return g.state == "Leaving"), "Closing admits nobody and sends observers/arrivals home")
+	var observing := CasinoSimulation.new()
+	observing.rng.seed = 12
+	observing.hire("Dealer", 1)
+	observing.hire("Dealer", 1)
+	observing.set_open(true)
+	observing.spawn_guest()
+	var guest: Dictionary = observing.guests[0]
+	guest.state = "Watching"
+	guest.table = 1
+	guest.seat = -1
+	guest.watch_left = 12
+	guest.x = 415.0
+	guest.y = 400.0
+	guest.tx = 415.0
+	guest.ty = 400.0
+	for i in range(11): observing.watching_step(guest)
+	check(guest.state == "Watching" and guest.seat == -1 and CrapsRules.exposure(guest.bets) == 0, "Observers watch without taking a seat or wagering")
+	var copy := CasinoSimulation.new()
+	check(copy.restore(JSON.parse_string(JSON.stringify(observing.snapshot()))), "Observer and arrival timer save loads")
+	check(copy.arrival_in == observing.arrival_in and copy.guests[0].watch_left == 1, "Save preserves remaining observation and arrival time")
+	observing.watching_step(guest)
+	copy.watching_step(copy.guests[0])
+	check(guest.state in ["Walking", "Leaving"], "An observer eventually joins or leaves even without a roll")
+	check(copy.guests[0].state == guest.state and copy.rng.state == observing.rng.state, "Restored observer makes the same seeded decision")
+	# Legacy v2 saves have none of the new optional fields.
+	var legacy := observing.snapshot()
+	legacy.erase("arrival_in")
+	for g in legacy.guests:
+		g.erase("watch_left")
+		g.erase("watch_style")
+	check(copy.restore(JSON.parse_string(JSON.stringify(legacy))), "Existing v2 saves remain compatible")
+	var watched := false
+	var joined_directly := false
+	for i in range(30):
+		var visit := CasinoSimulation.new()
+		visit.rng.seed = i + 1
+		visit.hire("Dealer", 1)
+		visit.hire("Dealer", 1)
+		visit.set_open(true)
+		visit.spawn_guest()
+		visit.choose_table(visit.guests[0])
+		watched = watched or visit.guests[0].state == "Browsing"
+		joined_directly = joined_directly or visit.guests[0].state == "Walking"
+	check(watched and joined_directly, "A mixture of spectators and immediate players visits the casino")
+
+	var full := CasinoSimulation.new()
+	full.hire("Dealer", 1)
+	full.hire("Dealer", 1)
+	full.set_open(true)
+	for i in range(7):
+		full.spawn_guest()
+		full.guests[i].table = 1
+		full.guests[i].seat = i
+		full.guests[i].state = "Playing"
+	full.spawn_guest()
+	var spectator: Dictionary = full.guests[7]
+	full.choose_table(spectator)
+	check(spectator.state == "Browsing" and spectator.seat == -1, "A full table allows a spectator without an eighth public seat")
+	full.choose_table(spectator, false)
+	check(spectator.state == "Waiting" and full.seated(1).size() == 7, "A watching guest must recheck seat availability before buying in")

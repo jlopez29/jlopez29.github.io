@@ -7,6 +7,7 @@ signal guest_clicked(id: int)
 var sim: CasinoSimulation
 var visitor_mode := false
 var building := false
+var build_kind := "craps"
 var rotated := false
 var selected := 1
 var preview := Vector2(-100, -100)
@@ -129,12 +130,12 @@ func _draw() -> void:
 	for table in sim.tables:
 		draw_table(table)
 	if building:
-		var valid := sim.can_place(preview, rotated) and sim.cash >= 3500
-		var rect := Rect2(preview, Vector2(100, 190) if rotated else Vector2(190, 100))
+		var valid: bool = sim.can_place(preview, rotated, -1, build_kind) and sim.cash >= CasinoGames.COSTS[build_kind]
+		var rect := Rect2(preview, sim.furniture_size(build_kind, rotated))
 		draw_rect(rect.grow(22), Color(0.3, 0.8, 0.6, 0.07) if valid else Color(1, 0.3, 0.3, 0.08))
 		draw_rect(rect, Color(0.3, 0.85, 0.6, 0.3) if valid else Color(1, 0.3, 0.3, 0.3))
 		draw_rect(rect, TEAL if valid else Color("f08484"), false, 2)
-		text_at(preview + Vector2(8, 26), "$3,500 · CRAPS", INK, 13)
+		text_at(preview + Vector2(8, 26), "$%d · %s" % [CasinoGames.COSTS[build_kind], CasinoGames.NAMES[build_kind]], INK, 13)
 	for guest in sim.guests:
 		var at := Vector2(guest.x, guest.y)
 		var color := GOLD if guest.vip else Color.from_hsv(fmod(float(guest.id) * 0.17, 1.0), 0.25, 0.8)
@@ -147,8 +148,29 @@ func _draw() -> void:
 		if not table.is_empty() and int(table.shooter) == int(guest.id):
 			draw_arc(at, 12, 0, TAU, 20, GOLD, 2)
 			text_at(at + Vector2(-11, -14), "DICE", GOLD, 8)
+		if guest.state in ["Browsing", "Watching"]:
+			text_at(at + Vector2(-14, -23), "WATCH", Color("83c9c1"), 8)
+		if guest.state in ["To cage", "Cashing out"]:
+			text_at(at + Vector2(-15, -15), "CASH OUT", GOLD, 8)
 		if guest.vip:
 			text_at(at + Vector2(-8, -13), "VIP", GOLD, 8)
+	for employee in sim.staff:
+		if employee.role != "Service": continue
+		var at := Vector2(float(employee.get("x", 730)), float(employee.get("y", 90)))
+		draw_circle(at + Vector2(0, 3), 10, Color(0, 0, 0, 0.3))
+		draw_circle(at, 8, Color("66d5c3"))
+		draw_circle(at + Vector2(0, -4), 3, Color("f0cfb5"))
+		text_at(at + Vector2(-16, -15), "SERVICE", TEAL, 8)
+		if employee.get("service_state", "At bar") == "Delivering":
+			draw_line(at + Vector2(7, 1), at + Vector2(17, 1), INK, 2)
+			draw_rect(Rect2(at + Vector2(10, -5), Vector2(4, 6)), GOLD)
+	for i in range(sim.cashout_effects.size()):
+		var effect: Dictionary = sim.cashout_effects[i]
+		var at := Vector2(42, 113 + i * 36)
+		var color := TEAL if effect.net >= 0 else Color("f08484")
+		draw_rect(Rect2(at - Vector2(5, 17), Vector2(220, 34)), Color("101b26"))
+		text_at(at, "HOUSE %s$%d  ·  %s" % ["+" if effect.net >= 0 else "-", absf(effect.net), effect.name], color, 13)
+		text_at(at + Vector2(0, 13), "Cashed out $%d" % effect.cash, INK, 10)
 	if visitor_mode:
 		draw_circle(sim.player, 16 + sin(pulse * 4) * 1.5, Color(0.89, 0.74, 0.44, 0.17))
 		draw_circle(sim.player, 11, GOLD)
@@ -160,6 +182,9 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO)
 
 func draw_table(table: Dictionary) -> void:
+	if sim.table_kind(table) != "craps":
+		draw_other_game(table)
+		return
 	var rect := sim.bounds(table)
 	var active := sim.operating(table)
 	var border := GOLD if selected == int(table.id) else Color("617078")
@@ -211,3 +236,27 @@ func walk_to_table(id: int) -> void:
 	if table.is_empty(): return
 	var rect := sim.bounds(table)
 	walk_to(Vector2(rect.get_center().x, rect.end.y + 24))
+
+func draw_other_game(table: Dictionary) -> void:
+	var rect := sim.bounds(table)
+	var kind := sim.table_kind(table)
+	var color := Color("594178") if kind == "slots" else (Color("174c42") if kind == "blackjack" else (Color("3e324f") if kind == "holdem" else Color("395041")))
+	draw_style_box(box(color, GOLD if selected == int(table.id) else Color("718b85"), 12), rect)
+	var center := rect.get_center()
+	if kind == "slots":
+		draw_rect(Rect2(rect.position + Vector2(7, 15), Vector2(rect.size.x - 14, 30)), Color("0f1b28"))
+		text_at(rect.position + Vector2(9, 36), "7 7 7", GOLD, 13)
+	elif kind == "roulette":
+		for i in range(16):
+			var at := center + Vector2.from_angle(i * TAU / 16) * 26
+			draw_circle(at, 5, Color("bf4257") if i % 2 else Color("152331"))
+		draw_circle(center, 13, GOLD)
+	else:
+		for i in range(3):
+			var at := center + Vector2(-34 + i * 25, -15)
+			draw_rect(Rect2(at, Vector2(20, 29)), Color("ede6d8"))
+			text_at(at + Vector2(3, 19), ["A", "K", "Q"][i], Color("b64354"), 13)
+	text_at(rect.position + Vector2(0, -13), "%s %02d" % [CasinoGames.NAMES[kind], table.id], GOLD, 12)
+	text_at(rect.position + Vector2(0, rect.size.y + 17), "%s · %d/%d" % [sim.table_status(table), sim.seated(int(table.id)).size(), sim.capacity(table)], TEAL, 10)
+	for i in range(sim.crew(int(table.id)).size()):
+		draw_circle(rect.position + Vector2(rect.size.x + 15, 25 + i * 30), 8, INK)

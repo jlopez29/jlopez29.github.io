@@ -4,6 +4,9 @@ Current milestone: **0.2 browser playtest — expanded craps, shooter rotation, 
 
 ## Completed
 
+- Playable slots, roulette, blackjack, and Ultimate Texas Hold’em.
+- Visible cocktail-service routes and guest cage cash-outs with house-result labels.
+
 - Godot/GDScript foundation, 2D procedural floor and web export.
 - Place/rotate/move/sell tables with spacing/cash checks.
 - Hire/assign two-dealer crews, wages, fatigue, standby relief, service coverage.
@@ -25,7 +28,7 @@ Current milestone: **0.2 browser playtest — expanded craps, shooter rotation, 
 3. Refine the felt and touch feedback; consider Buy/Lay and advanced betting options.
 4. Meaningful reputation unlocks, room expansion, VIP preferences and comps.
 5. More differentiated guests and staff; surveillance and uncertain incidents.
-6. Slots and blackjack after craps + management have proven engaging.
+6. Playtest the four new games, their purchase prices, and guest strategies.
 7. Consider a 3D floor / eye-level visitor camera after the loop earns that effort.
 
 ## Playtest questions

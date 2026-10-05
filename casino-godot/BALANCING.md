@@ -15,11 +15,13 @@ forecast of real casino finances.
 | Required crew / seats | 2 dealers / 7 public players + owner rail position |
 | Game time | 1 minute per real second at 1× |
 | Dice interval | 6 game minutes; 15 while visitor is seated, plus fatigue |
-| Guest arrival | Every 3 game minutes evening, otherwise every 5 |
+| Guest arrival | Parties of 1–2; 18–32 game minutes evening, otherwise 28–48 |
+| Observation | 65% consider watching first; watch 12–24 game minutes, then decide |
+| Crowd control | Arrivals ease off with waiting/browsing guests; floor target 7 per operating table + 3 |
 | Guest bankroll | $400–$1,500; VIP $5,000 |
 | Guest wager | Table minimum; VIP 4× minimum |
 | Guest cap | 40 |
-| VIP arrival | Every 100 simulated minutes while open |
+| VIP arrival | 5% of ordinary arrivals; no separate stream |
 | Rail incident / repair | 3 operating days grace, then 8% daily chance per operating table / $120 |
 | Service complaint / comp | Every 70 minutes with no service staff / $60 |
 
@@ -38,3 +40,23 @@ interesting rather than arbitrary. There are no unlock requirements in 0.2.
 
 Repair wear resets after repair. The grace period and daily chance are playtest
 settings, not measured real-world failure rates.
+
+The first party arrives after 10 open game minutes. Arrival gaps pause while
+closed and persist in saves. Spectators do not reserve seats or place bets; up to
+three watch each table. Some favor a long hand, others a new shooter, and some
+are casual. These preferences change joining decisions only, never dice odds.
+Observers decide even when no dice are rolling, so an empty table can get started.
+
+Service employees automatically cover all guests. They lose 0.13 energy per game
+minute while guests are present and recover 0.5 per minute on an empty floor,
+within the existing 15–100 energy bounds. Their drink-service effect remains
+headcount-based; service energy does not yet change delivery effectiveness.
+
+## Additional games
+
+Purchase costs: slots $750, roulette $1,800, blackjack $2,500, Ultimate Hold’em
+$4,200. Slots require no dealer; each new table game requires one. Slots have a
+$5 minimum and other new games $10. Reel weights are 6/5/4/3/2 out of 20 stops;
+the current one-line slot returns 91.725% theoretically. These prices and guest
+strategies are initial playtest tuning. Cage labels show individual gaming
+profit, not profit after operating expenses.

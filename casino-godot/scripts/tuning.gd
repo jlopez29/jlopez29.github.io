@@ -4,6 +4,10 @@ extends RefCounted
 const STARTING_CASH := 24000.0
 const VISITOR_CASH := 1000.0
 const MAX_GUESTS := 40
+const ARRIVAL_MINUTES := Vector2i(18, 32) # Small parties, with quiet gaps at 1x.
+const QUIET_ARRIVAL_MINUTES := Vector2i(28, 48)
+const OBSERVE_MINUTES := Vector2i(12, 24)
+const OBSERVERS_PER_TABLE := 3
 const TABLE_CAPACITY := 8
 const CREW_REQUIRED := 2 # Abstract crew for this prototype, not a full real-world crew.
 const CRAPS_COST := 3500.0
