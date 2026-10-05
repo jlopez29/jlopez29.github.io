@@ -132,6 +132,15 @@ const FULL_BUILD_AREA := Rect2(65, 100, 720, 400)
 const TABLE_GAME_ROUND_MINUTES := {"blackjack": 2, "roulette": 2, "holdem": 2} # Game minutes per occupied NPC hand/spin.
 const VISITOR_CASH := 1000.0
 const MAX_GUESTS := 40
+# Hospitality is settled on physical delivery; prices and policy are independent.
+const DRINK_PROFILES := {"basic": {"name": "Basic drink", "price": 5.0, "cost": 1.0, "comp_eligible": true}}
+const COMP_POLICY := {"recent_wager_minutes": 12, "basic_gambling_comps": true}
+const DRINK_THIRST_TRIGGER := 12.0
+const THIRST_PER_MINUTE := 0.5
+const THIRST_DISCOMFORT := 25.0
+const THIRST_SATISFACTION_LOSS := 0.6
+const DRINK_SATISFACTION_GAIN := 6.0
+const DRINK_PREP_SECONDS := 2.0 # Simulated movement seconds, as with the existing service route.
 const ENTITY_WALK_SPEED := 64.0 # World units per simulated second, independent of update size.
 const ARRIVAL_MINUTES := Vector2i(18, 32) # Small parties, with quiet gaps at 1x.
 const ARRIVAL_OVERFLOW_RATIO := 0.25 # One extra visitor for two/four slots; scales with seats.
@@ -149,7 +158,7 @@ const TABLE_MINIMUM := 25.0
 const ROLL_SECONDS := 0.3 # NPC dice cadence in game minutes; pass bets resolve over several rolls.
 const NPC_ROLL_FATIGUE := 0.002 # Up to 0.17 extra game minutes at minimum crew energy.
 const VISITOR_ROLL_FATIGUE := 0.04 # Preserve the existing manually played rail cadence.
-const SAVE_VERSION := 7 # One current schema; pre-alpha saves are disposable.
+const SAVE_VERSION := 10 # One current schema; pre-alpha saves are disposable.
 const SAVE_PATH := "user://neon-house.json"
 const VISITOR_ROLL_SECONDS := 15.0
 const REPAIR_GRACE_MINUTES := 4320 # Three days of operation before any wear check.
@@ -181,3 +190,42 @@ static func money_importance(amount: float) -> int:
 	for threshold in MONEY_IMPORTANCE_THRESHOLDS:
 		if absf(amount) >= float(threshold): importance += 1
 	return importance
+
+# Qualitative guest behavior, separate from game odds and arrival volume.
+const GUEST_ARCHETYPES := {
+	"casual": {"name": "Casual visitor", "games": ["slots", "roulette", "blackjack"], "preference_bonus": 25.0, "quality": 1.0, "patience": Vector2i(25, 40), "wait_for_slots": false, "watch_chance": 0.35, "hot_interest": 8.0, "bankroll_scale": 0.9, "service_expectation": 1.0},
+	"regular": {"name": "Regular", "games": ["slots", "blackjack", "roulette", "craps", "holdem"], "preference_bonus": 45.0, "quality": 2.0, "patience": Vector2i(35, 55), "wait_for_slots": true, "watch_chance": 0.35, "hot_interest": 10.0, "bankroll_scale": 1.0, "service_expectation": 1.0},
+	"slots": {"name": "Slot enthusiast", "games": ["slots"], "preference_bonus": 75.0, "quality": 5.0, "patience": Vector2i(45, 65), "wait_for_slots": true, "watch_chance": 0.15, "hot_interest": 3.0, "bankroll_scale": 1.05, "service_expectation": 1.0},
+	"dice": {"name": "Dice player", "games": ["craps"], "preference_bonus": 90.0, "quality": 1.0, "patience": Vector2i(40, 60), "wait_for_slots": false, "watch_chance": 0.7, "hot_interest": 25.0, "bankroll_scale": 1.1, "service_expectation": 1.0},
+	"tables": {"name": "Table player", "games": ["blackjack", "roulette", "holdem"], "preference_bonus": 75.0, "quality": 0.0, "patience": Vector2i(35, 55), "wait_for_slots": false, "watch_chance": 0.5, "hot_interest": 15.0, "bankroll_scale": 1.1, "service_expectation": 1.1},
+	"vip": {"name": "VIP", "games": ["slots", "blackjack", "holdem"], "preference_bonus": 60.0, "quality": 10.0, "patience": Vector2i(25, 40), "wait_for_slots": false, "watch_chance": 0.3, "hot_interest": 12.0, "bankroll_scale": 1.0, "service_expectation": 1.4},
+}
+const STARTER_ARCHETYPE_WEIGHTS := {"casual": 40, "regular": 25, "slots": 30, "dice": 3, "tables": 2}
+const DEVELOPED_ARCHETYPE_WEIGHTS := {"casual": 30, "regular": 20, "slots": 25, "dice": 12, "tables": 13}
+const HOT_ACTIVITY_MINUTES := 12
+const HOT_WAGER_COUNT := 8
+const HOT_PLAYER_COUNT := 2
+const THOUGHT_GAME_COOLDOWN := 6
+const THOUGHT_SECONDS := 3.5
+const THOUGHT_GUEST_SECONDS := 12.0
+const THOUGHT_REPEAT_SECONDS := 35.0
+const THOUGHT_GLOBAL_SECONDS := 1.5
+const THOUGHT_HISTORY_LIMIT := 128
+
+# Individual visits: activity sessions are decision opportunities, not forced exits.
+const GUEST_VISITS := {
+	"casual": {"session": Vector2i(20, 40), "explore": 0.65, "departure": 1.2},
+	"regular": {"session": Vector2i(35, 65), "explore": 0.25, "departure": 0.65},
+	"slots": {"session": Vector2i(40, 75), "explore": 0.2, "departure": 0.8},
+	"dice": {"session": Vector2i(30, 60), "explore": 0.35, "departure": 0.8},
+	"tables": {"session": Vector2i(25, 50), "explore": 0.5, "departure": 0.9},
+	"vip": {"session": Vector2i(40, 80), "explore": 0.3, "departure": 0.6},
+}
+const GUEST_EXPLORE_MINUTES := Vector2i(3, 8)
+const GUEST_DRINK_BREAK_MINUTES := Vector2i(8, 16)
+const GUEST_DECISION_GAP := Vector2i(2, 5)
+const GUEST_APPEAL_WEIGHT := 20.0 # Appeal adds interest; it cannot multiply game preference.
+const GUEST_DEPARTURE_BASE := 0.06
+const GUEST_ACTIVITY_DEPARTURE := 0.035
+const GUEST_VISIT_FATIGUE_START := 120.0
+const GUEST_VISIT_FATIGUE_SPAN := 600.0

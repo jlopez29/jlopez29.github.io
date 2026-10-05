@@ -9,10 +9,20 @@ var sim: CasinoSimulation:
 	set(value):
 		if sim == value: return
 		if sim != null and sim.financial_event.is_connected(_on_financial_event): sim.financial_event.disconnect(_on_financial_event)
+		if sim != null and sim.guest_thought.is_connected(_on_guest_thought): sim.guest_thought.disconnect(_on_guest_thought)
 		sim = value
 		clear_financial_feedback()
-		if sim != null: sim.financial_event.connect(_on_financial_event)
+		if sim != null:
+			sim.financial_event.connect(_on_financial_event)
+			sim.guest_thought.connect(_on_guest_thought)
 var floating_results: Array = []
+var thought_bubbles: Array = []
+var pending_thoughts := {}
+var thought_seen := {}
+var thought_guest_seen := {}
+var thought_clock := 0.0
+var thought_next := 0.0
+var money_rects: Array[Rect2] = []
 var visitor_mode := false
 var building := false
 var build_kind := "slots"
@@ -26,6 +36,27 @@ var walk_path: Array = []
 var zoom := 1.0
 var camera := Vector2.ZERO
 var pulse := 0.0
+var compact_labels := false
+var close_view := false
+var landscape_view := false
+var pan_center := Vector2(267, 250)
+var pointer_down := false
+var dragging := false
+var pointer_start := Vector2.ZERO
+
+func configure_view(compact: bool, landscape: bool) -> void:
+	if landscape_view != landscape:
+		close_view = landscape
+		var table := sim.get_table(selected)
+		pan_center = sim.bounds(table).get_center() if not table.is_empty() else Vector2(267, 250)
+	landscape_view = landscape
+	compact_labels = compact
+
+func toggle_fit() -> void:
+	close_view = not close_view
+	var table := sim.get_table(selected)
+	if not table.is_empty(): pan_center = sim.bounds(table).get_center()
+
 var font: Font
 
 const INK := Color("d5e5e7")
@@ -55,12 +86,16 @@ func _process(delta: float) -> void:
 	if sim == null:
 		return
 	pulse += delta
+	update_thoughts(delta)
 	for effect in floating_results: effect.age += delta
 	floating_results = floating_results.filter(func(effect): return float(effect.age) < float(effect.lifetime))
 	var floor_width := 850.0 if sim.expanded or visitor_mode else 535.0
 	var fit := minf(size.x / floor_width, size.y / 610.0)
-	zoom = lerpf(zoom, fit * (1.32 if visitor_mode else 1.0), minf(1, delta * 8))
+	var target_zoom := fit * (1.32 if visitor_mode else 1.0)
+	if compact_labels and ((close_view and not visitor_mode) or (landscape_view and visitor_mode)): target_zoom = maxf(fit, size.x / floor_width)
+	zoom = lerpf(zoom, target_zoom, minf(1, delta * 8))
 	var desired := size / 2 - sim.player * zoom if visitor_mode else (size - Vector2(floor_width, 610) * zoom) / 2
+	if compact_labels and close_view and not visitor_mode: desired = size / 2 - pan_center * zoom
 	for axis in [0, 1]:
 		var extent: float = Vector2(floor_width, 610)[axis] * zoom
 		desired[axis] = clampf(desired[axis], size[axis] - extent, 0) if extent > size[axis] else (size[axis] - extent) / 2
@@ -90,22 +125,57 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var at := world_at(event.position)
-		if building:
-			floor_clicked.emit((at / 10).floor() * 10)
-			return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if compact_labels and not building and not visitor_mode:
+			if event.pressed:
+				pointer_down = true
+				dragging = false
+				pointer_start = event.position
+			else:
+				if pointer_down and not dragging: select_at(event.position)
+				pointer_down = false
+			accept_event()
+		elif event.pressed: select_at(event.position)
+	elif event is InputEventMouseMotion and pointer_down and close_view:
+		if event.position.distance_to(pointer_start) > 8: dragging = true
+		if dragging:
+			pan_center -= event.relative / maxf(zoom, 0.01)
+			pan_center = pan_center.clamp(Vector2.ZERO, Vector2(850 if sim.expanded else 535, 610))
+			accept_event()
+
+func select_at(screen: Vector2) -> void:
+	var at := world_at(screen)
+	if building:
+		floor_clicked.emit((at / 10).floor() * 10)
+		return
+	if compact_labels:
+		# Actual furniture takes precedence; outside it, expanded guest targets
+		# must win over padded asset targets so seated guests remain inspectable.
 		for table in sim.tables:
-			if sim.bounds(table).grow(12).has_point(at):
+			if sim.bounds(table).has_point(at):
 				table_clicked.emit(int(table.id))
 				return
+		var nearest: Dictionary = {}
+		var distance := 22.0 / zoom
 		for guest in sim.guests:
-			if at.distance_to(Vector2(guest.x, guest.y)) < 14:
-				guest_clicked.emit(int(guest.id))
-				return
-		if visitor_mode and not blocked(at):
-			walk_to(at)
-		floor_clicked.emit(at)
+			var candidate := at.distance_to(Vector2(guest.x, guest.y))
+			if candidate < distance:
+				distance = candidate
+				nearest = guest
+		if not nearest.is_empty():
+			guest_clicked.emit(int(nearest.id))
+			return
+	for table in sim.tables:
+		if sim.bounds(table).grow(maxf(12, 18 / zoom) if compact_labels else 12).has_point(at):
+			table_clicked.emit(int(table.id))
+			return
+	for guest in sim.guests:
+		if at.distance_to(Vector2(guest.x, guest.y)) < (maxf(14, 22 / zoom) if compact_labels else 14):
+			guest_clicked.emit(int(guest.id))
+			return
+	if visitor_mode and not blocked(at):
+		walk_to(at)
+	floor_clicked.emit(at)
 
 func text_at(at: Vector2, text: String, color: Color = INK, font_size: int = 14) -> void:
 	draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
@@ -163,9 +233,9 @@ func _draw() -> void:
 		if not table.is_empty() and int(table.shooter) == int(guest.id):
 			draw_arc(at, 12, 0, TAU, 20, GOLD, 2)
 			text_at(at + Vector2(-11, -14), "DICE", GOLD, 8)
-		if guest.state in ["Browsing", "Watching"]:
+		if not compact_labels and guest.state in ["Browsing", "Watching"]:
 			text_at(at + Vector2(-14, -23), "WATCH", Color("83c9c1"), 8)
-		if guest.state in ["To cage", "Cashing out"]:
+		if not compact_labels and guest.state in ["To cage", "Cashing out"]:
 			text_at(at + Vector2(-15, -15), "CASH OUT", GOLD, 8)
 		if guest.vip:
 			text_at(at + Vector2(-8, -13), "VIP", GOLD, 8)
@@ -175,11 +245,11 @@ func _draw() -> void:
 		draw_circle(at + Vector2(0, 3), 10, Color(0, 0, 0, 0.3))
 		draw_circle(at, 8, Color("66d5c3"))
 		draw_circle(at + Vector2(0, -4), 3, Color("f0cfb5"))
-		text_at(at + Vector2(-16, -15), "SERVICE", TEAL, 8)
+		if not compact_labels: text_at(at + Vector2(-16, -15), "SERVICE", TEAL, 8)
 		if employee.get("service_state", "At bar") == "Delivering":
 			draw_line(at + Vector2(7, 1), at + Vector2(17, 1), INK, 2)
 			draw_rect(Rect2(at + Vector2(10, -5), Vector2(4, 6)), GOLD)
-	for i in range(sim.cashout_effects.size()):
+	for i in range(0 if compact_labels else sim.cashout_effects.size()):
 		var effect: Dictionary = sim.cashout_effects[i]
 		var at := Vector2(42, 113 + i * 36)
 		var color := TEAL if effect.net >= 0 else Color("f08484")
@@ -195,13 +265,37 @@ func _draw() -> void:
 		if move_target.x >= 0:
 			draw_arc(move_target, 8, 0, TAU, 20, GOLD, 1)
 	draw_set_transform(Vector2.ZERO)
+	if compact_labels: draw_asset_badges()
 	draw_financial_feedback()
+	draw_thoughts()
+
+func draw_asset_badges() -> void:
+	# Compact, fixed-pixel identity/state inside each asset's screen footprint.
+	# Names and multi-line status belong in Inspect, not between adjacent machines.
+	var occupied: Array[Rect2] = []
+	for table in sim.tables:
+		var world_rect := sim.bounds(table)
+		var anchor := screen_at(world_rect.position) + Vector2(2, 2)
+		var rect := Rect2(anchor, Vector2(38, 20))
+		if not Rect2(Vector2.ZERO, size).encloses(rect): continue
+		var overlaps := false
+		for prior in occupied:
+			if prior.intersects(rect): overlaps = true
+		if overlaps: continue
+		occupied.append(rect)
+		draw_rect(rect, Color("101b26"))
+		var color := Color("ffa294") if table.broken else TEAL if sim.operating(table) else Color("9bafc2")
+		draw_circle(anchor + Vector2(6, 10), 3, color)
+		draw_string(font, anchor + Vector2(12, 15), str(table.id), HORIZONTAL_ALIGNMENT_LEFT, 24, 13, GOLD if selected == int(table.id) else INK)
+		# Occupancy stays visual: guests are visible; a small dot marks a busy asset.
+		if not sim.seated(int(table.id)).is_empty(): draw_circle(anchor + Vector2(34, 5), 2, GOLD)
 
 func draw_table(table: Dictionary) -> void:
 	if sim.table_kind(table) != "craps":
 		draw_other_game(table)
 		return
 	var rect := sim.bounds(table)
+	if sim.table_hot(table): draw_rect(rect.grow(5), Color(0.89, 0.74, 0.44, 0.25 + sin(pulse * 2) * 0.08), false, 2)
 	var active := sim.operating(table)
 	var border := GOLD if selected == int(table.id) else Color("617078")
 	draw_style_box(box(Color("080f18"), Color("080f18"), 14), Rect2(rect.position + Vector2(4, 8), rect.size))
@@ -222,9 +316,9 @@ func draw_table(table: Dictionary) -> void:
 	draw_circle(center + Vector2(0, 2), 12, Color("17202b"))
 	text_at(center + Vector2(-10, 6), marker, INK, 10)
 	var label_pos := rect.position + Vector2(0, -39)
-	text_at(label_pos, "CRAPS %02d" % int(table.id), GOLD if selected == int(table.id) else INK, 13)
+	if not compact_labels: text_at(label_pos, "CRAPS %02d" % int(table.id), GOLD if selected == int(table.id) else INK, 13)
 	var players := sim.seated(int(table.id)).size() + (1 if sim.joined == int(table.id) else 0)
-	text_at(rect.position + Vector2(0, rect.size.y + 44), "%s | %d/8" % [sim.table_status(table), players], TEAL if active else Color("899aaa"), 11)
+	if not compact_labels: text_at(rect.position + Vector2(0, rect.size.y + 44), "%s | %d/8" % [sim.table_status(table), players], TEAL if active else Color("899aaa"), 11)
 	for i in range(sim.crew(int(table.id)).size()):
 		var pos := rect.position + Vector2(rect.size.x + 15, 28 + i * 27)
 		draw_circle(pos, 7, Color("e0e5df"))
@@ -256,6 +350,7 @@ func walk_to_table(id: int) -> void:
 func draw_other_game(table: Dictionary) -> void:
 	var rect := sim.bounds(table)
 	var kind := sim.table_kind(table)
+	if sim.table_hot(table): draw_rect(rect.grow(5), Color(0.89, 0.74, 0.44, 0.25 + sin(pulse * 2) * 0.08), false, 2)
 	var color := Color(str(sim.slot_profile(table).color)) if kind == "slots" else (Color("174c42") if kind == "blackjack" else (Color("3e324f") if kind == "holdem" else Color("395041")))
 	draw_style_box(box(color, GOLD if selected == int(table.id) else Color("718b85"), 12), rect)
 	var center := rect.get_center()
@@ -279,20 +374,25 @@ func draw_other_game(table: Dictionary) -> void:
 			var at := center + Vector2(-34 + i * 25, -15)
 			draw_rect(Rect2(at, Vector2(20, 29)), Color("ede6d8"))
 			text_at(at + Vector2(3, 19), ["A", "K", "Q"][i], Color("b64354"), 13)
-	text_at(rect.position + Vector2(0, -13), "%s %02d" % [sim.slot_profile(table).short_name if kind == "slots" else CasinoGames.NAMES[kind], table.id], GOLD, 12)
-	text_at(rect.position + Vector2(0, rect.size.y + 17), "%s | %d/%d" % [sim.table_status(table), sim.seated(int(table.id)).size(), sim.capacity(table)], TEAL, 10)
+	if not compact_labels: text_at(rect.position + Vector2(0, -13), "%s %02d" % [sim.slot_profile(table).short_name if kind == "slots" else CasinoGames.NAMES[kind], table.id], GOLD, 12)
+	if not compact_labels: text_at(rect.position + Vector2(0, rect.size.y + 17), "%s | %d/%d" % [sim.table_status(table), sim.seated(int(table.id)).size(), sim.capacity(table)], TEAL, 10)
 	for i in range(sim.crew(int(table.id)).size()):
 		draw_circle(rect.position + Vector2(rect.size.x + 15, 25 + i * 30), 8, INK)
 
 func clear_financial_feedback() -> void:
 	floating_results.clear()
+	thought_bubbles.clear()
+	pending_thoughts.clear()
+	thought_seen.clear()
+	thought_guest_seen.clear()
+	thought_next = thought_clock
 
 func _on_financial_event(event: Dictionary) -> void:
-	if event.category != "gaming" or absf(float(event.amount)) < 0.005: return
+	if event.category not in ["gaming", "bar", "comp"] or absf(float(event.amount)) < 0.005: return
 	# Same-asset, same-sign small bursts can share a label; never cancel a win
 	# against a loss or merge visitor money into guest business.
 	for effect in floating_results:
-		if int(event.importance) < 2 and int(effect.importance) < 2 and effect.asset_id == event.asset_id and effect.actor == event.actor and signf(float(effect.amount)) == signf(float(event.amount)) and float(effect.age) < CasinoTuning.MONEY_POPUP_MERGE_SECONDS:
+		if int(event.importance) < 2 and int(effect.importance) < 2 and effect.asset_id == event.asset_id and effect.category == event.category and (event.category == "gaming" or effect.guest_id == event.guest_id) and effect.actor == event.actor and signf(float(effect.amount)) == signf(float(event.amount)) and float(effect.age) < CasinoTuning.MONEY_POPUP_MERGE_SECONDS:
 			effect.amount += float(event.amount)
 			effect.count += 1
 			effect.importance = CasinoTuning.money_importance(float(effect.amount))
@@ -318,12 +418,18 @@ func draw_financial_feedback() -> void:
 	# Draw after resetting the world transform: fixed pixel size remains legible
 	# while walking/zooming, while each anchor continues to follow its asset.
 	var occupied: Array[Rect2] = []
+	money_rects.clear()
 	var ordered := floating_results.duplicate()
 	ordered.sort_custom(func(a, b): return int(a.importance) > int(b.importance))
 	for effect in ordered:
 		var table := sim.get_table(int(effect.asset_id))
 		var anchor: Vector2 = effect.position
-		if not table.is_empty(): anchor = Vector2(sim.bounds(table).get_center().x, sim.bounds(table).position.y)
+		if effect.category == "gaming" and not table.is_empty(): anchor = Vector2(sim.bounds(table).get_center().x, sim.bounds(table).position.y)
+		elif effect.category in ["bar", "comp"]:
+			for guest in sim.guests:
+				if int(guest.id) == int(effect.guest_id):
+					anchor = Vector2(guest.x, guest.y - 18)
+					break
 		var at := screen_at(anchor)
 		if not Rect2(Vector2(-50, -50), size + Vector2(100, 100)).has_point(at): continue
 		var age := float(effect.age)
@@ -347,6 +453,7 @@ func draw_financial_feedback() -> void:
 			rect.position.y = at.y - font_size - 2
 		if occupied.any(func(other): return other.intersects(rect)): continue
 		occupied.append(rect)
+		money_rects.append(rect)
 		var alpha := 1.0 - smoothstep(lifetime * 0.45, lifetime, age)
 		var color := TEAL if float(effect.amount) > 0 else Color("ff9486")
 		color.a = alpha * (0.75 if importance == 0 else 1.0)
@@ -362,3 +469,99 @@ func _money_box(importance: int, alpha: float) -> StyleBoxFlat:
 		box.border_color = Color(0.89, 0.74, 0.44, alpha)
 		box.set_border_width_all(1 if importance == 2 else 2)
 	return box
+
+func _on_guest_thought(event: Dictionary) -> void:
+	var previous: Dictionary = pending_thoughts.get(int(event.guest_id), {})
+	if previous.is_empty() or int(event.priority) >= int(previous.priority):
+		var item := event.duplicate()
+		item.queued = thought_clock
+		pending_thoughts[int(event.guest_id)] = item
+	if pending_thoughts.size() > 32: pending_thoughts.erase(pending_thoughts.keys()[0])
+
+func update_thoughts(delta: float) -> void:
+	thought_clock += delta
+	thought_bubbles = thought_bubbles.filter(func(item): return thought_clock - float(item.started) < CasinoTuning.THOUGHT_SECONDS)
+	var live := {}
+	for guest in sim.guests: live[int(guest.id)] = guest
+	thought_bubbles = thought_bubbles.filter(func(item): return live.has(int(item.guest_id)))
+	for id in pending_thoughts.keys():
+		if not live.has(id) or thought_clock - float(pending_thoughts[id].queued) > 4: pending_thoughts.erase(id)
+	# Walking surfaces current real intent even between simulation thought events.
+	if visitor_mode and sim.joined < 0:
+		for guest in sim.guests:
+			if sim.player.distance_to(Vector2(guest.x, guest.y)) < 130 and not pending_thoughts.has(int(guest.id)):
+				_on_guest_thought({"guest_id": int(guest.id), "text": guest.thought, "priority": 1, "position": Vector2(guest.x, guest.y)})
+	if not is_visible_in_tree() or thought_clock < thought_next or thought_bubbles.size() >= (2 if compact_labels else 3): return
+	var best: Dictionary = {}
+	var best_score := -INF
+	for event in pending_thoughts.values():
+		var id := int(event.guest_id)
+		if not live.has(id): continue
+		var guest: Dictionary = live[id]
+		var at := screen_at(Vector2(guest.x, guest.y))
+		if not Rect2(Vector2.ZERO, size).has_point(at): continue
+		var key := "%d:%s" % [id, event.text]
+		if thought_clock - float(thought_guest_seen.get(id, -1000)) < CasinoTuning.THOUGHT_GUEST_SECONDS or thought_clock - float(thought_seen.get(key, -1000)) < CasinoTuning.THOUGHT_REPEAT_SECONDS: continue
+		var score := float(event.priority) * 100 - (sim.player.distance_to(Vector2(guest.x, guest.y)) * 0.1 if visitor_mode else 0.0)
+		if score > best_score:
+			best_score = score
+			best = event
+	if best.is_empty(): return
+	pending_thoughts.erase(int(best.guest_id))
+	var bubble := best.duplicate()
+	bubble.started = thought_clock
+	thought_bubbles.append(bubble)
+	thought_guest_seen[int(best.guest_id)] = thought_clock
+	thought_seen["%d:%s" % [best.guest_id, best.text]] = thought_clock
+	for history in [thought_seen, thought_guest_seen]:
+		while history.size() > CasinoTuning.THOUGHT_HISTORY_LIMIT: history.erase(history.keys()[0])
+	thought_next = thought_clock + CasinoTuning.THOUGHT_GLOBAL_SECONDS
+
+func draw_thoughts() -> void:
+	var occupied := money_rects.duplicate()
+	for bubble in thought_bubbles:
+		var guest: Dictionary = {}
+		for candidate in sim.guests:
+			if int(candidate.id) == int(bubble.guest_id):
+				guest = candidate
+				break
+		if guest.is_empty(): continue
+		var anchor := screen_at(Vector2(guest.x, guest.y))
+		var width := minf(220, size.x * 0.7)
+		var lines: Array[String] = []
+		var line := ""
+		for word in str(bubble.text).split(" "):
+			var proposed := word if line.is_empty() else line + " " + word
+			if font.get_string_size(proposed, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x > width - 20 and not line.is_empty():
+				lines.append(line)
+				line = word
+			else: line = proposed
+		if not line.is_empty(): lines.append(line)
+		if lines.size() > 3: lines = lines.slice(0, 3)
+		var height := lines.size() * 17 + 16
+		var at := anchor - Vector2(width / 2, height + 24 + 6 * (thought_clock - float(bubble.started)) / CasinoTuning.THOUGHT_SECONDS)
+		at.x = clampf(at.x, 4, maxf(4, size.x - width - 4))
+		var rect := Rect2(at, Vector2(width, height))
+		var fits := false
+		for offset in [Vector2.ZERO, Vector2(0, -height - 8), Vector2(0, height + 42)]:
+			var candidate := Rect2(at + offset, rect.size)
+			if not Rect2(Vector2(4, 4), size - Vector2(8, 60 if landscape_view else 8)).encloses(candidate): continue
+			var blocked := false
+			for other in occupied:
+				if candidate.grow(4).intersects(other): blocked = true
+			# Avoid laying a bubble across another person's screen position.
+			for other in sim.guests:
+				if int(other.id) != int(bubble.guest_id) and candidate.grow(8).has_point(screen_at(Vector2(other.x, other.y))): blocked = true
+			if not blocked:
+				rect = candidate
+				fits = true
+				break
+		if not fits: continue
+		occupied.append(rect)
+		var age := thought_clock - float(bubble.started)
+		var alpha := minf(1, age / 0.15) * minf(1, (CasinoTuning.THOUGHT_SECONDS - age) / 0.65)
+		var skin := box(Color(0.14, 0.22, 0.27, alpha * 0.95), Color(0.55, 0.68, 0.7, alpha * 0.7), 9)
+		draw_style_box(skin, rect)
+		for i in range(lines.size()):
+			draw_string(font, rect.position + Vector2(10, 20 + i * 17), lines[i], HORIZONTAL_ALIGNMENT_LEFT, width - 20, 13, Color(0.86, 0.92, 0.92, alpha))
+		draw_circle(anchor + Vector2(0, -12), 2, Color(0.55, 0.68, 0.7, alpha))

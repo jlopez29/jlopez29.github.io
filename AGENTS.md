@@ -70,9 +70,27 @@ Balance around long-run expected operating performance, with losses possible fro
 
 Prioritize hierarchy, clarity, contextual information and progressive disclosure. Persistent UI answers immediate management questions; detailed asset statistics belong in inspectors and deeper financial analysis in Finance. Use readable components instead of raw counters or pipe-separated telemetry. Routine floating results show only the signed net house amount (for example `+$25`), without redundant HOUSE/game prefixes. Keep meaningful operational events in House Activity. Preserve simulation depth without placing every new system's internal state on the main screen.
 
+## Progressive disclosure / system relevance
+
+Use Summary -> Expand -> Detail -> Action. Reveal management detail when its system is operational or relevant; avoid inactive-system accounting and irrelevant zero rows in default views. Early casinos should have simpler screens than mature properties. Keep Finance and inspectors compact, with internal reconciliation and diagnostics behind advanced/detail views. Information should support decisions rather than form a scrolling report.
+
+## Responsive / mobile UI
+
+Keep desktop, mobile landscape and mobile portrait usable. Reflow by viewport width, height and orientation; do not uniformly shrink the desktop UI. Give the floor the largest practical mobile area, and move details into contextual inspectors, tabs or full-screen management views rather than shrinking typography. Prefer viewport/aspect breakpoints over device detection, share gameplay logic, and consider all three layouts when adding UI.
+
+Financial values and other short high-value metrics must remain atomic and readable in responsive layouts. Never allow currency to wrap character-by-character. When a label and value cannot fit horizontally, reflow vertically instead of crushing the value column.
+
 ## House Activity vs money feedback
 
 Routine individual gambling settlements belong in floating/toast money feedback, not House Activity. House Activity is a filtered management feed for cage cash-outs, major wins/losses, unlocks, rating changes, VIP events, breakdowns, staffing/service issues, reserve warnings and other important operational events. Do not turn it into a transaction ledger. Preserve detailed internal financial events for analytics even when the feed hides them.
+
+## Guest thoughts / floor communication
+
+Communicate actionable demand, preferences, service needs, satisfaction, frustration and reasons for behavior through concise, temporary world-space bubbles. Rate-limit repeats and keep thoughts visually distinct from financial feedback. Walking offers qualitative insight while management remains usable independently. Hot-table attention must arise from real activity and never change probabilities or fabricate outcomes.
+
+## Living guest behavior
+
+Visits may include gambling, browsing, waiting, watching, switching games and seeking service before departure. Finishing a session should offer another decision, not automatically end the visit. Departure should reflect bankroll, satisfaction, entertainment, patience and stay tendency rather than a single age cutoff. Reconsider periodically without constant bouncing. Let retention and turnover produce population organically; never force a target headcount. Individual behavior belongs here; aggregate traffic/demand remains Phase 07.
 
 ## Developer testing tools
 

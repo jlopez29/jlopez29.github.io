@@ -65,7 +65,7 @@ func _ready() -> void:
 func _add_button(parent: Node, text: String, action: Callable) -> void:
 	var button := Button.new()
 	button.text = text
-	button.custom_minimum_size.y = 36
+	button.custom_minimum_size.y = 44
 	button.pressed.connect(func():
 		if not OS.is_debug_build(): return
 		action.call()
@@ -75,8 +75,8 @@ func _add_button(parent: Node, text: String, action: Callable) -> void:
 
 func _layout() -> void:
 	var viewport_size := get_viewport_rect().size
-	size = Vector2(minf(370, viewport_size.x - 24), minf(565, viewport_size.y - 100))
-	position = Vector2(maxf(12, viewport_size.x - size.x - 12), 85)
+	size = Vector2(minf(370, viewport_size.x - 24), maxf(100, minf(565, viewport_size.y - 64)))
+	position = Vector2(maxf(12, viewport_size.x - size.x - 12), 56)
 
 func reset_session(simulation: CasinoSimulation) -> void:
 	if not OS.is_debug_build(): return

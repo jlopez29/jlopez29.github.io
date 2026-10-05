@@ -46,7 +46,7 @@ def main():
             return
     run_godot([args.godot, "--headless", "--path", str(project), "--export-release", "Web"])
     wrapper = project.parent / "casino" / "index.html"
-    html = wrapper.read_text(encoding="utf-8")
+    html = (project / "web" / "index.html").read_text(encoding="utf-8")
     html, count = re.subn(r"(NEON HOUSE <small>)[^<]*(</small>)", lambda match: match[1] + args.version + match[2], html, count=1)
     if count != 1:
         raise RuntimeError("Could not update the website version label")

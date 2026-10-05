@@ -49,8 +49,8 @@ Observers decide even when no dice are rolling, so an empty table can get starte
 
 Service employees automatically cover all guests. They lose 0.13 energy per game
 minute while guests are present and recover 0.5 per minute on an empty floor,
-within the existing 15–100 energy bounds. Their drink-service effect remains
-headcount-based; service energy does not yet change delivery effectiveness.
+within the existing 15–100 energy bounds. Drinks are delivered physically; headcount alone does not relieve thirst.
+Service energy does not yet change delivery effectiveness.
 
 ## Additional games
 
@@ -123,13 +123,14 @@ at development Ratings 16 / 28 / 55; starter exposure stays capped even then.
 Access Ratings: Blackjack 16 plus requirements, service 20, roulette 28,
 expansion 35, craps 45, VIP 55, high limit 70, UTH 75. Later Normal access also
 requires the Blackjack accomplishment. Stars start at 0 / 16 / 28 / 75 / 100.
-Service thirst/complaints start only once service is accessible.
+Thirst rises without deliveries from arrival; complaint incidents begin once
+service is accessible.
 
 Settlement records total debited stakes and returns including stake, exactly
 once. Cash-out presentation reports previously settled results and never moves
 house money again. Non-gamblers leave directly without a cage profit display or
 served credit. Unresolved craps rolls do not count as settled gaming activity.
-Schema 7 saves include separate expense categories and payroll allocations, machine profiles,
+Schema 8 saves include separate expense categories and payroll allocations, machine profiles,
 retained tier access, asset payroll and settled visitor-house results, as well as asset operating/
 occupied/downtime minutes, upkeep/repair spending and repair/breakdown counts,
 settled handle, served gamblers and earned Blackjack access; development saves have no migration path.
@@ -194,7 +195,7 @@ check guest affordability after minimum changes, owner max wagers and net result
 popups; compare income with upkeep and payout swings; verify used-machine spam
 cannot reach Blackjack, and a developed slot-only floor can reach later Ratings.
 Use debug Advance / Force Unlock for tier checks, preserve reserves before risky
-purchases, and save/load a fresh schema-7 casino. Long-run viability and exact
+purchases, and save/load a fresh schema-8 casino. Long-run viability and exact
 prices/exposure still require playtesting; these are theoretical settings.
 
 ## Step 03.5 sustainability audit
@@ -214,7 +215,7 @@ and cash-flow aggregates are preserved. Expense categories only classify each
 existing cash charge; they do not charge twice. Asset operating contribution
 includes its assigned dealer payroll, upkeep and repairs, excludes purchase price
 and visitor play, and does not allocate shared service/comp costs. Sold assets'
-expenses remain in lifetime categories. Schema 7 has no migrations.
+expenses remain in lifetime categories. Schema 8 has no migrations.
 
 Payroll is $20/dealer/hour and $16/service employee/hour, deducted once per game
 minute as rate/60. All employed staff are paid during work, idle, standby, closed
@@ -320,16 +321,16 @@ upkeep keep running. Human decisions and visual game animations stay on real tim
 Unattended broken machines stop earning but keep costs, so pause to handle repairs.
 These are operating/test conditions, not reasons to reduce production wages.
 
-Service still has no sales revenue. One employee reduces thirst growth from 0.35
-to 0.07/minute and preserves satisfaction/reputation; ordinary visits still end
+At Step 03.5, service had no sales revenue. One employee reduced thirst growth
+from 0.35 to 0.07/minute and preserved satisfaction/reputation; ordinary visits still end
 around 180 minutes, often before a no-service guest reaches the dissatisfaction
 exit threshold. It does not currently guarantee extra traffic or extend that age
-limit. Its weak direct financial return is intentionally documented for Step 04,
-not hidden by cheap labor or fake bar income. Full period finance, shared-cost
+limit. Its weak direct financial return motivated Phase 04 below; the old headcount
+benefit is superseded by paid/comped physical deliveries. Full period finance, shared-cost
 allocation, richer service value, traffic/archetypes and staff shift/dismissal
 systems remain out of scope. No guarantees of daily or long-run realized profit.
 
-Manual validation: use a fresh schema-7 casino, leave visitor games, pause to
+Manual validation: use a fresh schema-8 casino, leave visitor games, pause to
 handle repairs, and compare equal executed game hours at 1x/100x/1000x. For fixed
 staff, 60 ticks should add exactly the configured hourly payroll and per-asset
 upkeep (subject to floating-point rounding); changing speed must not change rates.
@@ -339,3 +340,138 @@ lean starter/developed/Blackjack floors with idle tables and excess standby staf
 Validate roulette/UTH at both $10 and $25, craps at normal/full fatigue, service
 costs separately, owner-transfer exclusion and save/load. Gambling variance and
 actual market utilization still require the developer's long-run playtesting.
+
+## Phase 04: paid drinks and gambling comps
+
+Basic drinks cost $1 in product and sell for $5. A guest in Playing state with
+an actual funded wager in the last 12 game minutes receives the basic drink free;
+seat occupancy, wallet assignment and historical gambling do not qualify.
+Waiting/watching guests pay even if they previously gambled. Eligibility is checked
+at delivery. The profile's comp eligibility and a small centralized policy record
+leave room for later premium drinks and policies; only basic drinks are implemented.
+
+A thirsty guest requests service at 12 thirst. Thirst rises 0.5/minute regardless
+of staffing; only delivery resets it to zero and adds 6 satisfaction (capped at 100).
+Above 25 thirst, satisfaction falls 0.6/minute, including before the service unlock.
+Without gambling satisfaction gains, an unserved 80-satisfaction guest can reach
+the existing departure threshold around 142 minutes instead of the usual 180-minute
+visit cap. Wins can delay this; budgets and other departure rules still apply.
+Service supports retention, not guaranteed extended visits or guaranteed profit.
+
+Staff prepare at the existing bar pickup, walk to the thirstiest eligible guest,
+deliver, then return. Only one staff member targets a guest at a time. Delivery
+rechecks presence, thirst, current comp eligibility, guest funds and product
+funding. Failed or abandoned deliveries charge nothing; no stock/inventory system
+or constant ordering controls are added. Paused movement produces no deliveries.
+
+Paid drinks debit the guest wallet by $5 and increase treasury by $4 after product
+cost. Comps debit treasury $1 without reducing the guest wallet. Each successful
+delivery emits one Phase 02 net event (bar +$4 or comp -$1), including actual price,
+product cost, profile, guest, staff name, position and associated gaming asset.
+Floor feedback follows the guest and does not merge hospitality with gaming.
+Complaint cash comps emit separate comp events and remain a separate expense.
+
+Persisted counters record sold/comped counts, drink revenue, paid-product cost and
+comp-product cost. Drink margin = revenue - both product costs. Net bar contribution
+also subtracts service payroll; complaint comps remain separate. Gaming benefit
+from retention stays in gaming win, not invented bar income. Operating profit adds
+bar revenue and deducts product costs once; lifetime cash flow includes both.
+Guest/cage gaming results exclude paid-drink spending so hospitality cannot be
+presented as gambling profit or trigger a never-gambled cage visit.
+
+Current save schema is 8, with recent real-wager timestamps, guest drink spending
+and hospitality counters. No migration. Manual checks: use a fresh casino, unlock
+service and hire staff; watch delivery to a recent gambler (free, -$1) and a thirsty
+watcher ($5 wallet debit, +$4 house net). Check a seated guest without a recent
+wager pays, interrupted deliveries charge nothing, thirst actually resets only on
+delivery, no-service sessions can shorten, Finance reconciles both margins, cage
+results exclude drinks, pause/1x/4x/dev speeds and current-version save/load.
+
+## Phase 05 guest behavior and thoughts
+
+Six profiles: casual, regular, slot enthusiast, dice player, table player and VIP.
+Starter weights are 40/25/30/3/2 for non-VIPs; developed weights are 30/20/25/12/13.
+Existing arrival limits/cadence and VIP access/chance remain unchanged. Bankroll
+scales are 0.9/1/1.05/1.1/1.1, clamped to the existing development band's bounds;
+wager caps remain unchanged. VIPs retain the existing $5,000 budget and $100 cap.
+Profiles bias preferred games, quality interest, patience (25-65 minutes) and
+watching decisions; all can choose alternatives. Regulars/slot enthusiasts can
+briefly wait for full slots within patience, retrying the existing 3-minute search.
+This is no queue, reservation, demand multiplier or Phase 07 traffic model.
+Table players de-emphasize slots. VIP/table service dissatisfaction scales are
+1.4/1.1; others stay 1.0. Product costs, comp rules and gambling math are unchanged.
+
+A non-slot table draws hot social attention only while operating with >=2 active
+guest players, >=8 actually funded guest wagers in the last 12 game minutes and
+>=2 distinct wagerers. Keep at most 64 wager notes per asset. Hot attention adds
+profile-dependent choice interest and affects existing watcher psychology;
+it does not change any game resolution, payout, dice, card or wheel probabilities.
+Owner-only gambling does not create this attention. Attention cools with inactivity
+and restarts cold on load; it is not advertised as a winning streak.
+
+Thought emission has a 6-game-minute guest cooldown, with priority escalation,
+and identical text suppression for 30 game minutes. Presentation is independent:
+3.5 real-second bubbles, >=1.5 real seconds between starts, >=12 real seconds per
+guest and >=35 seconds per identical guest/text. Caps: 3 desktop / 2 compact.
+Pending thoughts, recent history and wager notes are bounded. At extreme speeds,
+short-lived guests' thoughts are dropped instead of showing ghost customers.
+Walking can surface nearby current real intent under the same presentation limits.
+
+Schema 9 stores each archetype with current guest state; no migration. Manual:
+compare enthusiast/table/dice choices with affordable alternatives, full-slot waits
+and direct never-gambled exits, VIP service pressure, real active table attention
+and cooling, thoughts versus money popups, nearby Walk insight/table chatter,
+portrait/landscape, 100x/1000x suppression and fresh current-version save/load.
+
+## Phase 05 addition: multi-activity visits
+
+Source audit: Playing had a shared 180-minute age exit, no session reconsideration,
+visit-age-based waiting/browsing expiry, multiplied slot appeal/preference, and
+random pre-play watching even with free preferred seats. Game selection checked
+only the minimum while UTH NPC play required a six-stake reserve. Developer
+crowds can also exceed usable seats; bankroll depletion, poor service, broken
+machines and over-capacity turnover remain legitimate causes of a quiet floor.
+
+Session ranges in game minutes: casual 20-40, regular 35-65, slots 40-75,
+dice 30-60, tables 25-50, VIP 40-80. Session ends are decision opportunities after
+stakes resolve, not mandatory departure. Continuation considers budget depletion,
+satisfaction, activity count, real net session result, gradually rising fatigue
+and archetype stay tendency. Age pressure begins after 120 minutes and rises over
+600 minutes, without a hard visit-age cap. Waiting and travel patience are local
+to the current activity, not the visitor's entire age. Decision gaps vary 2-5
+minutes; exploration lasts at least 3-8 minutes plus travel. Unreachable routes
+and missing entertainment have bounded patience. No forced population target.
+
+Affordable games use actual guest wager size; UTH requires the current six-stake
+reserve. Slots can choose a lower available denomination within the remaining
+wallet. Appeal now adds (appeal-1)*20 to choice rather than multiplying preference;
+quality, distance, familiarity, real capacity and hot attention remain influences.
+At each session boundary guests can discover newly operational games; there is
+no continuous bouncing or arbitrary table attraction multiplier.
+
+Empty tables with free seats do not require watching. Preferred non-craps watching
+chance is 15% of the profile's ordinary watch chance; free-seat observation is
+shorter (4-10 minutes). A preferred affordable free seat can be adopted after two
+minutes of watching. Full tables/hot dice activity retain meaningful observation.
+A visitor with no affordable game may observe real active play once, then decide
+again. This is bounded social interest, not fabricated crowd generation.
+
+Exploring guests walk through aisles, then search again. Drink breaks release
+settled seats, walk to an aisle and wait 8-16 minutes for the existing physical
+service; successful delivery returns them to selection sooner. Non-playing drink
+breaks pay under Phase 04 rules. Failure can lead to another decision or eventual
+service-related departure. Never-gambled visitors still exit directly; cage cash
+summaries remain settlement-free. Initial capacity, arrival cadence, MAX_GUESTS,
+starting cash, bankroll bands, progression and game probabilities are unchanged.
+Existing arrival occupancy checks include the new non-gambling activities.
+
+Current schema 10 persists activity clocks, completed activities, prior game,
+local waiting state and one bounded no-affordable-game exploration allowance;
+no migrations. 1x/100x/1000x use identical economic-minute decisions and simulated
+movement. 1000x retains the existing frame budget/backlog cap, so requested speed
+is best effort and transitions have substep quantization. No accelerated runtime
+population observations/tests were performed for this task. Manual: start fresh,
+compare equally developed/staffed casinos over equal executed game hours, spawn
+within usable capacity, open affordable Blackjack/craps while slots are active,
+observe varied sessions/migration/waits/watchers/drink breaks, then compare missing
+service, empty bankrolls, broken assets and deliberate over-capacity spawning.

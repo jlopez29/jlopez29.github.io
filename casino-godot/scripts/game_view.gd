@@ -102,7 +102,7 @@ func _process(_delta: float) -> void:
 		feedback = ""
 		trips = false
 		art.spinning = 0
-	var seated_guests := sim.seated(int(table.id)).map(func(guest): return {"id": guest.id, "name": guest.name, "seat": guest.seat})
+	var seated_guests := sim.seated(int(table.id)).map(func(guest): return {"id": guest.id, "name": guest.name, "seat": guest.seat, "thought": guest.thought})
 	var next := JSON.stringify([seated_guests, current_id, sim.wallet, table.round, table.roulette_bets, paused, bet, trips, feedback, show_rules, sim.financial_sequence, art.spinning > 0, int(size.x / 100), table.broken])
 	if next == signature: return
 	signature = next
@@ -130,6 +130,12 @@ func render(table: Dictionary) -> void:
 	var pending := sim.game_pending(table)
 	var locked: bool = paused or art.spinning > 0 or not sim.ready_for_play(table)
 	label("%s  |  WALLET $%.2f" % [sim.asset_name(table), sim.wallet], controls, 23)
+	var companions := sim.seated(int(table.id))
+	if not companions.is_empty():
+		var speaker: Dictionary = companions[0]
+		for guest in companions:
+			if guest.thirst > speaker.thirst: speaker = guest
+		label('%s: "%s"' % [speaker.name, speaker.thought], controls, 14)
 	label("PAUSED - use Space or the time control below." if paused else ("Finish this hand before leaving." if pending else "Choose a wager. Your casino pays every win."))
 	felt.visible = kind == "roulette"
 	felt.bets = table.roulette_bets

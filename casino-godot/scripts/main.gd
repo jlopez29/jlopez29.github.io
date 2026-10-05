@@ -67,6 +67,13 @@ var floor_join_button: Button
 var felt: Control
 var mobile := false
 var mobile_pane := "floor"
+var mobile_menu: MenuButton
+var mobile_speed: Button
+var mobile_dev: Button
+var floor_fit: Button
+var responsive_state := "desktop"
+var finance_section := ""
+var finance_advanced := false
 var table_scroll: ScrollContainer
 var table_options := false
 var chip_value := 25.0
@@ -108,6 +115,23 @@ func _ready() -> void:
 	add_button(header_actions, "Save", save_game)
 	add_button(header_actions, "Load", load_game)
 	add_button(header_actions, "Help", show_help)
+	mobile_menu = MenuButton.new()
+	mobile_menu.text = "Menu"
+	mobile_menu.custom_minimum_size = Vector2(64, 44)
+	add_child(mobile_menu)
+	var global_menu := mobile_menu.get_popup()
+	global_menu.add_theme_constant_override("v_separation", 18)
+	global_menu.add_theme_font_size_override("font_size", 16)
+	for title in ["Save", "Load", "Help"]: global_menu.add_item(title)
+	global_menu.id_pressed.connect(global_action)
+	mobile_speed = add_button(self, "1x", func():
+		if speed == 0: speed = 1
+		elif speed == 1: speed = 2
+		elif speed == 2: speed = 4
+		else: speed = 0
+		if speed > 0: previous_speed = speed
+		refresh())
+	if OS.is_debug_build(): mobile_dev = add_button(self, "DEV", toggle_dev_panel)
 	mode_hint = label_at(Vector2.ZERO, "", 13, MUTED)
 	mode_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side_panel = panel_at(Vector2.ZERO, Vector2.ZERO)
@@ -171,11 +195,12 @@ func _ready() -> void:
 	floor_actions = HBoxContainer.new()
 	floor_actions.add_theme_constant_override("separation", 6)
 	add_child(floor_actions)
-	add_button(floor_actions, "Walk / manage", toggle_walk)
+	add_button(floor_actions, "Walk / Manage", toggle_walk)
 	floor_join_button = add_button(floor_actions, "Inspect table", func():
 		if visitor and can_join(): join_table()
 		else: open_page("table"))
 	rotate_button = add_button(floor_actions, "Rotate", func(): floor_view.rotated = not floor_view.rotated; refresh())
+	floor_fit = add_button(floor_actions, "Fit", func(): floor_view.toggle_fit(); refresh())
 	game_view = GameView.new()
 	game_view.sim = sim
 	game_view.leave_requested.connect(leave_table)
@@ -229,7 +254,9 @@ func layout_ui() -> void:
 	var w := dimensions.x
 	var h := dimensions.y
 	var landscape := w > h and h < 600
-	mobile = w < 1050 or h < 600
+	mobile = w < 1180 or h < 650
+	responsive_state = "desktop" if not mobile else "mobile landscape" if landscape else "mobile portrait" if w < h else "compact"
+	floor_view.configure_view(mobile, landscape)
 	backdrop.size = dimensions
 	brand.text = "NEON HOUSE" if mobile else "N E O N   H O U S E"
 	brand.add_theme_font_size_override("font_size", 16 if mobile else 24)
@@ -238,30 +265,45 @@ func layout_ui() -> void:
 	subtitle.position = Vector2(20, 50)
 	header_actions.position = Vector2(w - 198, 34) if mobile else Vector2(w - 260, 16)
 	header_actions.size = Vector2(186 if mobile else 240, 44)
-	if landscape: header_actions.position.y = 8
-	stats.position = Vector2(12, 34 if landscape else 78) if mobile else Vector2(280, 10)
-	stats.add_theme_font_size_override("font_size", 23 if mobile else 30)
-	hud_summary.position = Vector2(164, 40 if landscape else 83) if mobile else Vector2(280, 48)
-	hud_summary.add_theme_font_size_override("font_size", 11 if mobile else 13)
-	hud_summary.size = Vector2(maxf(140, w - 174) if mobile else 340, 22)
-	status.position = Vector2(12, 64 if landscape else 111) if mobile else Vector2(620, 24)
-	status.size = Vector2(w - 24 if mobile else maxf(120, w - 905), 40)
-	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	status.add_theme_font_size_override("font_size", 11 if mobile else 12)
+	header_actions.visible = not mobile
+	mobile_menu.visible = mobile
+	mobile_speed.visible = mobile
+	mobile_menu.position = Vector2(w - 72, 4)
+	mobile_menu.size = Vector2(64, 44)
+	mobile_speed.position = Vector2(w - 138, 4)
+	mobile_speed.size = Vector2(60, 44)
+	if is_instance_valid(mobile_dev):
+		mobile_dev.visible = mobile
+		mobile_dev.position = Vector2(w - 204, 4)
+		mobile_dev.size = Vector2(60, 44)
+	brand.visible = not mobile
+
+	stats.position = Vector2(8, 5) if mobile else Vector2(280, 10)
+	stats.add_theme_font_size_override("font_size", 22 if mobile else 30)
+	stats.clip_text = true
+	stats.size = Vector2(maxf(96, w - (212 if OS.is_debug_build() else 146)) if mobile else 330, 32)
+	hud_summary.position = Vector2(8, 48) if mobile else Vector2(280, 48)
+	hud_summary.add_theme_font_size_override("font_size", 14 if mobile else 13)
+	hud_summary.size = Vector2(w * 0.55 if mobile else 340, 22)
+	status.position = Vector2(w * 0.55, 48) if mobile else Vector2(620, 24)
+	status.size = Vector2(w * 0.45 - 8 if mobile else maxf(120, w - 905), 24 if mobile else 40)
+	status.autowrap_mode = TextServer.AUTOWRAP_OFF if mobile else TextServer.AUTOWRAP_WORD_SMART
+	status.add_theme_font_size_override("font_size", 14 if mobile else 12)
 	mode_hint.visible = not mobile
 	bottom_nav.visible = mobile
 	if mobile:
-		var top := 92 if landscape else 146
-		var area := Rect2(10, top, w - 20, maxf(100, h - top - 64))
+		var top := 74.0
+		var area := Rect2(4, top, w - 8, maxf(80, h - top - 54))
 		for panel in [side_panel, inspector_panel, events_panel]:
 			panel.position = area.position
 			panel.size = area.size
-		bottom_nav.position = Vector2(10, h - 56)
-		bottom_nav.size = Vector2(w - 20, 48)
+		bottom_nav.position = Vector2(4, h - 50)
+		bottom_nav.size = Vector2(w - 8, 46)
 		floor_view.position = area.position
-		floor_view.size = Vector2(area.size.x, maxf(50, area.size.y - 58))
-		floor_actions.position = Vector2(10, h - 116)
-		floor_actions.size = Vector2(w - 20, 48)
+		floor_view.size = Vector2(area.size.x, maxf(40, area.size.y - (0 if landscape else 50)))
+		# Landscape actions overlay the floor instead of taking another permanent row.
+		floor_actions.position = Vector2(8, h - 100)
+		floor_actions.size = Vector2(w - 16, 44)
 	else:
 		var side_width := 225.0
 		var right_width := clampf(w * 0.25, 290, 350)
@@ -280,6 +322,7 @@ func layout_ui() -> void:
 		events_panel.position = Vector2(middle_x, h - 124)
 		events_panel.size = Vector2(middle_width, 108)
 	apply_visibility()
+	if is_instance_valid(developer_panel): developer_panel._layout()
 	if modal != null:
 		modal.position = Vector2(maxf(12, (w - 660) / 2), 12)
 		modal.size = Vector2(minf(660, w - 24), h - 24)
@@ -310,8 +353,8 @@ func apply_visibility() -> void:
 		felt.visible = is_craps
 		table_scroll.visible = is_craps
 		game_view.visible = not is_craps
-		game_view.position = Vector2(16, 82)
-		game_view.size = dimensions - Vector2(32, 92)
+		game_view.position = Vector2(4 if mobile else 16, 52 if mobile else 82)
+		game_view.size = dimensions - Vector2(8 if mobile else 32, 56 if mobile else 92)
 		inspector_panel.visible = is_craps and table_options
 		return
 	table_scroll.hide()
@@ -326,10 +369,15 @@ func apply_visibility() -> void:
 	felt.visible = not mobile and sim.joined >= 0
 	floor_view.visible = (not mobile and sim.joined < 0) or (mobile and mobile_pane == "floor")
 	floor_actions.visible = floor_view.visible
+	floor_fit.visible = mobile and not visitor and not building
+	floor_fit.text = "Fit" if floor_view.close_view else "Closer"
 	rotate_button.visible = building
-	floor_join_button.text = "Join table" if visitor and can_join() else "Inspect table"
+	floor_join_button.text = "Join" if visitor and can_join() else "Inspect" if mobile else "Inspect table"
 
 func open_page(value: String) -> void:
+	if value == "finance" and page != "finance":
+		finance_section = ""
+		finance_advanced = false
 	page = value
 	mobile_pane = "table"
 	inspector_scroll.scroll_vertical = 0
@@ -478,13 +526,23 @@ func advance_dev_time(delta: float) -> void:
 			tick = 0
 			sim.step()
 
+func global_action(id: int) -> void:
+	match id:
+		0: save_game()
+		1: load_game()
+		2: show_help()
+
+func toggle_dev_panel() -> void:
+	if not OS.is_debug_build() or not is_instance_valid(developer_panel) or modal != null: return
+	developer_panel.visible = not developer_panel.visible
+	refresh()
+
 func _input(event: InputEvent) -> void:
 	if not OS.is_debug_build() or not is_instance_valid(developer_panel): return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F10:
 		if modal != null: return
-		developer_panel.visible = not developer_panel.visible
+		toggle_dev_panel()
 		get_viewport().set_input_as_handled()
-		refresh()
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if is_instance_valid(developer_panel) and developer_panel.visible: return
@@ -527,6 +585,9 @@ func animate_treasury(delta: float) -> void:
 
 func render_treasury() -> void:
 	stats.text = FinancialText.cash(displayed_cash, 0)
+	if mobile and absf(displayed_cash) >= 10000:
+		var divisor := 1000000.0 if absf(displayed_cash) >= 1000000 else 1000.0
+		stats.text = "%s$%.1f%s" % ["-" if displayed_cash < 0 else "", absf(displayed_cash) / divisor, "M" if divisor == 1000000 else "K"]
 	hud_summary.text = ("Guests %d   Rating %.0f" if mobile else "%d guests    Casino Rating %.0f") % [sim.guests.size(), sim.casino_rating]
 	hud_summary.tooltip_text = "Casino Rating measures property development: %.1f / 100. Development level %d: %s. Reputation measures guest perception: %.0f%%." % [sim.casino_rating, sim.stars(), CasinoTuning.STAR_NAMES[sim.stars() - 1], sim.reputation]
 	stats.tooltip_text = "Treasury display animates toward actual cash: %s. Gambling popups show settled net house results." % FinancialText.cash(sim.cash)
@@ -551,7 +612,9 @@ func refresh() -> void:
 	if dev_active and speed <= 4: time_state = "DEV MODE - " + time_state
 	status.text = "Day %d   %02d:%02d
 %s" % [sim.day, sim.minute / 60, sim.minute % 60, time_state]
-	if mobile: status.text = "Day %d   %02d:%02d    %s" % [sim.day, sim.minute / 60, sim.minute % 60, time_state]
+	mobile_speed.text = "Stop" if speed == 0 else "%dx" % speed
+	if is_instance_valid(mobile_dev): mobile_dev.add_theme_color_override("font_color", GOLD if speed > 4 else TEXT)
+	if mobile: status.text = "DEV %dx" % speed if speed > 4 else "D%d %02d:%02d" % [sim.day, sim.minute / 60, sim.minute % 60]
 	status.tooltip_text = "Financial performance and operating costs are available in Finance."
 	clear(objective)
 	render_progression(objective, true)
@@ -859,11 +922,12 @@ Upkeep %s" % [utilization, table.downtime_minutes, table.repairs, FinancialText.
 func render_staff() -> void:
 	add_label(inspector, "STAFF & COVERAGE", 11, GOLD)
 	add_label(inspector, "%d employees" % sim.staff.size(), 24)
-	add_label(inspector, "Payroll commitment " + FinancialText.cash(sim.payroll_rate()) + " per game hour", 14, GOLD)
-	add_label(inspector, "Assigned idle and standby staff are still paid.", 12, MUTED)
-	add_label(inspector, "Craps: two dealers. Roulette / blackjack / hold'em: one dealer. Slots: no dealer. Service staff cover the floor.", 14, MUTED)
-	add_button(inspector, "Hire dealer | $%d" % CasinoTuning.HIRING_COST if sim.unlocked("blackjack") else "Dealers locked | Unlock blackjack", func(): sim.hire("Dealer", selected); refresh(), not sim.unlocked("blackjack"))
-	add_button(inspector, "Hire service | $%d" % CasinoTuning.HIRING_COST if sim.unlocked("service") else "Drink service locked | Increase Casino Rating", func(): sim.hire("Service", -1); refresh(), not sim.unlocked("service"))
+	var commitment := add_label(inspector, "Payroll commitment " + FinancialText.cash(sim.payroll_rate(), 0) + "/hr", 14, GOLD)
+	commitment.tooltip_text = "Working, idle, standby and closed-time employees are paid. Craps needs two dealers; other tables need one; slots need none."
+	var dealer := add_button(inspector, "Hire dealer | $%d" % CasinoTuning.HIRING_COST if sim.unlocked("blackjack") else "Dealers locked | Unlock blackjack", func(): sim.hire("Dealer", selected); refresh(), not sim.unlocked("blackjack"))
+	dealer.tooltip_text = "Assign to a staffed game. $%d per game hour, including standby time." % CasinoTuning.DEALER_WAGE
+	var service := add_button(inspector, "Hire service | $%d" % CasinoTuning.HIRING_COST if sim.unlocked("service") else "Drink service locked | Increase Casino Rating", func(): sim.hire("Service", -1); refresh(), not sim.unlocked("service"))
+	service.tooltip_text = "Walks the floor delivering paid drinks and recent-gambler basic comps. $%d per game hour. See Finance > Bar for performance." % CasinoTuning.SERVICE_WAGE
 	add_gap(inspector, 4)
 	for employee in sim.staff:
 		add_label(inspector, "%s | %s" % [employee.name, employee.role], 15)
@@ -882,56 +946,184 @@ func render_staff() -> void:
 					sim.log_event("Fresh dealer assigned; %s is recovering on standby." % employee.name)
 				refresh())
 
-func render_finance() -> void:
-	add_label(inspector, "FINANCE", 12, MUTED)
-	add_label(inspector, FinancialText.cash(sim.cash), 30, TEAL)
-	add_label(inspector, "Casino treasury", 12, MUTED)
-	add_label(inspector, "Recorded %.1f game hours" % (float(sim.elapsed) / 60.0), 12, MUTED)
-	add_gap(inspector, 8)
-	add_label(inspector, "OPERATING PERFORMANCE", 12, GOLD)
-	var result := sim.operating_profit()
-	add_label(inspector, FinancialText.house_result(result), 27, TEAL if result >= 0 else Color("ff9486"))
-	add_label(inspector, "Lifetime guest gaming win minus recurring expenses. Excludes investment, hiring and your visitor transfers.", 12, MUTED)
-	add_label(inspector, "Guest gaming win  %s
-Recurring costs  %s" % [FinancialText.cash(sim.guest_gaming_profit()), FinancialText.cash(sim.recurring_costs())], 14)
-	add_gap(inspector, 8)
+func finance_color(amount: float) -> Color:
+	return TEAL if amount > 0.005 else Color("ff9486") if amount < -0.005 else MUTED
+
+func finance_line(parent: Node) -> BoxContainer:
+	var line := preload("res://scripts/finance_layout.gd").new()
+	parent.add_child(line)
+	return line
+
+func finance_value(parent: Node, text: String, font_size: int, color: Color) -> Label:
+	var value := add_label(parent, text, font_size, color)
+	value.autowrap_mode = TextServer.AUTOWRAP_OFF
+	value.size_flags_horizontal = SIZE_FILL
+	return value
+
+func finance_metric(parent: Node, title: String, amount: float, signed: bool = true) -> void:
+	var card := PanelContainer.new()
+	card.size_flags_horizontal = SIZE_EXPAND_FILL
+	card.add_theme_stylebox_override("panel", style(Color("182a38")))
+	parent.add_child(card)
+	var body := VBoxContainer.new()
+	card.add_child(body)
+	add_label(body, title, 12, MUTED)
+	var summary := FinancialText.cash(amount, 0)
+	if signed:
+		summary = ("+" if amount > 0 else "-" if amount < 0 else "") + FinancialText.cash(absf(amount), 0)
+		if absf(amount) < 1: summary = FinancialText.house_result(amount)
+	var value := finance_value(body, summary, 24, finance_color(amount) if signed else TEXT)
+	value.tooltip_text = FinancialText.cash(amount)
+
+func finance_row(parent: Node, title: String, amount: float, hide_zero: bool = true) -> void:
+	if hide_zero and absf(amount) < 0.005: return
+	var line := finance_line(parent)
+	add_label(line, title, 14, MUTED)
+	var value := finance_value(line, FinancialText.house_result(amount), 15, finance_color(amount))
+	value.size_flags_horizontal = SIZE_FILL
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+func finance_card(id: String, title: String, amount: float) -> VBoxContainer:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", style(Color("142331")))
+	inspector.add_child(card)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 8)
+	card.add_child(stack)
+	var header := add_button(stack, "", func():
+		finance_section = "" if finance_section == id else id
+		refresh())
+	header.tooltip_text = "Expand " + title if finance_section != id else "Collapse " + title
+	if id == "operations": header.tooltip_text += ". Upkeep, repairs and complaint comps; drink products are in Bar and payroll is separate."
+	elif id == "bar": header.tooltip_text += ". Sales minus paid and complimentary product costs, before service payroll."
+	elif id == "investment": header.tooltip_text += ". Capital purchases minus sales, plus hiring; excluded from operating profit."
+	elif id == "gaming": header.tooltip_text += ". Settled guest gaming win, excluding visitor play and pending stakes."
+	header.custom_minimum_size.y = 50
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.mouse_filter = MOUSE_FILTER_IGNORE
+	header.add_child(margin)
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var line := finance_line(margin)
+	line.fit_header = true
+	line.mouse_filter = MOUSE_FILTER_IGNORE
+	var name := add_label(line, title + (" -" if finance_section == id else " >"), 14, TEXT)
+	name.mouse_filter = MOUSE_FILTER_IGNORE
+	var value := finance_value(line, FinancialText.house_result(amount), 20, finance_color(amount))
+	value.mouse_filter = MOUSE_FILTER_IGNORE
+	if finance_section != id: return null
+	var detail := VBoxContainer.new()
+	detail.add_theme_constant_override("separation", 8)
+	stack.add_child(detail)
+	return detail
+
+func render_finance_gaming(parent: Node) -> void:
+	var by_game := {}
+	var owned_total := 0.0
+	for asset in sim.tables:
+		var kind := sim.table_kind(asset)
+		# Existing asset accounting gives guest gaming win after outstanding stakes.
+		var win := sim.asset_operating_profit(asset) + float(asset.operating_expense) + float(asset.repair_expense) + float(asset.payroll_expense)
+		by_game[kind] = float(by_game.get(kind, 0)) + win
+		owned_total += win
+	for kind in by_game:
+		finance_row(parent, "Slots" if kind == "slots" else str(Games.NAMES[kind]).replace("’", "'"), float(by_game[kind]), false)
+	finance_row(parent, "Sold assets", sim.guest_gaming_profit() - owned_total)
+	finance_row(parent, "Total guest gaming win", sim.guest_gaming_profit(), false)
+	add_button(parent, "Build / improve games", func(): open_page("build"))
+
+func render_finance_bar(parent: Node) -> void:
+	var bar: Dictionary = sim.bar_totals
+	add_label(parent, "%d sold / %d comped" % [int(bar.sold), int(bar.comped)], 15, TEXT)
+	finance_row(parent, "Sales", float(bar.revenue))
+	finance_row(parent, "Product cost", -float(bar.product_cost))
+	finance_row(parent, "Drink comps", -float(bar.comp_cost))
+	finance_row(parent, "Margin before labor", sim.bar_margin(), false)
+	finance_row(parent, "Service payroll", -float(sim.expense_totals.service_payroll))
+	finance_row(parent, "Net after service labor", sim.bar_contribution(), false)
+	# This is the current aggregate drink detail, not invented per-recipe statistics.
+	add_button(parent, "Manage service staff", func(): open_page("staff"))
+
+func render_finance_payroll(parent: Node) -> void:
 	var costs: Dictionary = sim.expense_totals
-	add_label(inspector, "RECURRING EXPENSES", 12, MUTED)
-	add_label(inspector, "Dealer payroll  %s
-Service payroll  %s
-Equipment upkeep  %s
-Repairs  %s
-Complaint comps  %s" % [FinancialText.cash(costs.dealer_payroll), FinancialText.cash(costs.service_payroll), FinancialText.cash(costs.upkeep), FinancialText.cash(costs.repairs), FinancialText.cash(costs.comps)], 14)
-	add_label(inspector, "Current payroll commitment  %s/hour" % FinancialText.cash(sim.payroll_rate()), 14, GOLD)
-	add_label(inspector, "All employees are paid during idle, standby, broken-game and closed time. Service currently supports guest comfort; it has no sales revenue.", 12, MUTED)
-	add_gap(inspector, 8)
-	add_label(inspector, "INVESTMENT & SETUP", 12, MUTED)
-	add_label(inspector, "Equipment / upgrades  %s
-Sale proceeds  %s
-Net capital spending  %s
-Hiring / onboarding  %s" % [FinancialText.cash(costs.construction), FinancialText.cash(-float(costs.sales)), FinancialText.cash(sim.net_capital_spending()), FinancialText.cash(costs.hiring)], 14)
-	add_gap(inspector, 8)
-	add_label(inspector, "AFTER INVESTMENT & SETUP", 12, GOLD)
-	add_label(inspector, FinancialText.house_result(result - sim.net_capital_spending() - float(costs.hiring)), 24)
-	add_label(inspector, "Operating profit can be positive while investment reduces cash. Repairs and comps remain operating expenses.", 12, MUTED)
-	add_gap(inspector, 8)
-	add_label(inspector, "RECONCILIATION", 12, MUTED)
-	add_label(inspector, "All settled gaming  %s
-Visitor's house result  %s
-Total costs incl. investment  %s
-Recorded net cash flow  %s
-Pending stakes held  %s" % [FinancialText.cash(sim.gaming_profit()), FinancialText.cash(sim.visitor_house_result()), FinancialText.cash(sim.operating_costs()), FinancialText.cash(sim.net_profit()), FinancialText.cash(sim.live_stakes())], 13, MUTED)
-	add_label(inspector, "Cash flow includes visitor transfers and pending stakes. Starting funds and developer funding are outside these operating totals.", 12, MUTED)
-	var paid: Dictionary = sim.payroll_by_state
-	add_label(inspector, "Payroll allocation
-Working %s
-Assigned idle %s
-Standby %s
-Closed / unavailable %s" % [FinancialText.cash(paid.working), FinancialText.cash(paid.idle), FinancialText.cash(paid.standby), FinancialText.cash(paid.unavailable)], 13, MUTED)
-	if speed > 4:
-		add_label(inspector, "DEV SPEED: leave manually played games before comparing long runs. Human actions and game animations stay on real time.", 13, GOLD)
-	if sim.cash < 1000:
-		add_label(inspector, "Protect your reserve before expanding or adding staff.", 14, GOLD)
+	finance_row(parent, "Dealers", -float(costs.dealer_payroll))
+	finance_row(parent, "Service staff", -float(costs.service_payroll))
+	var commitment := finance_line(parent)
+	add_label(commitment, "Current commitment", 14, MUTED)
+	finance_value(commitment, "%s/hr" % FinancialText.cash(sim.payroll_rate(), 0), 14, GOLD)
+	add_button(parent, "Staff / assignments", func(): open_page("staff"))
+
+func render_finance_operations(parent: Node) -> void:
+	var costs: Dictionary = sim.expense_totals
+	finance_row(parent, "Equipment upkeep", -float(costs.upkeep))
+	finance_row(parent, "Repairs", -float(costs.repairs))
+	finance_row(parent, "Complaint comps", -float(costs.comps))
+	if sim.incidents.is_empty():
+		add_button(parent, "Inspect equipment", func(): open_page("table"))
+	else:
+		add_button(parent, "%d incidents / decisions" % sim.incidents.size(), func(): open_page("incidents"))
+
+func render_finance_investment(parent: Node) -> void:
+	var costs: Dictionary = sim.expense_totals
+	finance_row(parent, "Equipment / upgrades", -float(costs.construction))
+	finance_row(parent, "Sale proceeds", -float(costs.sales))
+	finance_row(parent, "Net capital spending", -sim.net_capital_spending())
+	finance_row(parent, "Hiring / setup", -float(costs.hiring))
+	finance_row(parent, "After investment / setup", sim.operating_profit() - sim.net_capital_spending() - float(costs.hiring), false)
+	add_button(parent, "Build / expansion", func(): open_page("build"))
+
+func render_finance_advanced(parent: Node) -> void:
+	finance_row(parent, "All settled gaming", sim.gaming_profit())
+	finance_row(parent, "Visitor's house result", sim.visitor_house_result())
+	finance_row(parent, "Drink sales", float(sim.bar_totals.revenue))
+	finance_row(parent, "All costs incl. investment", -sim.operating_costs())
+	finance_row(parent, "Recorded net cash flow", sim.net_profit(), false)
+	finance_row(parent, "Pending stakes", sim.live_stakes())
+	var note := add_label(parent, "Cash flow includes visitor transfers and pending stakes.", 12, MUTED)
+	note.tooltip_text = "Starting cash and developer funding are outside recorded flow. Operating profit excludes capital, hiring and owner gambling; gaming win excludes unresolved stakes."
+	if sim.payroll > 0:
+		add_label(parent, "Payroll allocation", 12, GOLD)
+		var states: Dictionary = sim.payroll_by_state
+		for state in [{"key": "working", "name": "Working"}, {"key": "idle", "name": "Assigned idle"}, {"key": "standby", "name": "Standby"}, {"key": "unavailable", "name": "Closed / unavailable"}]:
+			finance_row(parent, state.name, -float(states[state.key]))
+	if speed > 4: add_label(parent, "DEV: leave manual games during long-run comparisons.", 12, GOLD)
+
+func render_finance() -> void:
+	add_label(inspector, "FINANCE", 12, GOLD)
+	add_label(inspector, "Lifetime operations / %.1f game hours" % (float(sim.elapsed) / 60.0), 12, MUTED)
+	var metrics := finance_line(inspector)
+	metrics.size_flags_horizontal = SIZE_EXPAND_FILL
+	finance_metric(metrics, "Cash now", sim.cash, false)
+	finance_metric(metrics, "Operating profit", sim.operating_profit())
+	var costs_line := finance_line(inspector)
+	var cost_label := add_label(costs_line, "Recurring costs", 13, MUTED)
+	cost_label.tooltip_text = "Payroll, upkeep, repairs, complaint comps and all drink product costs."
+	var costs_value := finance_value(costs_line, FinancialText.house_result(-sim.recurring_costs()), 14, MUTED)
+	costs_value.size_flags_horizontal = SIZE_FILL
+	costs_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	var detail := finance_card("gaming", "Gaming", sim.guest_gaming_profit())
+	if detail != null: render_finance_gaming(detail)
+	var bar_relevant: bool = sim.staff.any(func(employee): return employee.role == "Service") or int(sim.bar_totals.sold) + int(sim.bar_totals.comped) > 0 or float(sim.expense_totals.service_payroll) > 0
+	if bar_relevant:
+		detail = finance_card("bar", "Bar before labor", sim.bar_margin())
+		if detail != null: render_finance_bar(detail)
+	if not sim.staff.is_empty() or sim.payroll > 0:
+		detail = finance_card("payroll", "Payroll", -sim.payroll)
+		if detail != null: render_finance_payroll(detail)
+	var other_costs := float(sim.expense_totals.upkeep) + float(sim.expense_totals.repairs) + float(sim.expense_totals.comps)
+	if not sim.tables.is_empty() or other_costs > 0:
+		detail = finance_card("operations", "Operations", -other_costs)
+		if detail != null: render_finance_operations(detail)
+	var investment := sim.net_capital_spending() + float(sim.expense_totals.hiring)
+	if absf(float(sim.expense_totals.construction)) + absf(float(sim.expense_totals.sales)) + float(sim.expense_totals.hiring) > 0:
+		detail = finance_card("investment", "Investment / setup", -investment)
+		if detail != null: render_finance_investment(detail)
+	var advanced := add_button(inspector, "Advanced accounting -" if finance_advanced else "Advanced accounting >", func(): finance_advanced = not finance_advanced; refresh())
+	advanced.tooltip_text = "Reconciliation and payroll diagnostics"
+	if finance_advanced: render_finance_advanced(inspector)
 
 func render_incidents() -> void:
 	add_label(inspector, "MANAGEMENT DECISIONS", 11, GOLD)
@@ -955,8 +1147,8 @@ func render_guest() -> void:
 		return
 	var guest: Dictionary = found[0]
 	add_label(inspector, guest.name, 25, GOLD if guest.vip else TEXT)
-	add_label(inspector, guest.state, 14, TEAL)
-	add_label(inspector, "Wallet %s\nSession net %s\nSatisfaction %.0f%%\nThirst %.0f%%\nPreferred game: %s" % [money(guest.wallet), money(guest.wallet + CrapsRules.exposure(guest.bets) - guest.start), guest.satisfaction, guest.thirst, Games.NAMES[guest.get("preference", "craps")]], 16)
+	add_label(inspector, str(sim.archetype(guest).name) + " / " + str(guest.state), 14, TEAL)
+	add_label(inspector, "Wallet %s\nGaming net %s\nDrinks paid %s\nSatisfaction %.0f%%\nThirst %.0f%%\nPreferred game: %s" % [money(guest.wallet), money(guest.wallet + CrapsRules.exposure(guest.bets) + guest.drink_spending - guest.start), money(guest.drink_spending), guest.satisfaction, guest.thirst, Games.NAMES[guest.get("preference", "craps")]], 16)
 	add_gap(inspector, 8)
 	add_label(inspector, '"%s"' % guest.thought, 18, GOLD)
 	add_label(inspector, "Watch your guests for clues about staffing, limits, and service.", 13, MUTED)
@@ -1298,7 +1490,7 @@ func show_help() -> void:
 	var body := "Version %s | Last updated %s\n\n" % [BuildInfo.VERSION, BuildInfo.UPDATED_AT]
 	body += sim.onboarding_text() + "\n\n" + sim.next_milestone_text()
 	body += "\n\nTap a game to inspect it. Walk mode: approach a game, then Join. Visitor play uses a separate $1,000 wallet; casino cash pays for construction, staff and payouts."
-	if sim.feature_owned("service"): body += "\n\nDrink staff cover the floor. Watch guest satisfaction, thirst and staff energy."
+	if sim.feature_owned("service"): body += "\n\nDrink staff walk the floor. Recent gamblers receive basic comps; waiting and watching guests pay. Deliveries relieve thirst and support longer sessions."
 	if sim.feature_owned("craps"):
 		body += "\n\nCraps needs two dealers. The shooter keeps the dice until seven-out. Pass dice hands off to a CPU; Hold betting pauses that table's CPU rolls. My bets lists contracts and removable stakes."
 	body += "\n\nOn phones use Floor, Table, Manage and Log. Save locally before leaving."
@@ -1392,7 +1584,7 @@ func patch_children(parent: Control, proposed: Control) -> void:
 	var compatible := parent.get_child_count() == proposed.get_child_count()
 	if compatible:
 		for i in range(parent.get_child_count()):
-			if parent.get_child(i).get_class() != proposed.get_child(i).get_class():
+			if (parent.get_child(i).get_class() != proposed.get_child(i).get_class() or parent.get_child(i).get_script() != proposed.get_child(i).get_script()):
 				compatible = false
 				break
 	if not compatible:
@@ -1410,6 +1602,7 @@ func patch_children(parent: Control, proposed: Control) -> void:
 			live.text = fresh.text
 			live.tooltip_text = fresh.tooltip_text
 			live.horizontal_alignment = fresh.horizontal_alignment
+			live.autowrap_mode = fresh.autowrap_mode
 			live.add_theme_font_size_override("font_size", fresh.get_theme_font_size("font_size"))
 			live.add_theme_color_override("font_color", fresh.get_theme_color("font_color"))
 			if dice_label == fresh: dice_label = live
@@ -1426,8 +1619,10 @@ func patch_children(parent: Control, proposed: Control) -> void:
 				live.disconnect("pressed", connection.callable)
 			for connection in fresh.get_signal_connection_list("pressed"):
 				live.connect("pressed", connection.callable)
+			if live.get_child_count() > 0 or fresh.get_child_count() > 0: patch_children(live, fresh)
 		elif live is ProgressBar:
 			live.value = fresh.value
 		elif live is Container:
 			if live is GridContainer: live.columns = fresh.columns
 			patch_children(live, fresh)
+			if live.get_script() == preload("res://scripts/finance_layout.gd"): live.queue_sort()
