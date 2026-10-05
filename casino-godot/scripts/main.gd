@@ -1,5 +1,6 @@
 extends Control
 
+const BuildInfo = preload("res://scripts/build_info.gd")
 const FloorScript = preload("res://scripts/floor.gd")
 const Games = preload("res://scripts/casino_games.gd")
 const GameView = preload("res://scripts/game_view.gd")
@@ -15,7 +16,7 @@ var selected := 1
 var selected_guest := -1
 var visitor := false
 var building := false
-var build_kind := "craps"
+var build_kind := "slots"
 var game_view: Control
 var moving := -1
 var speed := 1
@@ -79,7 +80,7 @@ func _ready() -> void:
 	backdrop.mouse_filter = MOUSE_FILTER_IGNORE
 	add_child(backdrop)
 	brand = label_at(Vector2.ZERO, "N E O N   H O U S E", 24, GOLD)
-	subtitle = label_at(Vector2.ZERO, "CASINO TYCOON  /  0.2", 11, MUTED)
+	subtitle = label_at(Vector2.ZERO, "CASINO TYCOON  /  " + BuildInfo.VERSION, 11, MUTED)
 	stats = label_at(Vector2.ZERO, "", 18, TEXT)
 	status = label_at(Vector2.ZERO, "", 12, MUTED)
 	header_actions = HBoxContainer.new()
@@ -176,7 +177,7 @@ Space: pause · R: rotate", 12, MUTED)
 	get_viewport().size_changed.connect(func(): call_deferred("layout_ui"))
 	layout_ui()
 	refresh()
-	show_help()
+	show_new_game_setup(true)
 
 func layout_ui() -> void:
 	if not is_instance_valid(bottom_nav): return
@@ -412,7 +413,7 @@ func money(amount: float) -> String:
 	return ("-$" if amount < 0 else "$") + String.num(absf(amount), 0)
 
 func refresh() -> void:
-	stats.text = "%s  /  %d guests  /  %.0f%% rep" % [money(sim.cash), sim.guests.size(), sim.reputation]
+	stats.text = "%s  /  %d guests  /  %d★ casino" % [money(sim.cash), sim.guests.size(), sim.stars()]
 	var gaming := sim.gaming_profit()
 	var gaming_text := ("+" if gaming > 0 else "") + money(gaming)
 	status.text = "DAY %d  ·  %02d:%02d    |    GAMES %s    |    COSTS %s    |    %s" % [sim.day, sim.minute / 60, sim.minute % 60, gaming_text, money(sim.operating_costs()), "PAUSED" if speed == 0 else "%d× SPEED" % speed]
@@ -426,6 +427,7 @@ func refresh() -> void:
 	floor_view.visitor_mode = visitor
 	floor_view.building = building
 	floor_view.build_kind = build_kind
+	floor_view.moving_id = moving
 	game_view.paused = speed == 0
 	floor_view.selected = selected
 	mode_hint.text = "Click to place · R to rotate · Esc to cancel" if building else ("Tap to walk · tap a table to approach · E or Join to play" if visitor else "Select a table or guest to inspect · build and staff to expand")
@@ -441,6 +443,11 @@ func refresh() -> void:
 	var scroll_position := scroll.scroll_vertical
 	var live_inspector := inspector
 	inspector = VBoxContainer.new()
+	if sim.joined < 0:
+		add_label(inspector, "%s · %d★ %s" % [CasinoTuning.DIFFICULTIES[sim.difficulty].name, sim.stars(), CasinoTuning.STAR_NAMES[sim.stars() - 1]], 13, TEAL)
+		add_label(inspector, "Casino Rating %.1f / 100 · Reputation %.0f%%" % [sim.casino_rating, sim.reputation], 12, MUTED)
+		add_label(inspector, sim.next_milestone_text(), 14, GOLD)
+		add_gap(inspector, 4)
 	if sim.joined >= 0 and page == "table":
 		if sim.table_kind(sim.get_table(sim.joined)) == "craps": render_craps()
 	elif page == "build":
@@ -464,17 +471,34 @@ func refresh() -> void:
 		call_deferred("publish_debug")
 
 func render_build() -> void:
-	add_label(inspector, "EXPAND YOUR CASINO", 21, GOLD)
-	add_label(inspector, "Choose a game, then place it on the floor. Slots need no dealer; roulette, blackjack and hold’em need one. Craps needs two.", 14)
-	for kind in ["slots", "roulette", "blackjack", "craps", "holdem"]:
-		add_button(inspector, "%s · $%d" % [Games.NAMES[kind], Games.COSTS[kind]], func(): build_kind = kind; toggle_build(), sim.cash < Games.COSTS[kind])
+	add_label(inspector, "GROW YOUR CASINO", 21, GOLD)
+	add_label(inspector, "Cash buys equipment; Casino Rating earns access. Slots need no dealer, table games need one, and craps needs two plus a larger footprint.", 14)
+	for milestone in CasinoTuning.MILESTONES:
+		var feature: String = milestone.id
+		if not sim.revealed(feature):
+			add_button(inspector, "LOCKED: ??? · Increase Casino Rating", func(): pass, true)
+			continue
+		if not sim.unlocked(feature):
+			add_button(inspector, "LOCKED: %s · Rating %.0f" % [milestone.name, milestone.rating], func(): pass, true)
+			continue
+		if Games.COSTS.has(feature):
+			add_button(inspector, "%s · $%d" % [milestone.name, sim.feature_cost(feature)], func(): build_kind = feature; toggle_build(), sim.cash < sim.feature_cost(feature))
+		elif feature == "service":
+			add_button(inspector, "Drink service · Staff & coverage", func(): open_page("staff"))
+		else:
+			add_button(inspector, "%s · %s" % [milestone.name, "Purchased" if sim.feature_owned(feature) else "$%d" % sim.feature_cost(feature)], func(): sim.purchase_upgrade(feature); refresh(), sim.feature_owned(feature) or sim.cash < sim.feature_cost(feature))
+	if not sim.expanded:
+		add_label(inspector, "The shaded wing opens after you purchase Floor expansion.", 12, MUTED)
+	if sim.unlocked("craps"):
+		add_label(inspector, "Craps: $%d + two dealers ($%d each), $%d/hr crew wages and $%d/hr operations. Keep cash for payout swings." % [Games.COSTS.craps, CasinoTuning.HIRING_COST, 2 * CasinoTuning.DEALER_WAGE, CasinoTuning.TABLE_OVERHEAD], 12, MUTED)
 
 func render_table() -> void:
-	add_label(inspector, "TABLE INSPECTOR", 11, GOLD)
+	add_label(inspector, sim.onboarding_text(), 14, MUTED)
+	add_label(inspector, "GAME INSPECTOR", 11, GOLD)
 	var table := sim.get_table(selected)
 	if table.is_empty():
-		add_label(inspector, "Your next great craps pit", 24)
-		add_label(inspector, "Build a table on the floor, hire two dealers, then open the doors.", 15, MUTED)
+		add_label(inspector, "Room for your next game", 24)
+		add_label(inspector, sim.onboarding_text(), 15, MUTED)
 		return
 	add_label(inspector, "%s %02d" % [Games.NAMES[sim.table_kind(table)], selected], 26)
 	add_label(inspector, sim.table_status(table), 14, TEAL if sim.ready_for_play(table) else GOLD)
@@ -486,7 +510,7 @@ func render_table() -> void:
 	if sim.table_kind(table) == "craps": add_label(inspector, "POINT: %s" % ("OFF / COME-OUT" if int(table.point) == 0 else str(int(table.point))), 12, GOLD)
 	add_label(inspector, table.result, 13, MUTED)
 	add_gap(inspector, 6)
-	add_button(inspector, "Hire dealer · $150", func(): sim.hire("Dealer", selected); refresh(), sim.crew(selected).size() >= sim.required_crew(table))
+	add_button(inspector, "Hire dealer · $%d" % CasinoTuning.HIRING_COST, func(): sim.hire("Dealer", selected); refresh(), sim.crew(selected).size() >= sim.required_crew(table) or not sim.unlocked("blackjack"))
 	add_button(inspector, "Assign standby dealers", func(): sim.assign_standby(selected); refresh())
 	if table.broken:
 		add_button(inspector, "Repair rail · $120", func():
@@ -503,12 +527,11 @@ func render_table() -> void:
 			add_button(inspector, "Walk to this table", func(): floor_view.walk_to_table(selected); mobile_pane = "floor"; refresh())
 	else:
 		add_button(inspector, "Experience this table", func(): toggle_walk())
-	add_button(inspector, "Minimum: $5 / $10" if sim.table_kind(table) == "slots" else "Minimum: $25 / $50", func():
-		if sim.busy(table):
-			sim.log_event("Change limits when the table is empty.")
-		else:
-			table.minimum = (10.0 if table.minimum == 5 else 5.0) if sim.table_kind(table) == "slots" else (50.0 if table.minimum == 25 else 25.0)
-		refresh())
+	var limits := "$5 / $10" if sim.table_kind(table) == "slots" else ("$25 / $50" if sim.table_kind(table) == "craps" else "$10 / $25 / $50")
+	if not sim.high_limit_enabled and sim.table_kind(table) != "slots":
+		limits = "$25" if sim.table_kind(table) == "craps" else "$10 / $25"
+	add_button(inspector, "Minimum: " + limits, func(): sim.change_minimum(selected); refresh())
+
 	add_button(inspector, "Move table", begin_move, sim.busy(table))
 	add_button(inspector, "Sell · $%d" % (Games.COSTS[sim.table_kind(table)] / 2), func(): sim.sell(selected); refresh(), sim.busy(table))
 
@@ -516,15 +539,15 @@ func render_staff() -> void:
 	add_label(inspector, "STAFF & COVERAGE", 11, GOLD)
 	add_label(inspector, "%d employees" % sim.staff.size(), 24)
 	add_label(inspector, "Craps: two dealers. Roulette / blackjack / hold’em: one dealer. Slots: no dealer. Service staff cover the floor.", 14, MUTED)
-	add_button(inspector, "Hire dealer · $150", func(): sim.hire("Dealer", selected); refresh())
-	add_button(inspector, "Hire service · $150", func(): sim.hire("Service", -1); refresh())
+	add_button(inspector, "Hire dealer · $%d" % CasinoTuning.HIRING_COST if sim.unlocked("blackjack") else "Dealers locked · Unlock blackjack", func(): sim.hire("Dealer", selected); refresh(), not sim.unlocked("blackjack"))
+	add_button(inspector, "Hire service · $%d" % CasinoTuning.HIRING_COST if sim.unlocked("service") else "Drink service locked · Increase Casino Rating", func(): sim.hire("Service", -1); refresh(), not sim.unlocked("service"))
 	add_gap(inspector, 4)
 	for employee in sim.staff:
 		add_label(inspector, "%s · %s" % [employee.name, employee.role], 15)
 		var assignment := "Table %d" % int(employee.table) if int(employee.table) > 0 else "Standby · recovering"
 		if employee.role == "Service":
 			assignment = "%s · whole floor" % employee.get("service_state", "At bar") if not sim.guests.is_empty() else "At cocktail bar · recovering"
-		add_label(inspector, "%s · %.0f%% energy · $%d/hr" % [assignment, employee.energy, 20 if employee.role == "Dealer" else 16], 12, MUTED)
+		add_label(inspector, "%s · %.0f%% energy · $%d/hr" % [assignment, employee.energy, CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE], 12, MUTED)
 		if employee.role == "Dealer" and employee.energy < 85:
 			add_button(inspector, "Relieve %s" % employee.name, func():
 				var standby := sim.staff.filter(func(s): return s.role == "Dealer" and int(s.table) == -1 and s.energy > employee.energy)
@@ -848,7 +871,7 @@ func toggle_pause() -> void:
 func save_game() -> void:
 	if rolling > 0:
 		return
-	var file := FileAccess.open("user://neon-house-v1.json", FileAccess.WRITE)
+	var file := FileAccess.open(CasinoTuning.SAVE_PATH, FileAccess.WRITE)
 	if file == null:
 		sim.log_event("Save failed: browser storage is unavailable.")
 	else:
@@ -857,16 +880,17 @@ func save_game() -> void:
 		sim.log_event("Casino saved locally in this browser.")
 	refresh()
 
-func load_game() -> void:
+func load_game() -> bool:
 	if rolling > 0:
-		return
-	if not FileAccess.file_exists("user://neon-house-v1.json"):
+		return false
+	if not FileAccess.file_exists(CasinoTuning.SAVE_PATH):
 		sim.log_event("No local save found. Save your casino first.")
 		refresh()
-		return
-	var data = JSON.parse_string(FileAccess.get_file_as_string("user://neon-house-v1.json"))
-	if not data is Dictionary or not sim.restore(data):
-		sim.log_event("Save is invalid or belongs to a different version.")
+		return false
+	var data = JSON.parse_string(FileAccess.get_file_as_string(CasinoTuning.SAVE_PATH))
+	var restored: bool = data is Dictionary and sim.restore(data)
+	if not restored:
+		sim.log_event("Save is invalid or incompatible. Start a new casino.")
 	else:
 		visitor = sim.joined >= 0
 		page = "table"
@@ -877,6 +901,7 @@ func load_game() -> void:
 		tick = 0
 		sim.log_event("Casino restored, including guests, wagers and dice state.")
 	refresh()
+	return restored
 
 func close_modal() -> void:
 	if modal != null:
@@ -886,9 +911,9 @@ func close_modal() -> void:
 			if child.has_meta("modal_shade"):
 				child.queue_free()
 
-func dialog(title: String, body: String, confirm: String, action: Callable) -> void:
+func dialog(title: String, body: String, confirm: String, action: Callable, cancellable: bool = true) -> VBoxContainer:
 	if modal != null:
-		return
+		return null
 	modal = panel_at(Vector2(390, 190), Vector2(660, 500))
 	var shade := ColorRect.new()
 	shade.color = Color(0, 0, 0, 0.72)
@@ -911,37 +936,83 @@ func dialog(title: String, body: String, confirm: String, action: Callable) -> v
 	add_label(layout, body, 17)
 	add_gap(layout, 8)
 	add_button(layout, confirm, func(): close_modal(); action.call())
-	if confirm != "Let's open the house":
+	if cancellable:
 		add_button(layout, "Cancel", close_modal)
 	layout_ui()
+	return layout
 
 func show_help() -> void:
-	dialog("Run it. Walk it. Play it.", "Hire two dealers at your first craps table. Walk over and join with the doors closed, or open the casino to welcome guests.
-
-Tap a table to inspect. Walk mode: tap a table to approach the rail, then Join. WASD also works.
-
-The shooter keeps the dice until seven-out. Pass dice lets a CPU shoot while you bet. Joining an active table queues your turn. Hold betting pauses only that table's CPU rolls.
-
-Choose chips and a bet category. The My bets tab lists contracts and removable stakes. Place, hardways and Come odds are off on come-out unless called working.
-
-On phones use Floor, Table, Manage and Log below. Save locally before leaving.", "Let's open the house", func(): pass)
-	layout_ui()
+	var body := "Version %s · Last updated %s\n\n" % [BuildInfo.VERSION, BuildInfo.UPDATED_AT]
+	body += sim.onboarding_text() + "\n\n" + sim.next_milestone_text()
+	body += "\n\nTap a game to inspect it. Walk mode: approach a game, then Join. Visitor play uses a separate $1,000 wallet; casino cash pays for construction, staff and payouts."
+	if sim.feature_owned("service"): body += "\n\nDrink staff cover the floor. Watch guest satisfaction, thirst and staff energy."
+	if sim.feature_owned("craps"):
+		body += "\n\nCraps needs two dealers. The shooter keeps the dice until seven-out. Pass dice hands off to a CPU; Hold betting pauses that table's CPU rolls. My bets lists contracts and removable stakes."
+	body += "\n\nOn phones use Floor, Table, Manage and Log. Save locally before leaving."
+	dialog("Build your house.", body, "Back to casino", func(): pass, false)
 
 func confirm_reset() -> void:
-	dialog("Start a new casino?", "This resets the current session. Your existing local save is kept until you save again.", "Start new casino", func():
-		sim = CasinoSimulation.new()
-		floor_view.sim = sim
-		felt.sim = sim
-		game_view.sim = sim
-		selected = 1
-		sim.joined = -1
-		visitor = false
-		building = false
-		moving = -1
-		speed = 1
-		tick = 0
-		page = "table"
-		refresh())
+	dialog("Start a new casino?", "Your existing local save is kept until you save again. Choose difficulty and starting games next.", "Choose new-game setup", func(): show_new_game_setup())
+
+func show_new_game_setup(initial: bool = false) -> void:
+	var mode := OptionButton.new()
+	mode.add_item("Normal · intended progression")
+	mode.add_item("Easy / Sandbox-lite · permissive access")
+	mode.custom_minimum_size.y = 44
+	var games_box := VBoxContainer.new()
+	var choices: Array = []
+	add_label(games_box, "Easy starting games — choose one or more (equipment and required crews included):", 14, MUTED)
+	for kind in ["slots", "blackjack", "roulette", "craps", "holdem"]:
+		var choice := CheckButton.new()
+		choice.text = Games.NAMES[kind]
+		choice.button_pressed = kind in ["slots", "blackjack"]
+		choice.set_meta("game_kind", kind)
+		games_box.add_child(choice)
+		choices.append(choice)
+	games_box.hide()
+	mode.item_selected.connect(func(index: int): games_box.visible = index == 1)
+	var body := "Normal is the intended tycoon experience: $%d, two basic slots, no staff. Earn Casino Rating to access new games and services.\n\nEasy starts with $%d and your favorite games, ready crews, the full floor and unrestricted access. Wages, upkeep and real gaming outcomes still apply." % [CasinoTuning.STARTING_CASH, CasinoTuning.DIFFICULTIES.easy.cash]
+	var layout := dialog("New casino · choose your start", body, "Start casino", func():
+		var preferred: Array = []
+		for choice in choices:
+			if choice.button_pressed: preferred.append(str(choice.get_meta("game_kind")))
+		# An empty Easy selection safely starts with slots.
+		start_casino("normal" if mode.selected == 0 else "easy", preferred), not initial)
+	if layout == null:
+		mode.free()
+		games_box.free()
+		return
+	# Add setup controls before the Start button inside the scrolling modal.
+	layout.add_child(mode)
+	layout.move_child(mode, 3)
+	layout.add_child(games_box)
+	layout.move_child(games_box, 4)
+	if initial and FileAccess.file_exists(CasinoTuning.SAVE_PATH):
+		add_button(layout, "Continue saved casino", func():
+			if load_game(): close_modal()
+			else:
+				add_label(layout, "Could not load this save. Choose a new setup or check your save file.", 14, GOLD))
+	layout_ui()
+
+func start_casino(mode: String, preferred: Array) -> void:
+	sim = CasinoSimulation.new(mode, preferred)
+	floor_view.sim = sim
+	felt.sim = sim
+	game_view.sim = sim
+	selected = int(sim.tables[0].id)
+	selected_guest = -1
+	visitor = false
+	building = false
+	moving = -1
+	floor_view.rotated = false
+	speed = 1
+	previous_speed = 1
+	tick = 0
+	rolling = 0
+	active_roll_table = -1
+	page = "table"
+	mobile_pane = "floor"
+	refresh()
 
 func publish_debug() -> void:
 	if not OS.has_feature("web") or not OS.is_debug_build():

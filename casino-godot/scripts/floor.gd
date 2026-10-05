@@ -7,7 +7,8 @@ signal guest_clicked(id: int)
 var sim: CasinoSimulation
 var visitor_mode := false
 var building := false
-var build_kind := "craps"
+var build_kind := "slots"
+var moving_id := -1
 var rotated := false
 var selected := 1
 var preview := Vector2(-100, -100)
@@ -118,7 +119,7 @@ func _draw() -> void:
 	for x in [65, 100, 135, 170]:
 		draw_circle(Vector2(x, 65), 5, Color("536379"))
 	draw_rect(Rect2(650, 18, 150, 39), Color("384353"))
-	text_at(Vector2(685, 43), "COCKTAILS", GOLD, 12)
+	text_at(Vector2(685, 43), "COCKTAILS" if sim.unlocked("service") else "SERVICE LOCKED", GOLD, 12)
 	for x in [670, 700, 730, 760, 790]:
 		draw_circle(Vector2(x, 67), 6, Color("985b60"))
 	for at in [Vector2(26, 105), Vector2(824, 105), Vector2(26, 580), Vector2(824, 580)]:
@@ -127,10 +128,15 @@ func _draw() -> void:
 		draw_circle(at, 5, Color("ead398"))
 	draw_rect(Rect2(338, 546, 174, 44), Color("283b4d"))
 	text_at(Vector2(362, 574), "ENTRANCE", GOLD, 16)
+	if not sim.expanded:
+		draw_rect(Rect2(505, 100, 280, 400), Color(0.03, 0.05, 0.08, 0.8))
+		draw_line(Vector2(505, 100), Vector2(505, 500), GOLD, 2)
+		text_at(Vector2(550, 270), "FUTURE EXPANSION", GOLD, 13)
+		text_at(Vector2(545, 294), "Earn Rating · buy more space", Color("8293a5"), 10)
 	for table in sim.tables:
 		draw_table(table)
 	if building:
-		var valid: bool = sim.can_place(preview, rotated, -1, build_kind) and sim.cash >= CasinoGames.COSTS[build_kind]
+		var valid: bool = sim.can_place(preview, rotated, moving_id, build_kind) and (moving_id >= 0 or (sim.unlocked(build_kind) and sim.cash >= CasinoGames.COSTS[build_kind]))
 		var rect := Rect2(preview, sim.furniture_size(build_kind, rotated))
 		draw_rect(rect.grow(22), Color(0.3, 0.8, 0.6, 0.07) if valid else Color(1, 0.3, 0.3, 0.08))
 		draw_rect(rect, Color(0.3, 0.85, 0.6, 0.3) if valid else Color(1, 0.3, 0.3, 0.3))

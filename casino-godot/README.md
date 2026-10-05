@@ -150,8 +150,11 @@ From the repository root (replace `godot` with your binary's path if necessary):
 godot --headless --path casino-godot --editor --import --quit
 godot --path casino-godot
 python3 casino-godot/tests/startup_smoke.py --godot godot
-godot --headless --path casino-godot --export-release Web
+python3 casino-godot/export_web.py --godot godot
 ```
+
+Use `export_web.py` for release exports: it stamps Help with the build date/time
+in Eastern time and updates the wrapper version label (`--version` defaults to 0.3).
 
 The export writes `casino/game.html`, `.js`, `.wasm`, `.pck`, splash, and audio
 worklets. Keep the generated files together and retain their names. Commit the

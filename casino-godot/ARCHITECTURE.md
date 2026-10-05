@@ -42,9 +42,19 @@ Sell/move
 is blocked for occupied tables and unresolved visitor bets. New tables can reuse
 standby crews. Paused time disables manual rolls, so guests/finance remain in sync.
 
-The v2 save format contains domain state and a version, not serialized nodes.
-It migrates v1 saves and includes extended bets, shooter/queue state, roll history,
-and repair wear. The existing save filename is retained for migration. RNG
+The current v4 save format contains domain state and a version, not serialized nodes.
+It includes difficulty, starting-game selections, earned Rating, onboarding counters,
+expansion/VIP/high-limit purchases, extended bets, shooter/queue state, roll history
+and repair wear. Difficulty configuration and ordered access thresholds live in
+`tuning.gd`; `simulation.gd` enforces purchases, staffing access and table limits,
+while `main.gd` presents setup, revealed/locked content and the next milestone.
+
+During pre-alpha, clean architecture takes priority over disposable development
+saves. Support only the current schema; reject incompatible versions without
+migration. Remove obsolete compatibility code when encountered, while retaining
+corruption checks and defensive handling for current optional/runtime data.
+Historical save compatibility requires an explicit future policy change.
+The save path is `user://neon-house.json`. RNG
 state is a decimal string to preserve all 64 bits through JSON. Saves use Godot's
 `user://` path, backed by browser storage in web builds. UI mode/speed settings
 are session-only. The single save slot is deliberately small in scope.
