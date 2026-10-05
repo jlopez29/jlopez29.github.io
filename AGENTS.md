@@ -54,6 +54,10 @@ Financial visual feedback must represent real simulation transactions and actual
 
 Normal difficulty starts with a small slot operation and progresses toward table games, service, VIPs, and larger casino systems. Avoid giving everything immediately. Easy offers more freedom to start with preferred casino games without the full Normal progression grind. Progression should provide anticipation, meaningful purchases, financial tradeoffs, visible growth, and increasing operational complexity.
 
+## Economy validation
+
+Balance around long-run expected operating performance, with losses possible from variance, overstaffing, poor utilization and excessive overhead. Distinguish recurring expenses from capital investment and onboarding when diagnosing profitability. Do not use higher house edge as the default fix for unrelated cost or throughput problems. Development acceleration must preserve game-time economics; never tune production balance around extreme-speed artifacts.
+
 ## UI text / character safety
 
 - Prefer ASCII-safe UI text; use non-ASCII only when intentionally required and confirmed to render in the current Godot fonts and web export.
@@ -61,6 +65,10 @@ Normal difficulty starts with a small slot operation and progresses toward table
 - Treat replacement characters, boxes, mojibake and corrupted glyphs as bugs; clean up obvious instances in nearby UI text being modified.
 - Do not change the project font system to fix a decorative character unless explicitly requested.
 - Keep source files correctly UTF-8 encoded, including when visible UI text is ASCII-safe.
+
+## Player-facing UI
+
+Prioritize hierarchy, clarity, contextual information and progressive disclosure. Persistent UI answers immediate management questions; detailed asset statistics belong in inspectors and deeper financial analysis in Finance. Use readable components instead of raw counters or pipe-separated telemetry. Routine floating results show only the signed net house amount (for example `+$25`), without redundant HOUSE/game prefixes. Keep meaningful operational events in House Activity. Preserve simulation depth without placing every new system's internal state on the main screen.
 
 ## House Activity vs money feedback
 

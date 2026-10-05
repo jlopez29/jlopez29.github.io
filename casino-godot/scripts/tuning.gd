@@ -6,19 +6,88 @@ const DIFFICULTIES := {
 	"normal": {"name": "Normal", "cash": STARTING_CASH, "restricted": true, "expanded": false},
 	"easy": {"name": "Easy / Sandbox-lite", "cash": 30000.0, "restricted": false, "expanded": true},
 }
-# One profile today, selected per machine. Future quality can carry more development
-# value without changing settlement, guest exposure or unlock logic.
+# Approved fixed payout distributions, not a player-controlled RTP slider.
+# All awards are total returns including stake. Metrics are derived from the math.
+const SLOT_REEL := [0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,3,3,3,4,4]
 const SLOT_PROFILES := {
 	"starter": {
-		"cost": 750, "minimum": 5.0, "maximum": 5.0, "denominations": [2.0, 5.0],
-		"reel": [0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,3,3,3,4,4],
-		"pays": [7,10,16,22,30], "cherry_return": 1,
-		"rtp": 0.9135, "house_edge": 0.0865, "volatility": "Low",
-		"jackpot_probability": 0.001, "development": 1.0,
-		"round_minutes": 2, "overhead": 1.0,
-		"repair_chance": 0.08, "repair_grace": 4320, "repair_cost": 120.0, "appeal": 1.0,
+		"name": "Used Classic Reel", "short_name": "Used Reel", "cost": 750,
+		"minimum": 5.0, "maximum": 5.0, "denominations": [2.0, 5.0],
+		"reel": SLOT_REEL, "pays": [7,10,16,22,30], "cherry_return": 1,
+		"volatility": "Low", "development": 1.0, "development_cap": 3.0,
+		"round_minutes": 2, "overhead": 1.0, "repair_chance": 0.10,
+		"repair_grace": 4320, "repair_cost": 120.0, "appeal": 1.0, "prestige": 1,
+		"unlock_rating": 0.0, "unlock_handle": 0.0, "reserve": 650.0,
+		"color": "685344", "screen": "reels",
+	},
+	"standard": {
+		"name": "Standard Reel", "short_name": "Reel", "cost": 1400,
+		"minimum": 5.0, "maximum": 10.0, "denominations": [2.0, 5.0, 10.0],
+		"reel": SLOT_REEL, "pays": [7,11,16,23,35], "cherry_return": 1,
+		"volatility": "Low", "development": 2.0, "development_cap": 6.0,
+		"round_minutes": 1, "overhead": 1.5, "repair_chance": 0.07,
+		"repair_grace": 5760, "repair_cost": 150.0, "appeal": 1.15, "prestige": 2,
+		"unlock_rating": 6.0, "unlock_handle": 500.0, "reserve": 900.0,
+		"color": "3c6275", "screen": "reels",
+	},
+	"video": {
+		"name": "Video Slot", "short_name": "Video", "cost": 3200,
+		"minimum": 5.0, "maximum": 20.0, "denominations": [5.0, 10.0, 20.0],
+		"reel": SLOT_REEL, "pays": [5,10,18,32,65], "cherry_return": 1,
+		"volatility": "Medium", "development": 4.0, "development_cap": 12.0,
+		"round_minutes": 1, "overhead": 2.5, "repair_chance": 0.05,
+		"repair_grace": 7200, "repair_cost": 240.0, "appeal": 1.4, "prestige": 4,
+		"unlock_rating": 12.0, "unlock_handle": 3000.0, "reserve": 2200.0,
+		"color": "365c85", "screen": "video",
+	},
+	"premium": {
+		"name": "Premium Video Slot", "short_name": "Premium", "cost": 7500,
+		"minimum": 10.0, "maximum": 50.0, "denominations": [10.0, 25.0, 50.0],
+		"reel": SLOT_REEL, "pays": [3,8,18,45,120], "cherry_return": 1,
+		"volatility": "High", "development": 6.0, "development_cap": 20.0,
+		"round_minutes": 1, "overhead": 4.0, "repair_chance": 0.035,
+		"repair_grace": 8640, "repair_cost": 400.0, "appeal": 1.7, "prestige": 6,
+		"unlock_rating": 24.0, "unlock_handle": 12000.0, "reserve": 6500.0,
+		"color": "744780", "screen": "video",
+	},
+	"high_limit": {
+		"name": "High-Limit Slot", "short_name": "High Limit", "cost": 15000,
+		"minimum": 25.0, "maximum": 100.0, "denominations": [25.0, 50.0, 100.0],
+		"reel": SLOT_REEL, "pays": [3,7,17,45,140], "cherry_return": 1,
+		"volatility": "High", "development": 8.0, "development_cap": 30.0,
+		"round_minutes": 1, "overhead": 6.0, "repair_chance": 0.025,
+		"repair_grace": 10080, "repair_cost": 650.0, "appeal": 2.0, "prestige": 8,
+		"unlock_rating": 45.0, "unlock_handle": 35000.0, "reserve": 15000.0,
+		"color": "8b7135", "screen": "video",
 	},
 }
+static var _slot_profiles: Dictionary = {}
+
+static func slot_profile(id: String) -> Dictionary:
+	if _slot_profiles.has(id): return _slot_profiles[id]
+	var profile: Dictionary = SLOT_PROFILES[id].duplicate(true)
+	var counts := [0, 0, 0, 0, 0]
+	for symbol in profile.reel: counts[int(symbol)] += 1
+	var expected := 0.0
+	var second_moment := 0.0
+	var reel_size := float(profile.reel.size())
+	for symbol in range(counts.size()):
+		var chance := pow(float(counts[symbol]) / reel_size, 3)
+		var award := float(profile.pays[symbol])
+		expected += chance * award
+		second_moment += chance * award * award
+	var cherry := float(counts[0]) / reel_size
+	var cherry_chance := 3.0 * cherry * cherry * (1.0 - cherry) + cherry * pow(1.0 - cherry, 2)
+	expected += cherry_chance * float(profile.cherry_return)
+	second_moment += cherry_chance * pow(float(profile.cherry_return), 2)
+	profile.rtp = expected
+	profile.house_edge = 1.0 - expected
+	profile.return_stddev = sqrt(maxf(0, second_moment - expected * expected))
+	profile.jackpot_probability = pow(float(counts[4]) / reel_size, 3)
+	profile.top_return = float(profile.pays.max())
+	_slot_profiles[id] = profile
+	return profile
+
 const GAME_COSTS := {"slots": SLOT_PROFILES.starter.cost, "blackjack": 1800, "roulette": 2500, "craps": 6000, "holdem": 8000}
 const HIRING_COST := 150.0
 const EXPANSION_COST := 3000.0
@@ -38,12 +107,12 @@ const MILESTONES := [
 ]
 const GAME_LIMITS := {
 	"blackjack": {"minimum": 10.0, "maximum": 100.0, "limits": [10.0, 25.0, 50.0]},
-	"roulette": {"minimum": 10.0, "maximum": 100.0, "limits": [10.0, 25.0, 50.0]},
+	"roulette": {"minimum": 25.0, "maximum": 100.0, "limits": [10.0, 25.0, 50.0]},
 	"craps": {"minimum": 25.0, "maximum": 100.0, "limits": [25.0, 50.0]},
-	"holdem": {"minimum": 10.0, "maximum": 100.0, "limits": [10.0, 25.0, 50.0]},
+	"holdem": {"minimum": 25.0, "maximum": 100.0, "limits": [10.0, 25.0, 50.0]},
 }
 const DEVELOPMENT_VALUES := {"blackjack": 4.0, "roulette": 5.0, "craps": 7.0, "holdem": 8.0}
-const SLOT_DEVELOPMENT_CAP := 4.0 # Extra cheap machines add earnings, not unlimited Rating.
+const SLOT_DEVELOPMENT_CAP := 30.0 # A developed slot floor can reach the highest Rating; each profile also has a cap.
 const RATING_HANDLE_UNIT := 3000.0
 const RATING_GUEST_UNIT := 20.0
 const BLACKJACK_REQUIREMENTS := {"rating": 16.0, "development": 4.0, "capacity": 3, "handle": 12000.0, "guests": 80, "cash": 2450.0}
@@ -60,9 +129,10 @@ const STAR_NAMES := ["Local Joint", "Neighborhood Casino", "Casino", "Destinatio
 const OPENING_REVENUE := 100.0 # Guest wagers, not guaranteed profit.
 const STARTER_BUILD_AREA := Rect2(65, 100, 440, 400)
 const FULL_BUILD_AREA := Rect2(65, 100, 720, 400)
-const TABLE_GAME_ROUND_MINUTES := 6 # Non-craps guest games; supports staffed progression.
+const TABLE_GAME_ROUND_MINUTES := {"blackjack": 2, "roulette": 2, "holdem": 2} # Game minutes per occupied NPC hand/spin.
 const VISITOR_CASH := 1000.0
 const MAX_GUESTS := 40
+const ENTITY_WALK_SPEED := 64.0 # World units per simulated second, independent of update size.
 const ARRIVAL_MINUTES := Vector2i(18, 32) # Small parties, with quiet gaps at 1x.
 const ARRIVAL_OVERFLOW_RATIO := 0.25 # One extra visitor for two/four slots; scales with seats.
 const QUIET_ARRIVAL_MINUTES := Vector2i(28, 48)
@@ -74,9 +144,12 @@ const CRAPS_COST := 6000.0
 const DEALER_WAGE := 20.0 # Per game hour; compressed prototype economy.
 const SERVICE_WAGE := 16.0
 const TABLE_OVERHEAD := 12.0
+const TABLE_REPAIR_COST := 120.0
 const TABLE_MINIMUM := 25.0
-const ROLL_SECONDS := 6.0
-const SAVE_VERSION := 5 # One current schema; pre-alpha saves are disposable.
+const ROLL_SECONDS := 0.3 # NPC dice cadence in game minutes; pass bets resolve over several rolls.
+const NPC_ROLL_FATIGUE := 0.002 # Up to 0.17 extra game minutes at minimum crew energy.
+const VISITOR_ROLL_FATIGUE := 0.04 # Preserve the existing manually played rail cadence.
+const SAVE_VERSION := 7 # One current schema; pre-alpha saves are disposable.
 const SAVE_PATH := "user://neon-house.json"
 const VISITOR_ROLL_SECONDS := 15.0
 const REPAIR_GRACE_MINUTES := 4320 # Three days of operation before any wear check.

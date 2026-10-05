@@ -16,6 +16,7 @@ var floating_results: Array = []
 var visitor_mode := false
 var building := false
 var build_kind := "slots"
+var build_slot_profile := "starter"
 var moving_id := -1
 var rotated := false
 var selected := 1
@@ -56,11 +57,12 @@ func _process(delta: float) -> void:
 	pulse += delta
 	for effect in floating_results: effect.age += delta
 	floating_results = floating_results.filter(func(effect): return float(effect.age) < float(effect.lifetime))
-	var fit := minf(size.x / 850.0, size.y / 610.0)
+	var floor_width := 850.0 if sim.expanded or visitor_mode else 535.0
+	var fit := minf(size.x / floor_width, size.y / 610.0)
 	zoom = lerpf(zoom, fit * (1.32 if visitor_mode else 1.0), minf(1, delta * 8))
-	var desired := size / 2 - sim.player * zoom if visitor_mode else (size - Vector2(850, 610) * zoom) / 2
+	var desired := size / 2 - sim.player * zoom if visitor_mode else (size - Vector2(floor_width, 610) * zoom) / 2
 	for axis in [0, 1]:
-		var extent: float = Vector2(850, 610)[axis] * zoom
+		var extent: float = Vector2(floor_width, 610)[axis] * zoom
 		desired[axis] = clampf(desired[axis], size[axis] - extent, 0) if extent > size[axis] else (size[axis] - extent) / 2
 	camera = camera.lerp(desired, minf(1, delta * 8))
 	if visitor_mode and sim.joined < 0:
@@ -113,45 +115,42 @@ func _draw() -> void:
 		return
 	draw_rect(Rect2(Vector2.ZERO, size), Color("111c29"))
 	draw_set_transform(camera, 0, Vector2(zoom, zoom))
-	draw_rect(Rect2(0, 0, 850, 610), Color("172432"))
-	for x in range(0, 850, 40):
+	var room_width := 850 if sim.expanded else 535
+	draw_rect(Rect2(0, 0, room_width, 610), Color("172432"))
+	for x in range(0, room_width - 20, 40):
 		for y in range(100, 610, 40):
 			draw_rect(Rect2(x + 2, y + 2, 36, 36), Color("1b2a39") if (x + y) % 80 == 0 else Color("192736"))
 	# Brass border, lit back wall, bar and lounge: all procedural, no asset dependency.
-	draw_rect(Rect2(12, 82, 826, 510), Color("9a8053"), false, 2)
-	draw_rect(Rect2(14, 12, 822, 62), Color("101b26"))
-	draw_line(Vector2(24, 75), Vector2(826, 75), GOLD, 2)
-	text_at(Vector2(330, 47), "N E O N   H O U S E", GOLD, 19)
-	text_at(Vector2(360, 65), "DICE  /  DRINKS  /  GOOD COMPANY", Color("8293a5"), 9)
+	draw_rect(Rect2(12, 82, room_width - 24, 510), Color("9a8053"), false, 2)
+	draw_rect(Rect2(14, 12, room_width - 28, 62), Color("101b26"))
+	draw_line(Vector2(24, 75), Vector2(room_width - 24, 75), GOLD, 2)
+	text_at(Vector2(330 if sim.expanded else 245, 47), "NEON HOUSE", GOLD, 19)
+	if sim.expanded: text_at(Vector2(360, 65), "GOOD COMPANY", Color("9bafc2"), 11)
 	# Back-of-house furniture lives outside the editable floor rectangle.
 	draw_rect(Rect2(35, 19, 160, 38), Color("344055"))
 	text_at(Vector2(65, 43), "THE CAGE", GOLD, 12)
 	for x in [65, 100, 135, 170]:
 		draw_circle(Vector2(x, 65), 5, Color("536379"))
-	draw_rect(Rect2(650, 18, 150, 39), Color("384353"))
-	text_at(Vector2(685, 43), "COCKTAILS" if sim.unlocked("service") else "SERVICE LOCKED", GOLD, 12)
-	for x in [670, 700, 730, 760, 790]:
-		draw_circle(Vector2(x, 67), 6, Color("985b60"))
-	for at in [Vector2(26, 105), Vector2(824, 105), Vector2(26, 580), Vector2(824, 580)]:
+	if sim.expanded:
+		draw_rect(Rect2(650, 18, 150, 39), Color("384353"))
+		text_at(Vector2(685, 43), "COCKTAILS" if sim.unlocked("service") else "SERVICE LOCKED", GOLD, 12)
+		for x in [670, 700, 730, 760, 790]:
+			draw_circle(Vector2(x, 67), 6, Color("985b60"))
+	for at in [Vector2(26, 105), Vector2(room_width - 26, 105), Vector2(26, 580), Vector2(room_width - 26, 580)]:
 		draw_circle(at, 18, Color(0.9, 0.73, 0.43, 0.06))
 		draw_circle(at, 8, Color("ac8c4f"))
 		draw_circle(at, 5, Color("ead398"))
 	draw_rect(Rect2(338, 546, 174, 44), Color("283b4d"))
 	text_at(Vector2(362, 574), "ENTRANCE", GOLD, 16)
-	if not sim.expanded:
-		draw_rect(Rect2(505, 100, 280, 400), Color(0.03, 0.05, 0.08, 0.8))
-		draw_line(Vector2(505, 100), Vector2(505, 500), GOLD, 2)
-		text_at(Vector2(550, 270), "FUTURE EXPANSION", GOLD, 13)
-		text_at(Vector2(545, 294), "Earn Rating | buy more space", Color("8293a5"), 10)
 	for table in sim.tables:
 		draw_table(table)
 	if building:
-		var valid: bool = sim.can_place(preview, rotated, moving_id, build_kind) and (moving_id >= 0 or (sim.unlocked(build_kind) and sim.cash >= CasinoGames.COSTS[build_kind]))
+		var valid: bool = sim.can_place(preview, rotated, moving_id, build_kind) and (moving_id >= 0 or (sim.unlocked(build_kind) and (build_kind != "slots" or sim.slot_unlocked(build_slot_profile)) and sim.cash >= sim.purchase_cost(build_kind, build_slot_profile)))
 		var rect := Rect2(preview, sim.furniture_size(build_kind, rotated))
 		draw_rect(rect.grow(22), Color(0.3, 0.8, 0.6, 0.07) if valid else Color(1, 0.3, 0.3, 0.08))
 		draw_rect(rect, Color(0.3, 0.85, 0.6, 0.3) if valid else Color(1, 0.3, 0.3, 0.3))
 		draw_rect(rect, TEAL if valid else Color("f08484"), false, 2)
-		text_at(preview + Vector2(8, 26), "$%d | %s" % [CasinoGames.COSTS[build_kind], CasinoGames.NAMES[build_kind]], INK, 13)
+		text_at(preview + Vector2(8, 26), "$%d | %s" % [sim.purchase_cost(build_kind, build_slot_profile), CasinoTuning.SLOT_PROFILES[build_slot_profile].short_name if build_kind == "slots" else CasinoGames.NAMES[build_kind]], INK, 13)
 	for guest in sim.guests:
 		var at := Vector2(guest.x, guest.y)
 		var color := GOLD if guest.vip else Color.from_hsv(fmod(float(guest.id) * 0.17, 1.0), 0.25, 0.8)
@@ -257,12 +256,19 @@ func walk_to_table(id: int) -> void:
 func draw_other_game(table: Dictionary) -> void:
 	var rect := sim.bounds(table)
 	var kind := sim.table_kind(table)
-	var color := Color("594178") if kind == "slots" else (Color("174c42") if kind == "blackjack" else (Color("3e324f") if kind == "holdem" else Color("395041")))
+	var color := Color(str(sim.slot_profile(table).color)) if kind == "slots" else (Color("174c42") if kind == "blackjack" else (Color("3e324f") if kind == "holdem" else Color("395041")))
 	draw_style_box(box(color, GOLD if selected == int(table.id) else Color("718b85"), 12), rect)
 	var center := rect.get_center()
 	if kind == "slots":
 		draw_rect(Rect2(rect.position + Vector2(7, 15), Vector2(rect.size.x - 14, 30)), Color("0f1b28"))
-		text_at(rect.position + Vector2(9, 36), "7 7 7", GOLD, 13)
+		var profile := sim.slot_profile(table)
+		if profile.screen == "video":
+			for row in range(2):
+				for column in range(3):
+					draw_rect(Rect2(rect.position + Vector2(10 + column * 14, 19 + row * 10), Vector2(10, 7)), Color(str(profile.color)).lightened(0.3))
+			text_at(rect.position + Vector2(9, 59), "$%d" % table.minimum, GOLD, 11)
+		else: text_at(rect.position + Vector2(9, 36), "7 7 7", GOLD, 13)
+		for mark in range(int(profile.prestige) / 2): draw_circle(rect.position + Vector2(10 + mark * 10, 8), 2, GOLD)
 	elif kind == "roulette":
 		for i in range(16):
 			var at := center + Vector2.from_angle(i * TAU / 16) * 26
@@ -273,7 +279,7 @@ func draw_other_game(table: Dictionary) -> void:
 			var at := center + Vector2(-34 + i * 25, -15)
 			draw_rect(Rect2(at, Vector2(20, 29)), Color("ede6d8"))
 			text_at(at + Vector2(3, 19), ["A", "K", "Q"][i], Color("b64354"), 13)
-	text_at(rect.position + Vector2(0, -13), "%s %02d" % [CasinoGames.NAMES[kind], table.id], GOLD, 12)
+	text_at(rect.position + Vector2(0, -13), "%s %02d" % [sim.slot_profile(table).short_name if kind == "slots" else CasinoGames.NAMES[kind], table.id], GOLD, 12)
 	text_at(rect.position + Vector2(0, rect.size.y + 17), "%s | %d/%d" % [sim.table_status(table), sim.seated(int(table.id)).size(), sim.capacity(table)], TEAL, 10)
 	for i in range(sim.crew(int(table.id)).size()):
 		draw_circle(rect.position + Vector2(rect.size.x + 15, 25 + i * 30), 8, INK)
@@ -323,9 +329,7 @@ func draw_financial_feedback() -> void:
 		var age := float(effect.age)
 		var lifetime := float(effect.lifetime)
 		var importance := int(effect.importance)
-		var text := "HOUSE " + FinancialText.house_result(float(effect.amount))
-		if effect.actor == "visitor": text += " (visitor)"
-		elif int(effect.count) > 1: text += " (%d results)" % int(effect.count)
+		var text := FinancialText.house_result(float(effect.amount))
 		var font_size: int = [12, 14, 17, 21][importance]
 		var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 		if width > size.x - 8:

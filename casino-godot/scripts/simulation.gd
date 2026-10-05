@@ -11,6 +11,9 @@ var revenue := 0.0
 var payouts := 0.0
 var payroll := 0.0
 var overhead := 0.0
+# Cash expenses recorded once; classifications never make an additional charge.
+var expense_totals := {"dealer_payroll": 0.0, "service_payroll": 0.0, "upkeep": 0.0, "repairs": 0.0, "comps": 0.0, "hiring": 0.0, "construction": 0.0, "sales": 0.0}
+var payroll_by_state := {"working": 0.0, "idle": 0.0, "standby": 0.0, "unavailable": 0.0}
 var visitor_net := 0.0
 var reputation := 60.0
 var difficulty := "normal"
@@ -37,6 +40,7 @@ var guests: Array = []
 var cashout_effects: Array = []
 var recent_financial_events: Array = [] # Transient; never replay settlements after Load.
 var house_activity: Array = [] # Transient management notices, separate from detailed financial events.
+var slot_access: Array = ["starter"]
 var financial_sequence := 0
 const BAR_PICKUP := Vector2(730, 90)
 const CAGE_PICKUP := Vector2(120, 90)
@@ -80,6 +84,7 @@ func restricted() -> bool:
 	return bool(CasinoTuning.DIFFICULTIES[difficulty].restricted)
 
 func unlocked(feature: String) -> bool:
+	if feature.begins_with("slot:"): return slot_unlocked(feature.trim_prefix("slot:"))
 	if OS.is_debug_build() and feature in debug_forced_unlocks: return true
 	if not restricted(): return true
 	if feature == "blackjack": return blackjack_unlocked
@@ -134,13 +139,39 @@ func onboarding_text() -> String:
 	if guest_revenue < CasinoTuning.OPENING_REVENUE:
 		return "3. Collect $%d in guest wagers: $%.0f so far. Payouts and costs reduce your profit." % [CasinoTuning.OPENING_REVENUE, guest_revenue]
 	if not feature_owned("blackjack"):
-		return "4. Add usable slot capacity, serve gamblers and retain an operating reserve. Blackjack: $%d + dealer $%d; suggested payout/payroll reserve $%d." % [Games.COSTS.blackjack, CasinoTuning.HIRING_COST, CasinoTuning.BLACKJACK_RESERVE]
+		return "4. Develop capacity with better slots, serve gamblers and retain an operating reserve. Blackjack: $%d + dealer $%d; suggested payout/payroll reserve $%d." % [Games.COSTS.blackjack, CasinoTuning.HIRING_COST, CasinoTuning.BLACKJACK_RESERVE]
 	if not feature_owned("service"):
 		return "Your first table needs one dealer. Drink service is the next step; staff cost $%d plus hourly wages." % CasinoTuning.HIRING_COST
 	return "Grow at your own pace. Cash pays for purchases; developed capacity and guest business earn access."
 
 func slot_profile(table: Dictionary) -> Dictionary:
-	return CasinoTuning.SLOT_PROFILES[str(table.slot_profile)]
+	return CasinoTuning.slot_profile(str(table.slot_profile))
+
+func slot_unlocked(profile_id: String) -> bool:
+	if not CasinoTuning.SLOT_PROFILES.has(profile_id): return false
+	return not restricted() or profile_id in slot_access or (OS.is_debug_build() and "slot:" + profile_id in debug_forced_unlocks)
+
+func purchase_cost(kind: String, profile_id: String = "starter") -> float:
+	return float(CasinoTuning.SLOT_PROFILES[profile_id].cost) if kind == "slots" else float(Games.COSTS[kind])
+
+func asset_name(table: Dictionary) -> String:
+	return str(slot_profile(table).name) if table_kind(table) == "slots" else str(Games.NAMES[table_kind(table)])
+
+func repair_cost(table: Dictionary) -> float:
+	return float(slot_profile(table).repair_cost) if table_kind(table) == "slots" else CasinoTuning.TABLE_REPAIR_COST
+
+func progression_targets() -> Array:
+	var targets: Array = CasinoTuning.MILESTONES.duplicate(true)
+	for id in CasinoTuning.SLOT_PROFILES:
+		if id == "starter": continue
+		var profile: Dictionary = CasinoTuning.SLOT_PROFILES[id]
+		targets.append({"id": "slot:" + id, "name": profile.name, "rating": profile.unlock_rating, "handle": profile.unlock_handle})
+	targets.sort_custom(func(a, b): return float(a.rating) < float(b.rating))
+	return targets
+
+func slot_progress_text(profile_id: String) -> String:
+	var profile: Dictionary = CasinoTuning.SLOT_PROFILES[profile_id]
+	return "Rating %.1f/%.0f | guest handle $%.0f/$%.0f" % [casino_rating, profile.unlock_rating, guest_handle, profile.unlock_handle]
 
 func maximum_wager(table: Dictionary) -> float:
 	return float(slot_profile(table).maximum) if table_kind(table) == "slots" else float(CasinoTuning.GAME_LIMITS[table_kind(table)].maximum)
@@ -151,18 +182,21 @@ func wager_limits(table: Dictionary) -> Array:
 	return limits if high_limit_enabled else limits.filter(func(value): return float(value) < 50.0)
 
 func gaming_development(usable_only: bool = false) -> float:
-	var slots := 0.0
+	var profile_values: Dictionary = {}
 	var other := 0.0
-	# Count each table-game category once. Quality, rather than cheap-unit spam,
-	# can raise slot value when additional profiles are introduced.
 	var kinds: Array = []
 	for table in tables:
 		if usable_only and not ready_for_play(table): continue
 		var kind := table_kind(table)
-		if kind == "slots": slots += float(slot_profile(table).development)
+		if kind == "slots":
+			var id := str(table.slot_profile)
+			profile_values[id] = float(profile_values.get(id, 0)) + float(slot_profile(table).development)
 		elif kind not in kinds:
 			other += float(CasinoTuning.DEVELOPMENT_VALUES[kind])
 			kinds.append(kind)
+	var slots := 0.0
+	for id in profile_values:
+		slots += minf(float(profile_values[id]), float(CasinoTuning.SLOT_PROFILES[id].development_cap))
 	return minf(slots, CasinoTuning.SLOT_DEVELOPMENT_CAP) + other
 
 func usable_gaming_capacity() -> int:
@@ -207,6 +241,11 @@ func refresh_progression() -> void:
 	casino_rating = rating_for_activity(guest_handle, guests_served)
 	if stars() > previous_stars:
 		log_event("DEVELOPMENT - Casino rating increased to %d stars." % stars())
+	for id in CasinoTuning.SLOT_PROFILES:
+		var profile: Dictionary = CasinoTuning.SLOT_PROFILES[id]
+		if id not in slot_access and casino_rating >= float(profile.unlock_rating) and guest_handle >= float(profile.unlock_handle):
+			slot_access.append(id)
+			if restricted(): log_event("Unlocked: %s. Purchase through Build; retain payout reserves." % profile.name)
 	if not restricted(): return
 	if not blackjack_unlocked and blackjack_ready():
 		blackjack_unlocked = true
@@ -223,6 +262,9 @@ func record_guest_round(guest: Dictionary, stake: float) -> void:
 
 func guest_wager(table: Dictionary, guest: Dictionary) -> float:
 	var desired := float(table.minimum) * (2 if guest.vip else 1)
+	if table_kind(table) == "slots":
+		var eligible: Array = slot_profile(table).denominations.filter(func(value): return float(value) >= float(table.minimum) and float(value) <= float(guest.wager_limit))
+		if not eligible.is_empty(): desired = float(eligible.back())
 	return minf(desired, minf(maximum_wager(table), float(guest.wager_limit)))
 
 func build_area() -> Rect2:
@@ -234,8 +276,7 @@ func purchase_upgrade(feature: String) -> bool:
 	if cash < cost:
 		log_event("This upgrade needs $%d in casino cash." % cost)
 		return false
-	cash -= cost
-	overhead += cost
+	spend_nonpayroll(cost, "construction")
 	match feature:
 		"expansion": expanded = true
 		"vip": vip_enabled = true
@@ -253,8 +294,8 @@ func change_minimum(id: int) -> bool:
 	table.minimum = limits[(limits.find(float(table.minimum)) + 1) % limits.size()]
 	return true
 
-func new_table(at: Vector2, rotated: bool, kind: String = "craps") -> Dictionary:
-	var item := {"kind": kind, "slot_profile": "starter" if kind == "slots" else "", "round": {}, "roulette_bets": {}, "id": next_id, "x": at.x, "y": at.y, "rotated": rotated, "point": 0, "dice": [1, 1], "timer": 0.0, "wagers": 0.0, "payouts": 0.0, "broken": false, "rolls": 0, "shooter": -1, "shooter_seat": -1, "hand_rolls": 0, "owner_queued": false, "betting_hold": false, "owner_working": false, "history": [], "service_minutes": 0, "minimum": float(CasinoTuning.SLOT_PROFILES.starter.minimum) if kind == "slots" else float(CasinoTuning.GAME_LIMITS[kind].minimum), "owner": CrapsRules.empty_bets(), "result": "Come-out roll. Place a Pass Line bet to start." if kind == "craps" else "Ready for the first guest."}
+func new_table(at: Vector2, rotated: bool, kind: String = "craps", profile_id: String = "starter") -> Dictionary:
+	var item := {"kind": kind, "slot_profile": profile_id if kind == "slots" else "", "round": {}, "roulette_bets": {}, "id": next_id, "x": at.x, "y": at.y, "rotated": rotated, "point": 0, "dice": [1, 1], "timer": 0.0, "wagers": 0.0, "payouts": 0.0, "broken": false, "rolls": 0, "shooter": -1, "shooter_seat": -1, "hand_rolls": 0, "owner_queued": false, "betting_hold": false, "owner_working": false, "history": [], "service_minutes": 0, "available_minutes": 0, "occupied_minutes": 0, "downtime_minutes": 0, "operating_expense": 0.0, "repair_expense": 0.0, "payroll_expense": 0.0, "visitor_gaming_win": 0.0, "repairs": 0, "breakdowns": 0, "minimum": float(CasinoTuning.SLOT_PROFILES[profile_id].minimum) if kind == "slots" else float(CasinoTuning.GAME_LIMITS[kind].minimum), "owner": CrapsRules.empty_bets(), "result": "Come-out roll. Place a Pass Line bet to start." if kind == "craps" else "Ready for the first guest."}
 	next_id += 1
 	return item
 
@@ -283,7 +324,8 @@ func emit_financial_event(amount: float, category: String, table: Dictionary = {
 
 func emit_gaming_result(table: Dictionary, staked: float, returned: float, guest_id: int, participants: Array = []) -> void:
 	if staked <= 0 and returned <= 0: return # No resolved activity: no invented result.
-	emit_financial_event(staked - returned, "gaming", table, guest_id, {"settled_stake": staked, "returned": returned, "asset_wagers": float(table.wagers), "asset_payouts": float(table.payouts), "participants": participants.duplicate(true), "slot_profile": str(table.slot_profile) if table_kind(table) == "slots" else "", "round": int(table.rolls) + 1})
+	if guest_id == 0: table.visitor_gaming_win += staked - returned
+	emit_financial_event(staked - returned, "gaming", table, guest_id, {"settled_stake": staked, "returned": returned, "asset_wagers": float(table.wagers), "asset_payouts": float(table.payouts), "asset_repair_expense": float(table.repair_expense), "asset_operating_expense": float(table.operating_expense), "asset_payroll_expense": float(table.payroll_expense), "asset_available_minutes": int(table.available_minutes), "asset_occupied_minutes": int(table.occupied_minutes), "asset_downtime_minutes": int(table.downtime_minutes), "participants": participants.duplicate(true), "slot_profile": str(table.slot_profile) if table_kind(table) == "slots" else "", "round": int(table.rolls) + 1})
 
 func get_table(id: int) -> Dictionary:
 	for table in tables:
@@ -338,8 +380,7 @@ func hire(role: String, target: int) -> bool:
 	if cash < CasinoTuning.HIRING_COST:
 		log_event("Hiring needs $%d for training." % CasinoTuning.HIRING_COST)
 		return false
-	cash -= CasinoTuning.HIRING_COST
-	overhead += CasinoTuning.HIRING_COST
+	spend_nonpayroll(CasinoTuning.HIRING_COST, "hiring")
 	var assignment := -1
 	if role == "Dealer":
 		if not get_table(target).is_empty() and crew(target).size() < required_crew(get_table(target)):
@@ -379,22 +420,26 @@ func can_place(at: Vector2, rotated: bool, ignore_id: int = -1, kind: String = "
 			return false
 	return true
 
-func place(at: Vector2, rotated: bool, kind: String = "craps") -> int:
+func place(at: Vector2, rotated: bool, kind: String = "craps", profile_id: String = "starter") -> int:
 	if not Games.COSTS.has(kind): return -1
+	if kind == "slots" and not slot_unlocked(profile_id):
+		log_event("Develop the casino and guest business to unlock this machine.")
+		return -1
 	if not unlocked(kind):
 		log_event("Complete the casino development requirements to unlock this game.")
 		return -1
-	var cost := int(Games.COSTS[kind])
+	var cost := purchase_cost(kind, profile_id)
 	if not can_place(at, rotated, -1, kind) or cash < cost:
 		log_event("Placement needs $%d, clear space and an aisle." % cost)
 		return -1
-	cash -= cost
-	overhead += cost
-	var table := new_table(at, rotated, kind)
+	spend_nonpayroll(cost, "construction")
+	var table := new_table(at, rotated, kind, profile_id)
 	tables.append(table)
 	refresh_progression()
 	reroute()
-	log_event("%s %d built. Required dealers: %d." % [Games.NAMES[kind], table.id, required_crew(table)])
+	emit_financial_event(-cost, "construction", table)
+	log_event("%s #%d built for $%d. Required dealers: %d." % [asset_name(table), table.id, cost, required_crew(table)])
+	if kind == "slots" and cash < float(slot_profile(table).reserve): log_event("RESERVE - %s suggests $%d operating reserve; treasury $%d." % [asset_name(table), slot_profile(table).reserve, cash])
 	return int(table.id)
 
 func busy(table: Dictionary) -> bool:
@@ -408,9 +453,10 @@ func sell(id: int) -> bool:
 	for employee in crew(id):
 		employee.table = -1
 	tables.erase(table)
+	incidents = incidents.filter(func(incident): return int(incident.table) != id)
 	var resale := (float(slot_profile(table).cost) if table_kind(table) == "slots" else float(Games.COSTS[table_kind(table)])) / 2
-	cash += resale
-	overhead -= resale
+	spend_nonpayroll(-resale, "sales")
+	emit_financial_event(resale, "sale", table, -1, {"asset_wagers": table.wagers, "asset_payouts": table.payouts, "asset_repair_expense": table.repair_expense, "asset_operating_expense": table.operating_expense, "asset_payroll_expense": table.payroll_expense, "asset_visitor_gaming_win": table.visitor_gaming_win, "asset_spins": table.rolls, "asset_available_minutes": table.available_minutes, "asset_occupied_minutes": table.occupied_minutes, "asset_downtime_minutes": table.downtime_minutes, "slot_profile": table.slot_profile})
 	refresh_progression()
 	log_event("Sold for $%d. Dealers are now on standby." % resale)
 	return true
@@ -494,7 +540,8 @@ func choose_table(guest: Dictionary, allow_watch: bool = true) -> void:
 		if not operating(table) or (reserved >= guest_capacity(table) and not allow_watch) or guest.wallet < table.minimum or float(guest.wager_limit) < float(table.minimum):
 			continue
 		var value := (135.0 if guest.get("preference", "craps") == table_kind(table) else 100.0) - Vector2(guest.x, guest.y).distance_to(bounds(table).get_center()) * 0.08 + reserved * 2.0 - (100.0 if reserved >= guest_capacity(table) else 0.0)
-		if table_kind(table) == "slots": value *= float(slot_profile(table).appeal)
+		if table_kind(table) == "slots": value = value * float(slot_profile(table).appeal) + float(slot_profile(table).prestige) * 2.0
+		if reserved >= guest_capacity(table): value -= 10000.0 # An attractive occupied machine must not beat a usable free seat.
 		if value > score:
 			score = value
 			best = table
@@ -578,6 +625,26 @@ func reroute() -> void:
 		if guest.state in ["Arriving", "Walking", "Browsing", "To cage", "Leaving"]:
 			route(guest)
 
+func move_entity(entity: Dictionary, delta: float) -> Vector2:
+	# Consume distance across waypoints, not one waypoint per frame/substep.
+	# This avoids losing travel time at 0.1-second developer substeps.
+	var at := Vector2(entity.x, entity.y)
+	var target := Vector2(entity.tx, entity.ty)
+	var distance := maxf(0, delta) * CasinoTuning.ENTITY_WALK_SPEED
+	while distance > 0:
+		var waypoint := Vector2(entity.path[0][0], entity.path[0][1]) if not entity.path.is_empty() else target
+		var needed := at.distance_to(waypoint)
+		if needed > distance:
+			at = at.move_toward(waypoint, distance)
+			break
+		at = waypoint
+		distance -= needed
+		if entity.path.is_empty(): break
+		entity.path.pop_front()
+	entity.x = at.x
+	entity.y = at.y
+	return at
+
 func move_guests(delta: float) -> void:
 	move_service(delta)
 	for effect in cashout_effects: effect.life -= delta
@@ -603,18 +670,14 @@ func move_guests(delta: float) -> void:
 			continue
 		if guest.state not in ["Arriving", "Walking", "Browsing", "To cage", "Leaving"]:
 			continue
+		# Hold at the exit until the next economic tick removes this guest.
+		# Rerouting here can pull them back to the rounded navigation-grid point.
+		if guest.state == "Leaving" and Vector2(guest.x, guest.y).distance_to(CasinoTuning.ENTRY) < 3:
+			continue
 		if not guest.has("path"):
 			route(guest)
-		var pos := Vector2(guest.x, guest.y)
 		var target := Vector2(guest.tx, guest.ty)
-		var waypoint := target
-		if not guest.path.is_empty():
-			waypoint = Vector2(guest.path[0][0], guest.path[0][1])
-		var moved := pos.move_toward(waypoint, delta * 64)
-		guest.x = moved.x
-		guest.y = moved.y
-		if moved.distance_to(waypoint) < 1 and not guest.path.is_empty():
-			guest.path.pop_front()
+		var moved := move_entity(guest, delta)
 		if moved.distance_to(target) < 2:
 			guest.erase("path")
 			if guest.state == "To cage":
@@ -665,13 +728,8 @@ func move_service(delta: float) -> void:
 				employee.ty = target[0].y
 				route(employee)
 		if not employee.has("path"): route(employee)
-		var pos := Vector2(employee.x, employee.y)
 		var goal := Vector2(employee.tx, employee.ty)
-		var waypoint := goal if employee.path.is_empty() else Vector2(employee.path[0][0], employee.path[0][1])
-		var moved := pos.move_toward(waypoint, delta * 64)
-		employee.x = moved.x
-		employee.y = moved.y
-		if moved.distance_to(waypoint) < 1 and not employee.path.is_empty(): employee.path.pop_front()
+		var moved := move_entity(employee, delta)
 		if moved.distance_to(goal) < 2:
 			employee.erase("path")
 			if employee.service_state == "To bar":
@@ -691,16 +749,27 @@ func step() -> void:
 	var service_count := staff.filter(func(s): return s.role == "Service").size()
 	var wages := 0.0
 	for employee in staff:
-		wages += (CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE) / 60.0
+		var wage := (CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE) / 60.0
+		wages += wage
+		expense_totals["dealer_payroll" if employee.role == "Dealer" else "service_payroll"] += wage
+		payroll_by_state[payroll_state(employee)] += wage
+		if employee.role == "Dealer":
+			var assigned := get_table(int(employee.table))
+			if not assigned.is_empty(): assigned.payroll_expense += wage
 		var active: bool = not guests.is_empty() if employee.role == "Service" else opened and int(employee.table) > 0
 		employee.energy = clampf(employee.energy + (-0.13 if active else 0.5), 15, 100)
 	payroll += wages
 	cash -= wages
 	var costs := 0.0
 	for table in tables:
-		costs += (float(slot_profile(table).overhead) if table_kind(table) == "slots" else CasinoTuning.TABLE_OVERHEAD) / 60.0
-	overhead += costs
-	cash -= costs
+		var asset_cost := (float(slot_profile(table).overhead) if table_kind(table) == "slots" else CasinoTuning.TABLE_OVERHEAD) / 60.0
+		costs += asset_cost
+		table.operating_expense += asset_cost
+		if opened and table.broken: table.downtime_minutes += 1
+		if operating(table):
+			table.available_minutes += 1
+			if not seated(int(table.id)).is_empty() or joined == int(table.id): table.occupied_minutes += 1
+	spend_nonpayroll(costs, "upkeep")
 	arrival_step()
 	for guest in guests:
 		guest.age += 1
@@ -730,7 +799,7 @@ func step() -> void:
 		if table_kind(table) != "craps":
 			if joined == int(table.id): continue
 			table.timer += 1.0
-			if table.timer >= (int(slot_profile(table).round_minutes) if table_kind(table) == "slots" else CasinoTuning.TABLE_GAME_ROUND_MINUTES):
+			if table.timer >= (int(slot_profile(table).round_minutes) if table_kind(table) == "slots" else int(CasinoTuning.TABLE_GAME_ROUND_MINUTES[table_kind(table)])):
 				table.timer = 0.0
 				if opened: npc_games(table)
 			continue
@@ -742,9 +811,22 @@ func step() -> void:
 		for employee in crew(int(table.id)):
 			energy += employee.energy / 2
 		var interval := roll_interval(table, energy)
-		if table.timer >= interval and (not seated(int(table.id)).is_empty() or CrapsRules.exposure(table.owner) > 0 or joined == int(table.id)):
-			table.timer = 0
+		var activity: bool = not seated(int(table.id)).is_empty() or CrapsRules.exposure(table.owner) > 0 or joined == int(table.id)
+		if joined == int(table.id):
+			# Preserve the existing visitor/manual rail timing and shooter controls.
+			if table.timer >= interval and activity:
+				table.timer = 0
+				roll(int(table.id))
+			continue
+		if not activity:
+			table.timer = 0 # Empty tables cannot bank future gambling opportunities.
+			continue
+		# Carry fractional NPC dice time. Never replay an old manual/empty backlog.
+		table.timer = minf(float(table.timer), interval + 1.0)
+		while table.timer >= interval and (not seated(int(table.id)).is_empty() or CrapsRules.exposure(table.owner) > 0):
+			var remaining := float(table.timer) - interval
 			roll(int(table.id))
+			table.timer = remaining
 	for table in tables:
 		if not operating(table) or game_pending(table): continue
 		table.service_minutes += 1
@@ -753,8 +835,11 @@ func step() -> void:
 		if table.service_minutes >= grace and int(table.service_minutes) % CasinoTuning.REPAIR_CHECK_MINUTES == 0 and incidents.size() < 3:
 			if rng.randf() < repair_chance:
 				table.broken = true
-				incidents.append({"type": "repair", "table": int(table.id), "title": "Table %d · worn rail" % table.id, "detail": "Wear has halted play. Repair the rail for $120."})
-				log_event("Table %d halted: a worn rail needs repair." % table.id)
+				table.breakdowns += 1
+				incidents.append({"type": "repair", "table": int(table.id), "title": "%s #%d - repair needed" % [asset_name(table), table.id], "detail": "Wear has halted play. Repair costs $%d." % repair_cost(table)})
+				log_event("%s #%d halted: repair $%d." % [asset_name(table), table.id, repair_cost(table)])
+				if table_kind(table) == "slots":
+					for guest in seated(int(table.id)): leave(guest, "This machine needs repair.")
 	if opened and unlocked("service") and not guests.is_empty() and elapsed % 70 == 0 and service_count == 0 and incidents.size() < 3:
 		incidents.append({"type": "service", "table": -1, "title": "Drink service complaint", "detail": "No service staff. A $60 comp buys goodwill; hire service for lasting relief."})
 		log_event("Guests are asking for drinks. Hire service staff or offer a comp.")
@@ -959,7 +1044,7 @@ func shoot_player(id: int, forced: Array = []) -> bool:
 	return true
 
 func roll_interval(table: Dictionary, energy: float = 100.0) -> float:
-	return (CasinoTuning.VISITOR_ROLL_SECONDS if joined == int(table.id) else CasinoTuning.ROLL_SECONDS) + (100 - energy) * 0.04
+	return (CasinoTuning.VISITOR_ROLL_SECONDS + (100 - energy) * CasinoTuning.VISITOR_ROLL_FATIGUE) if joined == int(table.id) else (CasinoTuning.ROLL_SECONDS + (100 - energy) * CasinoTuning.NPC_ROLL_FATIGUE)
 
 func roll(id: int, forced: Array = []) -> void:
 	var table := get_table(id)
@@ -1022,9 +1107,8 @@ func resolve_incident(index: int, pay: bool) -> void:
 	if index < 0 or index >= incidents.size():
 		return
 	var incident: Dictionary = incidents[index]
-	var cost := 120.0 if incident.type == "repair" else 60.0
 	var affected := get_table(int(incident.table))
-	if incident.type == "repair" and not affected.is_empty() and table_kind(affected) == "slots": cost = float(slot_profile(affected).repair_cost)
+	var cost := repair_cost(affected) if incident.type == "repair" and not affected.is_empty() else 60.0
 	if pay and cash < cost:
 		log_event("Not enough casino cash to resolve this incident.")
 		return
@@ -1032,13 +1116,15 @@ func resolve_incident(index: int, pay: bool) -> void:
 		log_event("Table stays halted. Repair it when cash is available.")
 		return
 	if pay:
-		cash -= cost
-		overhead += cost
+		spend_nonpayroll(cost, "repairs" if incident.type == "repair" else "comps")
 		if incident.type == "repair":
 			var table := get_table(int(incident.table))
 			if not table.is_empty():
 				table.broken = false
 				table.service_minutes = 0
+				table.repair_expense += cost
+				table.repairs += 1
+				emit_financial_event(-cost, "repair", table)
 		else:
 			reputation = minf(100, reputation + 2)
 			for guest in guests:
@@ -1060,6 +1146,53 @@ func live_stakes() -> float:
 func gaming_profit() -> float:
 	return revenue - payouts - live_stakes()
 
+func spend_nonpayroll(amount: float, category: String) -> void:
+	cash -= amount
+	overhead += amount
+	expense_totals[category] += amount
+
+func payroll_state(employee: Dictionary) -> String:
+	if employee.role == "Service":
+		return "working" if opened and not guests.is_empty() else "idle" if opened else "unavailable"
+	var table := get_table(int(employee.table))
+	if table.is_empty(): return "standby"
+	if not operating(table): return "unavailable"
+	return "working" if not seated(int(table.id)).is_empty() or joined == int(table.id) else "idle"
+
+func payroll_rate() -> float:
+	var amount := 0.0
+	for employee in staff: amount += CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE
+	return amount
+
+func recurring_costs() -> float:
+	return payroll + float(expense_totals.upkeep) + float(expense_totals.repairs) + float(expense_totals.comps)
+
+func net_capital_spending() -> float:
+	return float(expense_totals.construction) + float(expense_totals.sales)
+
+func owner_pending_stakes() -> float:
+	var pending := 0.0
+	for table in tables:
+		pending += CrapsRules.exposure(table.owner)
+		for amount in table.roulette_bets.values(): pending += float(amount)
+		if game_pending(table): pending += float(table.round.get("staked", 0))
+	return pending
+
+func visitor_house_result() -> float:
+	return -visitor_net - owner_pending_stakes()
+
+func guest_gaming_profit() -> float:
+	return gaming_profit() - visitor_house_result()
+
+func operating_profit() -> float:
+	return guest_gaming_profit() - recurring_costs()
+
+func asset_operating_profit(table: Dictionary) -> float:
+	var pending := game_liability(table) + CrapsRules.exposure(table.owner)
+	for guest in guests:
+		if int(guest.table) == int(table.id): pending += CrapsRules.exposure(guest.bets)
+	return float(table.wagers) - float(table.payouts) - pending - float(table.visitor_gaming_win) - float(table.operating_expense) - float(table.repair_expense) - float(table.payroll_expense)
+
 func operating_costs() -> float:
 	return payroll + overhead
 
@@ -1075,12 +1208,21 @@ func satisfaction() -> float:
 	return total / guests.size()
 
 func snapshot() -> Dictionary:
-	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "expanded": expanded, "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "wallet": wallet, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
+	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "expanded": expanded, "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "slot_access": slot_access.duplicate(), "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "wallet": wallet, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
 
 func restore(data: Dictionary) -> bool:
 	if not valid_number(data.get("version")) or data.version != CasinoTuning.SAVE_VERSION:
 		return false
 	data = data.duplicate(true)
+	if not data.get("slot_access") is Array or "starter" not in data.slot_access: return false
+	for id in data.slot_access:
+		if not id is String or not CasinoTuning.SLOT_PROFILES.has(id): return false
+	for field in ["expense_totals", "payroll_by_state"]:
+		if not data.get(field) is Dictionary: return false
+		var expected: Dictionary = expense_totals if field == "expense_totals" else payroll_by_state
+		for key in expected:
+			if not data[field].has(key) or not valid_number(data[field][key]): return false
+			if key != "sales" and float(data[field][key]) < 0: return false
 	# Validate the current schema before applying any state.
 	for key in ["difficulty", "starting_games", "casino_rating", "guest_rounds", "guest_revenue", "guest_handle", "guests_served", "blackjack_unlocked", "ever_opened", "expanded", "vip_enabled", "high_limit_enabled", "arrival_in", "cash", "wallet", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation", "minute", "day", "elapsed", "opened", "tables", "guests", "staff", "alerts", "incidents", "next_id", "joined", "player", "rng_state"]:
 		if not data.has(key): return false
@@ -1121,12 +1263,15 @@ func restore(data: Dictionary) -> bool:
 		var roulette_options := Games.roulette_bets()
 		for name in table.roulette_bets:
 			if not roulette_options.has(name) or not valid_number(table.roulette_bets[name]) or float(table.roulette_bets[name]) < 0: return false
-		for key in ["id", "x", "y", "rotated", "point", "dice", "timer", "wagers", "payouts", "broken", "rolls", "minimum", "owner", "result", "shooter", "shooter_seat", "hand_rolls", "owner_queued", "betting_hold", "owner_working", "history", "service_minutes"]:
+		for key in ["id", "x", "y", "rotated", "point", "dice", "timer", "wagers", "payouts", "broken", "rolls", "minimum", "owner", "result", "shooter", "shooter_seat", "hand_rolls", "owner_queued", "betting_hold", "owner_working", "history", "service_minutes", "available_minutes", "occupied_minutes", "downtime_minutes", "operating_expense", "repair_expense", "payroll_expense", "visitor_gaming_win", "repairs", "breakdowns"]:
 			if not table.has(key):
 				return false
-		for key in ["id", "x", "y", "point", "timer", "wagers", "payouts", "rolls", "minimum", "shooter", "shooter_seat", "hand_rolls", "service_minutes"]:
+		for key in ["id", "x", "y", "point", "timer", "wagers", "payouts", "rolls", "minimum", "shooter", "shooter_seat", "hand_rolls", "service_minutes", "available_minutes", "occupied_minutes", "downtime_minutes", "operating_expense", "repair_expense", "payroll_expense", "visitor_gaming_win", "repairs", "breakdowns"]:
 			if not valid_number(table[key]):
 				return false
+		for key in ["available_minutes", "occupied_minutes", "downtime_minutes", "operating_expense", "repair_expense", "payroll_expense", "repairs", "breakdowns"]:
+			if float(table[key]) < 0: return false
+		if float(table.occupied_minutes) > float(table.available_minutes): return false
 		if int(table.id) in ids or int(table.id) < 1 or int(table.point) not in [0, 4, 5, 6, 8, 9, 10]:
 			return false
 		ids.append(int(table.id))
@@ -1210,6 +1355,9 @@ func restore(data: Dictionary) -> bool:
 		set(key, float(data[key]))
 	for key in ["minute", "day", "elapsed", "next_id", "joined"]:
 		set(key, int(data[key]))
+	expense_totals = data.expense_totals.duplicate()
+	payroll_by_state = data.payroll_by_state.duplicate()
+	slot_access = data.slot_access.duplicate()
 	difficulty = str(data.difficulty)
 	starting_games = data.starting_games.duplicate()
 	casino_rating = float(data.casino_rating)

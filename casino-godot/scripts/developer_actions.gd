@@ -30,7 +30,7 @@ func spawn_guests(count: int) -> void:
 
 func force_unlock(feature: String) -> void:
 	if not _begin(): return
-	for milestone in CasinoTuning.MILESTONES:
+	for milestone in sim.progression_targets():
 		if milestone.id == feature and feature != "slots":
 			if feature not in sim.debug_forced_unlocks: sim.debug_forced_unlocks.append(feature)
 			_report("Forced access: %s. Requirements unchanged; no equipment purchased." % str(milestone.name).replace("’", "'"))
@@ -38,9 +38,15 @@ func force_unlock(feature: String) -> void:
 
 func advance_next_unlock() -> void:
 	if not _begin(): return
-	for milestone in CasinoTuning.MILESTONES:
+	for milestone in sim.progression_targets():
 		var feature := str(milestone.id)
 		if sim.unlocked(feature): continue
+		if feature.begins_with("slot:"):
+			sim.guest_handle = maxf(sim.guest_handle, float(milestone.handle))
+			if not _prepare_rating(float(milestone.rating)): return
+			sim.refresh_progression()
+			_report("Prepared prerequisites for %s. No machine purchased automatically." % milestone.name)
+			return
 		# Later milestones require the genuine Blackjack accomplishment too.
 		if not sim.blackjack_unlocked and not _prepare_blackjack(): return
 		if feature != "blackjack" and not _prepare_rating(float(milestone.rating)): return
@@ -63,15 +69,15 @@ func _fund(amount: float) -> void:
 	# Fund only a shortfall; normal purchase paths still record their actual costs.
 	if sim.cash < amount: sim.cash = amount
 
-func _build_game(kind: String) -> bool:
+func _build_game(kind: String, profile_id: String = "starter") -> bool:
 	var area := sim.build_area()
 	for rotated in [false, true]:
 		for y in range(int(area.position.y), int(area.end.y), 10):
 			for x in range(int(area.position.x), int(area.end.x), 10):
 				var at := Vector2(x, y)
 				if not sim.can_place(at, rotated, -1, kind): continue
-				_fund(sim.feature_cost(kind))
-				var id := sim.place(at, rotated, kind)
+				_fund(sim.purchase_cost(kind, profile_id))
+				var id := sim.place(at, rotated, kind, profile_id)
 				if id < 0: return false
 				var table := sim.get_table(id)
 				while sim.crew(id).size() < sim.required_crew(table):
@@ -82,7 +88,8 @@ func _build_game(kind: String) -> bool:
 
 func _prepare_blackjack() -> bool:
 	var goal: Dictionary = CasinoTuning.BLACKJACK_REQUIREMENTS
-	# Repair existing slots before adding real, legally placed starter capacity.
+	if not sim.slot_unlocked("standard") and not _prepare_rating(6.0): return false
+	# Repair existing slots before adding legally placed developed capacity.
 	for index in range(sim.incidents.size() - 1, -1, -1):
 		var incident: Dictionary = sim.incidents[index]
 		var table := sim.get_table(int(incident.table))
@@ -91,10 +98,10 @@ func _prepare_blackjack() -> bool:
 			sim.resolve_incident(index, true)
 	while sim.gaming_development(true) < float(goal.development) or sim.usable_gaming_capacity() < int(goal.capacity):
 		var before := sim.gaming_development(true)
-		if not _build_game("slots"):
+		if not _build_developing_slot():
 			_report("No legal room for required slots. Move equipment, then retry Advance.")
 			return false
-		if sim.gaming_development(true) <= before and sim.usable_gaming_capacity() < int(goal.capacity):
+		if sim.gaming_development(true) <= before and sim.usable_gaming_capacity() >= int(goal.capacity):
 			_report("Current slot profiles cannot satisfy the development requirement.")
 			return false
 	sim.guest_handle = maxf(sim.guest_handle, float(goal.handle))
@@ -106,17 +113,23 @@ func _prepare_blackjack() -> bool:
 	sim.refresh_progression()
 	return sim.blackjack_unlocked
 
+func _build_developing_slot() -> bool:
+	var ids: Array = CasinoTuning.SLOT_PROFILES.keys()
+	ids.reverse()
+	for id in ids:
+		if not sim.slot_unlocked(id): continue
+		var value := 0.0
+		for table in sim.tables:
+			if sim.table_kind(table) == "slots" and table.slot_profile == id: value += float(sim.slot_profile(table).development)
+		if value < float(CasinoTuning.SLOT_PROFILES[id].development_cap) and _build_game("slots", id): return true
+	return false
+
 func _add_property_development() -> bool:
-	# Use only owned-state changes for systems that actually exist and are accessible.
+	if sim.gaming_development() < CasinoTuning.SLOT_DEVELOPMENT_CAP and _build_developing_slot(): return true
 	for milestone in CasinoTuning.MILESTONES:
 		var feature := str(milestone.id)
-		if not sim.unlocked(feature): continue
-		if feature == "slots":
-			var slots := 0.0
-			for table in sim.tables:
-				if sim.table_kind(table) == "slots": slots += float(sim.slot_profile(table).development)
-			if slots < CasinoTuning.SLOT_DEVELOPMENT_CAP and _build_game(feature): return true
-		elif not sim.feature_owned(feature):
+		if feature == "slots" or not sim.unlocked(feature): continue
+		if not sim.feature_owned(feature):
 			if CasinoSimulation.Games.COSTS.has(feature):
 				if _build_game(feature): return true
 			elif feature == "service":

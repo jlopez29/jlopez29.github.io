@@ -73,8 +73,7 @@ actor, importance, elapsed minute, position, round, settled stake, returned cred
 and cumulative asset wager/payout snapshots. Craps aggregates guest results per
 roll while preserving participant IDs, settled stakes, credits and net amounts.
 Visitor results remain separate. The category string leaves room for later bar,
-comp, payroll, repair, construction, hiring, sale and service events; this phase
-only emits gaming settlements. Audio or milestone listeners can subscribe to the
+comp, payroll, repair, construction, hiring, sale and service events; Phase 03 also emits actual construction, repair and sale cash changes. Audio or milestone listeners can subscribe to the
 same signal without reading UI or inferring treasury movement.
 
 House net is settled stake minus total returned credit, including returned stake.
@@ -96,3 +95,22 @@ in a tooltip. Cash motion includes wagers, payouts, liabilities and expenses, so
 it deliberately differs from completed gambling net events. Game views and the
 floor report show compact recent settled house activity from the same events.
 New Casino/Load reset transient visuals; no save schema changes or migrations.
+
+## Phase 03 slot profiles
+
+`tuning.gd` owns five fixed machine profiles. `slot_profile()` derives/caches exact
+RTP, edge, return variance and top-award probability from configured reel weights
+and total-return payouts. There is no arbitrary RTP slider. Simulation placement,
+limits, guest wagers, repair cost and resale use the specific asset profile.
+Profile access uses earned Rating plus settled guest handle, retained in saves;
+per-profile development caps prevent cheap-unit spam, while an overall 30-point
+slot cap permits a slot-only casino to reach the highest development Rating.
+
+Every asset persists available/occupied/open-broken minutes, operating/repair
+expense and repair/breakdown counts alongside wagers/payouts/rounds. These are
+bounded scalar accumulators, not transaction-ledger UI. Gaming events retain
+profile and asset IDs and carry expense/utilization snapshots; sale carries final
+counters for subscribers before the asset disappears. Recent events remain
+transient. Current schema is 6; old disposable saves are rejected without migration.
+Dev Advance and Force Unlock recognize tier targets and use real purchase paths
+when preparing development, with the existing debug-build guards.

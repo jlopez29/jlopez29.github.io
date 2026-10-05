@@ -49,7 +49,7 @@ func _ready() -> void:
 	_add_button(content, "+$10,000", func(): actions.add_cash(10000))
 	_add_button(content, "Advance to Next Unlock", actions.advance_next_unlock)
 	var choice := OptionButton.new()
-	for milestone in CasinoTuning.MILESTONES:
+	for milestone in actions.sim.progression_targets():
 		if milestone.id == "slots": continue
 		choice.add_item(str(milestone.name).replace("’", "'"))
 		choice.set_item_metadata(choice.item_count - 1, milestone.id)

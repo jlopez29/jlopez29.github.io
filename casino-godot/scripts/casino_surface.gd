@@ -2,6 +2,7 @@ extends "res://scripts/game_art.gd"
 signal command(action: String)
 signal chip_added(spot: String, amount: float)
 var table_guests: Array = []
+var machine_profile: Dictionary = {}
 var wallet := 0.0
 var wager := 10.0
 var side_bet := false
@@ -114,15 +115,15 @@ func _draw() -> void:
 func draw_cabinet() -> void:
 	panel(Rect2(7,7,746,601),Color("8c6735"),30)
 	panel(Rect2(19,18,722,577),Color("201c21"),25)
-	panel(Rect2(31,30,698,74),Color("351e2b"),14)
-	centered(Vector2(380,67),"N E O N   R E E L S",32)
-	centered(Vector2(380,91),"CLASSIC THREE REEL • SINGLE PAYLINE",12,Color("ded3af"))
+	panel(Rect2(31,30,698,74),Color(str(machine_profile.color)),14)
+	centered(Vector2(380,67),str(machine_profile.name).to_upper(),28)
+	centered(Vector2(380,91),("VIDEO REELS | SINGLE PAYLINE" if machine_profile.screen == "video" else "CLASSIC THREE REEL | SINGLE PAYLINE"),12,Color("ded3af"))
 	for i in range(18):
 		draw_circle(Vector2(50+i*39,18),3,Color("ffeab1") if int(clock*4+i)%3 else Color("9d713f"))
 	for i in range(3):
 		var x := 47.0+i*224
 		panel(Rect2(x,117,218,280),Color("af9967"),12)
-		panel(Rect2(x+7,124,204,266),Color("ecebdc"),8)
+		panel(Rect2(x+7,124,204,266),Color("c5e1e9") if machine_profile.screen == "video" else Color("ecebdc"),8)
 		var result := int(round.get("reels",[4,0,3])[i])
 		var moving := spinning > i*0.22
 		var step := fmod(clock*(9+i),1.0) if moving else 0.0
@@ -142,8 +143,8 @@ func draw_cabinet() -> void:
 		centered(Vector2(x+105,449),["CREDITS ($)","BET ($)","WIN PAID ($)"][i],14)
 		panel(Rect2(x,460,210,59),Color("090e12"),6)
 		centered(Vector2(x+105,499),"%.2f" % values[i],29,Color("ff8d79"))
-	centered(Vector2(380,552),"SELECT YOUR STAKE • SPIN THE REELS",16)
-	centered(Vector2(380,581),"3 matching symbols win • cherries can pay on their own",13,Color("c7bfae"))
+	centered(Vector2(380,552),"SELECT YOUR STAKE | SPIN THE REELS",16)
+	centered(Vector2(380,581),"3 matching symbols win | cherries can pay on their own",13,Color("c7bfae"))
 
 func draw_table_surface() -> void:
 	if kind == "blackjack":

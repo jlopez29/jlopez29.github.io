@@ -129,7 +129,7 @@ func render(table: Dictionary) -> void:
 		art.table_guests = sim.seated(int(table.id)).map(func(guest): return {"id": guest.id, "name": guest.name, "seat": guest.seat})
 	var pending := sim.game_pending(table)
 	var locked: bool = paused or art.spinning > 0 or not sim.ready_for_play(table)
-	label("%s  |  WALLET $%.2f" % [Games.NAMES[kind], sim.wallet], controls, 23)
+	label("%s  |  WALLET $%.2f" % [sim.asset_name(table), sim.wallet], controls, 23)
 	label("PAUSED - use Space or the time control below." if paused else ("Finish this hand before leaving." if pending else "Choose a wager. Your casino pays every win."))
 	felt.visible = kind == "roulette"
 	felt.bets = table.roulette_bets
@@ -152,6 +152,7 @@ func render(table: Dictionary) -> void:
 	art.locked = locked
 	art.pending = pending
 	art.minimum = table.minimum
+	art.machine_profile = sim.slot_profile(table) if kind == "slots" else {}
 	art.options = {}
 	if kind == "slots":
 		art.options = {"Bet": {"text": "BET / $%d" % bet, "disabled": false}, "Spin": {"text": "SPIN REELS", "disabled": sim.wallet < bet}, "Max": {"text": "PLAY MAX / $%d" % sim.maximum_wager(table), "disabled": sim.wallet < sim.maximum_wager(table)}}
