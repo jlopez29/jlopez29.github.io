@@ -39,13 +39,17 @@ async def main():
   # Panel layout: left = viewport width - 370 - 12, content x = left + 12.
   # Button row lies below title and feedback; screenshot retained for inspection.
   await page.keyboard.press('F10');await page.wait_for_timeout(500)
+  await click_ui(page,'Pause')
+  await page.wait_for_timeout(1500) # Observe a stable, paused authoritative snapshot.
   await click_ui(page,'Save')
   saved=await page.evaluate('window.neonHouseSnapshot')
-  await page.wait_for_timeout(1500)
+  await click_ui(page,'Play')
+  await page.wait_for_function('(at)=>window.neonHouseSnapshot.elapsed>at+3',arg=saved['elapsed'],timeout=30000)
   await click_ui(page,'Load')
+  await click_ui(page,'Pause')
+  await page.wait_for_timeout(1500)
   loaded=await page.evaluate('window.neonHouseSnapshot')
   check(loaded['elapsed']<=saved['elapsed']+3 and loaded['version']==saved['version'],'Browser current save/load')
-  await click_ui(page,'Pause')
   for action in ['Finance','Casino development','Staff & assignments','Incidents & decisions','+ Build games...']:
    await click_ui(page,action)
    check(True,'Desktop management navigation: '+action)

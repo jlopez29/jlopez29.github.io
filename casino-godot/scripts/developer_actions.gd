@@ -162,3 +162,21 @@ func _prepare_rating(target: float) -> bool:
 	sim.guest_rounds = maxi(sim.guest_rounds, sim.guests_served)
 	sim.refresh_progression()
 	return sim.casino_rating >= target
+
+func sample_event(type: String) -> void:
+	if not _begin(): return
+	var spawned: bool = sim.optional_events.spawn(sim, type, true)
+	_report("Sample event queued: " + type if spawned else "Sample unavailable: open casino and prepare a real eligible game/context; duplicates/cap are blocked.")
+
+func sample_owner_win() -> void:
+	if not _begin(): return
+	var id: int = sim.owner_account.next_operation
+	if not sim.owner_wager_debit(id, 100):
+		_report("Owner Bankroll needs $100 for the sample wager.")
+		return
+	sim.owner_wager_settle(id, 200)
+	_report("Simulated owner-event win: $100 stake returned, $100 net profit to casino cash.")
+
+func offer_objective() -> void:
+	if not _begin(): return
+	_report("Offered an eligible optional goal." if sim.optional_objectives.offer(sim, true) else "No eligible goal or slots/cooldowns are full. Run real guest business first.")

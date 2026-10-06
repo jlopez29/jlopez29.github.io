@@ -166,7 +166,7 @@ func settlements() -> void:
 		sim.guests.clear()
 		sim.joined = t.id
 		sim.cash = -10000 # Exposure warnings must never rig outcomes or block credit.
-		var sum_before := sim.cash + sim.wallet
+		var sum_before := sim.cash + sim.owner_bankroll
 		if kind == "craps":
 			sim.bet(t.id, "pass", 25)
 			sim.roll(t.id, [3,4])
@@ -182,7 +182,7 @@ func settlements() -> void:
 			var count := events.size()
 			sim.settle_game(t)
 			check(near(before_duplicate, sim.cash) and count == events.size(), "No duplicate settlement: " + kind)
-		check(near(sum_before, sim.cash+sim.wallet), "Owner/treasury conservation: " + kind)
+		check(near(sum_before, sim.cash+sim.owner_bankroll), "Owner/treasury conservation: " + kind)
 		check(sim.development_cash() <= sim.cash - sim.live_stakes() + 0.001, "Visitor losses cannot inflate readiness: " + kind)
 
 func hospitality_and_departure() -> void:

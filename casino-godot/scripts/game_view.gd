@@ -37,6 +37,9 @@ func _ready() -> void:
 	art = Art.new()
 	stage.add_child(art)
 	art.command.connect(func(action: String):
+		if not sim.owner_play.is_empty():
+			transact(false, action)
+			return
 		match action:
 			"Deal", "Spin": transact(true)
 			"Bet":
@@ -48,6 +51,7 @@ func _ready() -> void:
 			_: transact(false,action)
 	)
 	art.chip_added.connect(func(spot: String, amount: float):
+		if not sim.owner_play.is_empty(): return
 		if spot == "Trips": trips = not trips
 		elif spot != "Play": bet += amount
 		feedback = "Trips matches your Ante; tap again to remove." if spot == "Trips" else ""
@@ -93,24 +97,31 @@ func grid(columns: int) -> GridContainer:
 	return item
 
 func _process(_delta: float) -> void:
-	if not is_visible_in_tree() or sim == null or sim.joined < 0: return
-	var table := sim.get_table(sim.joined)
+	if not is_visible_in_tree() or sim == null or (sim.joined < 0 and sim.owner_play.is_empty()): return
+	var table := current_table()
 	if table.is_empty() or sim.table_kind(table) == "craps": return
-	if current_id != sim.joined:
-		current_id = sim.joined
+	var view_id := sim.joined if sim.owner_play.is_empty() else -int(sim.owner_play.event_id) - 2
+	if current_id != view_id:
+		current_id = view_id
 		player_round = table.round if sim.game_pending(table) else {}
 		bet = table.minimum
 		feedback = ""
 		trips = false
 		art.spinning = 0
 	var seated_guests := sim.seated(int(table.id)).map(func(guest): return {"id": guest.id, "name": guest.name, "seat": guest.seat, "thought": guest.thought})
-	var next: Array = [seated_guests, current_id, sim.wallet, table.round, table.roulette_bets, paused, bet, trips, feedback, show_rules, sim.financial_sequence, art.spinning > 0, int(size.x), table.broken]
+	var next: Array = [sim.owner_play, seated_guests, current_id, sim.owner_bankroll, table.round, table.roulette_bets, paused, bet, trips, feedback, show_rules, sim.financial_sequence, art.spinning > 0, int(size.x), table.broken]
 	if next == signature: return
 	signature = next.duplicate(true)
 	render(table)
 
 func transact(start: bool, action: String = "") -> void:
 	if paused or art.spinning > 0: return
+	if not sim.owner_play.is_empty():
+		var ok_event := sim.owner_event_action(action, rendered_sequence)
+		feedback = "" if ok_event else "Action unavailable or already submitted."
+		if ok_event: art.spinning = 1.4 if sim.owner_play.kind == "slots" else 0.35
+		changed.emit()
+		return
 	var ok := sim.start_game(sim.joined, bet, bet if trips else 0) if start else sim.game_action(sim.joined, action)
 	feedback = "" if ok else "Cannot place that wager. Check your bankroll, minimum and dealer coverage."
 	if ok and start: player_round = sim.get_table(sim.joined).round
@@ -128,9 +139,12 @@ func render(table: Dictionary) -> void:
 	if kind == "blackjack":
 		art.round = table.round if sim.game_pending(table) or player_round == table.round else {}
 		art.table_guests = sim.seated(int(table.id)).map(func(guest): return {"id": guest.id, "name": guest.name, "seat": guest.seat})
+	if not sim.owner_play.is_empty():
+		render_owner_event(table)
+		return
 	var pending := sim.game_pending(table)
 	var locked: bool = paused or art.spinning > 0 or not sim.ready_for_play(table)
-	label("%s  |  WALLET $%.2f" % [sim.asset_name(table), sim.wallet], controls, 23)
+	label("%s  |  OWNER $%.2f" % [sim.asset_name(table), sim.owner_bankroll], controls, 23)
 	var companions := sim.seated(int(table.id))
 	if not companions.is_empty():
 		var speaker: Dictionary = companions[0]
@@ -153,7 +167,7 @@ func render(table: Dictionary) -> void:
 			if not name.is_valid_int(): label("%s: $%.2f" % [name, table.roulette_bets[name]], controls, 13)
 		button("SPIN WHEEL", func(): transact(true), controls, locked or amount <= 0)
 		button("Take down all bets", func(): sim.clear_roulette(sim.joined); changed.emit(), controls, locked or amount <= 0)
-	art.wallet = sim.wallet
+	art.wallet = sim.owner_bankroll
 	art.wager = bet
 	art.side_bet = trips
 	art.locked = locked
@@ -162,13 +176,13 @@ func render(table: Dictionary) -> void:
 	art.machine_profile = sim.slot_profile(table) if kind == "slots" else {}
 	art.options = {}
 	if kind == "slots":
-		art.options = {"Bet": {"text": "BET / $%d" % bet, "disabled": false}, "Spin": {"text": "SPIN REELS", "disabled": sim.wallet < bet}, "Max": {"text": "PLAY MAX / $%d" % sim.maximum_wager(table), "disabled": sim.wallet < sim.maximum_wager(table)}}
+		art.options = {"Bet": {"text": "BET / $%d" % bet, "disabled": false}, "Spin": {"text": "SPIN REELS", "disabled": sim.owner_bankroll < bet}, "Max": {"text": "PLAY MAX / $%d" % sim.maximum_wager(table), "disabled": sim.owner_bankroll < sim.maximum_wager(table)}}
 	elif kind != "roulette":
 		if pending:
-			var actions := Games.actions(table.round, sim.wallet)
+			var actions := Games.actions(table.round, sim.owner_bankroll)
 			for action in actions: art.options[action] = {"text": action + (" | $%.2f" % actions[action] if actions[action] > 0 else ""), "disabled": false}
 		else:
-			art.options = {"Clear": {"text": "RESET BETS", "disabled": false}, "Deal": {"text": "DEAL / $%d" % (bet*(3 if trips else 2) if kind == "holdem" else bet), "disabled": sim.wallet < (bet*(7 if trips else 6) if kind == "holdem" else bet)}}
+			art.options = {"Clear": {"text": "RESET BETS", "disabled": false}, "Deal": {"text": "DEAL / $%d" % (bet*(3 if trips else 2) if kind == "holdem" else bet), "disabled": sim.owner_bankroll < (bet*(7 if trips else 6) if kind == "holdem" else bet)}}
 	art.configure()
 	var visible_round: Dictionary = art.round
 	if art.spinning <= 0 and not visible_round.is_empty(): label(str(visible_round.message), controls, 18)
@@ -206,3 +220,58 @@ func render(table: Dictionary) -> void:
 			"holdem": label("Ante + equal Blind. Preflop raise 3x/4x or check; flop raise 2x or check; river raise 1x or fold. Dealer qualifies with a pair. Blind win pays straight 1:1, flush 3:2, full house 3:1, quads 10:1, straight flush 50:1, royal 500:1; weaker wins push Blind. Trips pays independently, even after folding: trips 3, straight 4, flush 7, full house 8, quads 30, straight flush 40, royal 50 to 1.", controls, 13)
 	button("Resume time" if paused else "Pause time", func(): pause_requested.emit(), controls, art.spinning > 0)
 	button("Leave / walk floor", func(): leave_requested.emit(), controls, pending or art.spinning > 0)
+
+var rendered_sequence := -1
+
+func current_table() -> Dictionary:
+	return sim.get_table(sim.joined) if sim.owner_play.is_empty() else sim.owner_event_table()
+
+func render_owner_event(table: Dictionary) -> void:
+	var session: Dictionary = sim.owner_play
+	var definition: Dictionary = sim.optional_events.DEFINITIONS[session.type]
+	rendered_sequence = int(session.sequence)
+	stage.vertical = true
+	felt.hide()
+	art.kind = str(session.kind)
+	art.round = session.round
+	art.table_guests = []
+	art.wallet = sim.owner_bankroll
+	art.wager = float(session.base)
+	art.side_bet = false
+	art.pending = session.status == "playing" and session.kind == "blackjack"
+	art.minimum = float(session.base)
+	art.machine_profile = sim.slot_profile(table) if session.kind == "slots" else {}
+	art.locked = paused or art.spinning > 0 or session.status == "done"
+	art.options = {}
+	if session.status == "playing":
+		if session.kind == "slots":
+			art.options.Spin = {"text": "SPIN %d / %d" % [int(session.revealed) + 1, session.rounds], "disabled": false}
+		else:
+			for action in Games.actions(session.round, sim.owner_bankroll):
+				var cost: float = Games.actions(session.round, sim.owner_bankroll)[action]
+				art.options[action] = {"text": action + (" / $%.2f" % cost if cost > 0 else ""), "disabled": false}
+	art.configure()
+	label(str(definition.title), controls, 23)
+	label("Owner Bankroll")
+	label(FinancialText.cash(sim.owner_bankroll), controls, 20)
+	controls.get_child(controls.get_child_count() - 1).autowrap_mode = TextServer.AUTOWRAP_OFF
+	label("Objective: %d spins (%d shown)" % [session.rounds, session.revealed] if session.kind == "slots" else "Objective: play 1 hand (all split hands included)")
+	label("Personal stake committed")
+	label(FinancialText.cash(float(session.staked)), controls, 18)
+	controls.get_child(controls.get_child_count() - 1).autowrap_mode = TextServer.AUTOWRAP_OFF
+	label("Losses spend personal funds. Only event NET winnings enter Casino Cash. Normal odds apply.", controls, 14)
+	if not session.round.is_empty() and art.spinning <= 0: label(str(session.round.message), controls, 16)
+	if session.status == "done":
+		label("Outcome: " + str(session.result.outcome), controls, 20)
+		label("Owner Bankroll change")
+		label(FinancialText.house_result(float(session.result.bankroll_change)), controls, 20)
+		controls.get_child(controls.get_child_count() - 1).autowrap_mode = TextServer.AUTOWRAP_OFF
+		label("Casino profit change")
+		label(FinancialText.house_result(float(session.result.casino_profit)), controls, 20)
+		controls.get_child(controls.get_child_count() - 1).autowrap_mode = TextServer.AUTOWRAP_OFF
+		button("Return to casino management", func(): leave_requested.emit(), controls, art.spinning > 0)
+	else:
+		label("Leaving settles the committed spins or stands your remaining blackjack hands; it does not refund a loss.", controls, 14)
+		button("Resolve and return to management", func(): leave_requested.emit(), controls, art.spinning > 0)
+		button("Resume time" if paused else "Pause time", func(): pause_requested.emit(), controls, art.spinning > 0)
+	if feedback != "": label(feedback)

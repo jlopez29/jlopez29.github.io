@@ -49,7 +49,7 @@ func run() -> void:
 			check(sim.game_action(id, "Check"), "Hold’em flop")
 			var copy := CasinoSimulation.new()
 			check(copy.restore(JSON.parse_string(JSON.stringify(sim.snapshot()))), "In-progress expansion save loads")
-			check(copy.get_table(id).round.phase == "flop" and copy.wallet == sim.wallet and copy.joined == id, "Hold’em state and bankroll preserved")
+			check(copy.get_table(id).round.phase == "flop" and copy.owner_bankroll == sim.owner_bankroll and copy.joined == id, "Hold’em state and bankroll preserved")
 		var limit := 0
 		while sim.game_pending(table) and limit < 20:
 			var action := ""
@@ -96,7 +96,7 @@ func run() -> void:
 	var employee: Dictionary = sim.staff[-1]
 	check(employee.has("x") and employee.has("service_state"), "Service has a visible floor position")
 	var treasury := sim.cash
-	var visitor_wallet := sim.wallet
+	var visitor_wallet := sim.owner_bankroll
 	sim.leave(guest, "Smoke cash-out")
 	check(guest.state == "To cage", "Departures visit cage first")
 	var appeared := false
@@ -104,6 +104,6 @@ func run() -> void:
 		sim.move_guests(0.5)
 		if not sim.cashout_effects.is_empty(): appeared = true
 	check(appeared and guest.state == "Leaving", "Cage posts house result then sends guest to exit")
-	check(sim.cash == treasury and sim.wallet == visitor_wallet, "Cage does not settle money twice")
+	check(sim.cash == treasury and sim.owner_bankroll == visitor_wallet, "Cage does not settle money twice")
 	print("EXPANSION_SMOKE_OK" if failures == 0 else "EXPANSION_SMOKE_FAILED")
 	quit(1 if failures else 0)

@@ -4,6 +4,7 @@ extends RefCounted
 signal financial_event(event: Dictionary)
 signal guest_thought(event: Dictionary)
 signal milestone_reached(event: Dictionary)
+signal owner_event_completed(result: Dictionary)
 
 const Games = preload("res://scripts/casino_games.gd")
 const Staffing = preload("res://scripts/staffing.gd")
@@ -11,7 +12,19 @@ const Property = preload("res://scripts/floor_property.gd")
 const Bar = preload("res://scripts/drink_economy.gd")
 
 var cash := CasinoTuning.STARTING_CASH
-var wallet := CasinoTuning.VISITOR_CASH
+const OwnerAccount = preload("res://scripts/owner_bankroll.gd")
+const OwnerPlay = preload("res://scripts/owner_event_play.gd")
+var owner_play := {}
+var owner_checkpoint := Callable() # Controller supplies local persistence; tests can remain in memory.
+const OptionalEvents = preload("res://scripts/optional_events.gd")
+var owner_account := OwnerAccount.new()
+var optional_events := OptionalEvents.new()
+const Momentum = preload("res://scripts/casino_momentum.gd")
+var momentum := Momentum.new()
+const Objectives = preload("res://scripts/optional_objectives.gd")
+var optional_objectives := Objectives.new()
+var owner_bankroll: float:
+	get: return owner_account.balance
 var revenue := 0.0
 var payouts := 0.0
 var payroll := 0.0
@@ -200,7 +213,7 @@ func next_milestone_text() -> String:
 
 func onboarding_text() -> String:
 	if not restricted():
-		return "Open your chosen games, watch the guests, and manage crews and cash. Walk to a game to play with your separate visitor wallet."
+		return "Open your chosen games, watch the guests, and manage crews and cash. Walk to a game to play with your separate Owner Bankroll."
 	if not ever_opened: return "1. Open the casino. Your two slots need no staff."
 	if guest_rounds == 0: return "2. Watch the first guest play a slot. Arrivals begin after 10 open minutes."
 	if guest_revenue < CasinoTuning.OPENING_REVENUE:
@@ -439,6 +452,12 @@ func emit_financial_event(amount: float, category: String, table: Dictionary = {
 		log_house_activity("%s #%d - House %s $%.2f" % [str(Games.NAMES[event.game]).to_upper().replace("’", "'"), event.asset_id, "won" if amount > 0 else "lost", absf(amount)])
 	if category == "gaming" and (guest_id > 0 or (guest_id == -1 and not event.get("participants", []).is_empty())) and absf(amount) >= CasinoTuning.MILESTONE_LARGE_RESULT:
 		award_milestone("first_large_win" if amount > 0 else "first_large_loss", "First large house win" if amount > 0 else "First large guest win", "A settled gambling result. Short-term swings are real; keep a payout reserve.", 2 if absf(amount) >= CasinoTuning.MILESTONE_MAJOR_RESULT else 1, "positive" if amount > 0 else "caution", {"amount": amount, "asset_id": event.asset_id, "guest_id": guest_id})
+	if category == "gaming" and amount <= -CasinoTuning.EVENT_GUEST_BIG_WIN and (guest_id > 0 or (guest_id == -1 and not event.get("participants", []).is_empty())):
+		momentum.guest_win(elapsed)
+	if category == "gaming" and (guest_id > 0 or (guest_id == -1 and not event.get("participants", []).is_empty())):
+		optional_objectives.observe(self, "gaming_profit", amount, float(details.get("settled_stake", 0)))
+	if category == "bar" and guest_id > 0 and not bool(details.get("comped", true)) and float(details.get("price", 0)) > 0:
+		optional_objectives.observe(self, "paid_drinks", 1)
 	financial_event.emit(event)
 
 func emit_gaming_result(table: Dictionary, staked: float, returned: float, guest_id: int, participants: Array = []) -> void:
@@ -624,7 +643,7 @@ func place(at: Vector2, rotated: bool, kind: String = "craps", profile_id: Strin
 	return int(table.id)
 
 func busy(table: Dictionary) -> bool:
-	return joined == int(table.id) or guests.any(func(g): return int(g.table) == int(table.id)) or CrapsRules.exposure(table.owner) > 0 or game_pending(table) or not table.get("roulette_bets", {}).is_empty()
+	return int(owner_play.get("target", -1)) == int(table.id) or joined == int(table.id) or guests.any(func(g): return int(g.table) == int(table.id)) or CrapsRules.exposure(table.owner) > 0 or game_pending(table) or not table.get("roulette_bets", {}).is_empty()
 
 func sell(id: int) -> bool:
 	var table := get_table(id)
@@ -741,6 +760,7 @@ func traffic_snapshot() -> Dictionary:
 	var waiting := guests.filter(func(g): return bool(g.demand_blocked) and g.state not in ["To cage", "Cashing out", "Leaving"]).size()
 	# Bound perception effects: a bad night cannot switch off all future business.
 	var attraction := clampf(0.85 + reputation / 300.0, 0.85, 1.18)
+	attraction *= momentum.arrival_modifier()
 	attraction *= clampf(0.9 + satisfaction() / 800.0, 0.9, 1.025)
 	attraction *= clampf(appeal / maxf(1, positions), 1.0, 1.6)
 	attraction *= 1.0 + minf(0.25, maxf(0, kinds.size() - 1) * 0.08 + casino_rating / 500.0)
@@ -1092,6 +1112,8 @@ func leave(guest: Dictionary, reason: String, departure: String = "visit") -> vo
 		return
 	if int(guest.rounds) > 0:
 		guests_served += 1
+		if opened and departure != "closed" and float(guest.satisfaction) >= CasinoTuning.OBJECTIVE_HAPPY_SATISFACTION:
+			optional_objectives.observe(self, "happy_visits", 1)
 		refresh_progression()
 	Bar.cancel_order(self, guest)
 	guest.state = "To cage" if int(guest.rounds) > 0 else "Leaving"
@@ -1374,10 +1396,28 @@ func move_service(delta: float) -> void:
 					if int(guest.id) == int(employee.service_target): deliver_drink(guest, employee)
 				send_to_bar(employee)
 
+func momentum_step() -> void:
+	if not opened: return
+	var positions := 0
+	var available := 0
+	for table in tables:
+		positions += guest_capacity(table)
+		if operating(table): available += guest_capacity(table)
+	var active := 0
+	var occupied := 0
+	var contentment := 0.0
+	for guest in guests:
+		if guest.state in ["To cage", "Cashing out", "Leaving"]: continue
+		active += 1
+		contentment += float(guest.satisfaction)
+		if int(guest.table) > 0: occupied += 1
+	momentum.update(true, contentment / active if active > 0 else 65.0, float(occupied) / maxf(1, positions), float(available) / maxf(1, positions) if active > 0 else 1.0)
+
 func step() -> void:
 	presentation_revision += 1
 	# Scoped indexes: staffing mutates assignments first; guest membership stays live.
 	elapsed += 1
+	optional_events.tick(self)
 	minute += 1
 	if minute >= 1440:
 		minute = 0
@@ -1485,6 +1525,8 @@ func step() -> void:
 		incidents.append({"type": "service", "table": -1, "title": "Drink service complaint", "detail": "No service staff. A $60 comp buys goodwill; hire service for lasting relief."})
 		log_event("Guests are asking for drinks. Hire service staff or offer a comp.")
 
+	momentum_step()
+	optional_objectives.tick(self)
 	refresh_progression()
 	update_reserve_warning()
 	check_profit_milestone()
@@ -1493,11 +1535,11 @@ func step() -> void:
 	step_crew.clear()
 
 func take_bet(table: Dictionary, bettor: Dictionary, kind: String, amount: float, owner: bool) -> bool:
-	var funds: float = wallet if owner else float(bettor.wallet)
+	var funds: float = owner_bankroll if owner else float(bettor.wallet)
 	if not is_finite(amount) or funds < amount or amount <= 0:
 		return false
 	if owner:
-		wallet -= amount
+		if not owner_account.floor_debit(amount, elapsed): return false
 		visitor_net -= amount
 	else:
 		bettor.wallet -= amount
@@ -1530,7 +1572,7 @@ func bet_error(id: int, kind: String, chip: float = 0.0) -> String:
 	if not CrapsRules.empty_bets().has(kind): return "Unknown bet."
 	var amount := bet_amount(table, kind, chip)
 	if not is_finite(amount) or amount + float(table.owner[kind]) > maximum_wager(table): return "This bet exceeds the game maximum ($%d)." % maximum_wager(table)
-	if wallet < amount: return "Your visitor wallet cannot cover this bet."
+	if owner_bankroll < amount: return "Your Owner Bankroll cannot cover this bet."
 	if kind in ["pass", "dont_pass"] and (int(table.point) != 0 or table.owner[kind] > 0):
 		return "Place one line bet before the come-out roll."
 	if kind in ["come", "dont_come"] and (int(table.point) == 0 or table.owner[kind] > 0):
@@ -1578,7 +1620,7 @@ func remove_bet(id: int, kind: String) -> float:
 	if attached != "":
 		returned += table.owner[attached]
 		table.owner[attached] = 0.0
-	wallet += returned
+	owner_account.floor_credit(returned, elapsed, "floor_refund")
 	visitor_net += returned
 	cash -= returned
 	revenue -= returned
@@ -1626,6 +1668,7 @@ func shooter_name(table: Dictionary) -> String:
 	return "CPU shooter"
 
 func join_table(id: int) -> bool:
+	if not owner_play.is_empty(): return false
 	Staffing.rebalance(self, true)
 	var table := get_table(id)
 	if not accepting_new_play(table): return false
@@ -1735,7 +1778,7 @@ func roll(id: int, forced: Array = []) -> void:
 	var owner_exposure := CrapsRules.exposure(table.owner)
 	var result := CrapsRules.resolve(old_point, table.owner, int(dice[0]), int(dice[1]), bool(table.owner_working))
 	table.owner = result.bets
-	wallet += result.credit
+	owner_account.floor_credit(float(result.credit), elapsed)
 	visitor_net += result.credit
 	cash -= result.credit
 	payouts += result.credit
@@ -1751,7 +1794,7 @@ func roll(id: int, forced: Array = []) -> void:
 	if table.history.size() > 20: table.history.pop_back()
 	if result.seven_out: ensure_shooter(table, true)
 	if joined == id:
-		log_event(result.message + (" Returned $%d to your wallet." % result.credit if result.credit > 0 else ""), false)
+		log_event(result.message + (" Returned $%d to your Owner Bankroll." % result.credit if result.credit > 0 else ""), false)
 
 func resolve_incident(index: int, pay: bool) -> void:
 	if index < 0 or index >= incidents.size():
@@ -1780,9 +1823,11 @@ func resolve_incident(index: int, pay: bool) -> void:
 			reputation = minf(100, reputation + 2)
 			for guest in guests:
 				guest.satisfaction = minf(100, guest.satisfaction + 8)
+		momentum.outcome(CasinoTuning.MOMENTUM_REPAIR_GAIN if incident.type == "repair" else CasinoTuning.MOMENTUM_COMP_GAIN, "Repaired a halted game" if incident.type == "repair" else "Resolved a service complaint")
 		log_event("%s resolved for $%d." % [incident.title, cost])
 	else:
 		reputation = maxf(0, reputation - 3)
+		momentum.outcome(-CasinoTuning.MOMENTUM_COMPLAINT_LOSS, "Dismissed a service complaint")
 		log_event("Complaint dismissed. Reputation -3: guests felt ignored.")
 	incidents.remove_at(index)
 
@@ -1934,7 +1979,7 @@ func operating_costs() -> float:
 	return payroll + overhead
 
 func net_profit() -> float:
-	return revenue - payouts + float(bar_totals.revenue) - payroll - overhead
+	return revenue - payouts + float(bar_totals.revenue) - payroll - overhead + owner_account.profit_transferred
 
 func satisfaction() -> float:
 	if guests.is_empty():
@@ -1945,12 +1990,33 @@ func satisfaction() -> float:
 	return total / guests.size()
 
 func snapshot() -> Dictionary:
-	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "wallet": wallet, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
+	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "owner_bankroll": owner_account.snapshot(), "optional_events": optional_events.snapshot(), "momentum": momentum.snapshot(), "optional_objectives": optional_objectives.snapshot(), "owner_play": owner_play.duplicate(true), "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
 
 func restore(data: Dictionary) -> bool:
 	if not valid_number(data.get("version")) or data.version != CasinoTuning.SAVE_VERSION:
 		return false
 	data = data.duplicate(true)
+	var restored_owner := OwnerAccount.new()
+	if data.has("owner_bankroll"):
+		if not restored_owner.restore(data.owner_bankroll): return false
+	else:
+		# Additive migration of the previous personal wallet; treasury is untouched.
+		var old_balance = data.get("wallet", CasinoTuning.OWNER_STARTING_BANKROLL)
+		if not OwnerAccount.money(old_balance): return false
+		restored_owner.balance = float(old_balance)
+	data.wallet = restored_owner.balance
+	var restored_events := OptionalEvents.new()
+	if not valid_number(data.get("elapsed")): return false
+	var restored_objectives := Objectives.new()
+	if data.has("optional_objectives"):
+		if not restored_objectives.restore(data.optional_objectives, int(data.elapsed)): return false
+	else: restored_objectives.next_check = int(data.elapsed) + CasinoTuning.OBJECTIVE_INTERVAL
+	var restored_momentum := Momentum.new()
+	if data.has("momentum") and not restored_momentum.restore(data.momentum, int(data.elapsed)): return false
+	if data.has("optional_events"):
+		if not restored_events.restore(data.optional_events, int(data.elapsed)): return false
+	else:
+		restored_events.next_check = int(data.elapsed) + CasinoTuning.EVENT_INTERVAL_MINUTES
 	if not valid_number(data.get("elapsed")) or not valid_number(data.get("staff_shift_handover_at")) or data.staff_shift_handover_at > data.elapsed or data.staff_shift_handover_at < -CasinoTuning.STAFF_SHIFT_HANDOVER_GAP: return false
 	if not data.get("relief_targets") is Dictionary: return false
 	for role in relief_targets:
@@ -2148,8 +2214,15 @@ func restore(data: Dictionary) -> bool:
 	for message in data.alerts:
 		if not message is String:
 			return false
+	var restored_play = data.get("owner_play", {})
+	if not OwnerPlay.valid(restored_play, restored_owner, restored_events, data.tables) or (not restored_play.is_empty() and int(data.joined) >= 0): return false
+	owner_play = restored_play.duplicate(true)
+	owner_account = restored_owner
+	optional_events = restored_events
+	momentum = restored_momentum
+	optional_objectives = restored_objectives
 	debug_forced_unlocks.clear()
-	for key in ["cash", "wallet", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation"]:
+	for key in ["cash", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation"]:
 		set(key, float(data[key]))
 	for key in ["minute", "day", "elapsed", "next_id", "joined"]:
 		set(key, int(data[key]))
@@ -2210,10 +2283,10 @@ func valid_bets(value: Variant) -> bool:
 	return true
 
 func game_debit(table: Dictionary, amount: float, guest: Dictionary = {}) -> bool:
-	var funds: float = wallet if guest.is_empty() else guest.wallet
+	var funds: float = owner_bankroll if guest.is_empty() else guest.wallet
 	if not is_finite(amount) or amount < 0 or funds < amount: return false
 	if guest.is_empty():
-		wallet -= amount
+		if not owner_account.floor_debit(amount, elapsed): return false
 		visitor_net -= amount
 	else:
 		guest.wallet -= amount
@@ -2226,7 +2299,7 @@ func game_debit(table: Dictionary, amount: float, guest: Dictionary = {}) -> boo
 
 func game_credit(table: Dictionary, amount: float, guest: Dictionary = {}) -> void:
 	if guest.is_empty():
-		wallet += amount
+		if not owner_account.floor_credit(amount, elapsed): return
 		visitor_net += amount
 	else: guest.wallet += amount
 	cash -= amount
@@ -2263,7 +2336,7 @@ func start_game(id: int, bet: float, trips: float = 0) -> bool:
 		for amount in table.roulette_bets.values(): cost += float(amount)
 		if cost <= 0: return false
 	else:
-		if kind == "holdem" and wallet < bet * 6 + trips:
+		if kind == "holdem" and owner_bankroll < bet * 6 + trips:
 			log_event("Hold’em needs enough for Ante, Blind and a 4× raise ($%d)." % (bet * 6 + trips), false)
 			return false
 		if not game_debit(table, cost): return false
@@ -2291,7 +2364,7 @@ func start_game(id: int, bet: float, trips: float = 0) -> bool:
 func game_action(id: int, action: String) -> bool:
 	var table := get_table(id)
 	if joined != id or not ready_for_play(table) or not game_pending(table): return false
-	var actions := Games.actions(table.round, wallet)
+	var actions := Games.actions(table.round, owner_bankroll)
 	if not actions.has(action): return false
 	var cost := float(actions[action])
 	if not game_debit(table, cost): return false
@@ -2315,7 +2388,7 @@ func clear_roulette(id: int) -> void:
 	var amount := 0.0
 	for stake in table.get("roulette_bets", {}).values(): amount += float(stake)
 	table.roulette_bets.clear()
-	wallet += amount
+	owner_account.floor_credit(amount, elapsed, "floor_refund")
 	visitor_net += amount
 	cash -= amount
 	revenue -= amount
@@ -2384,3 +2457,61 @@ func shared_roulette(table: Dictionary, number: int) -> void:
 		emit_gaming_result(table, stake, float(result.credit), int(guest.id))
 		record_guest_round(guest, stake)
 		think(guest, "Our wheel hit %d!" % number)
+
+# Event wagering is a separate counterparty from play at the owner's own tables.
+# total_return includes original stake; only positive net profit enters casino cash.
+func owner_wager_debit(operation_id: int, stake: float) -> bool:
+	return owner_account.wager(operation_id, stake, elapsed)
+
+func owner_wager_settle(operation_id: int, total_return: float, publish: bool = true) -> bool:
+	if not OwnerAccount.money(total_return) or not is_finite(cash + total_return): return false
+	var result := owner_account.settle(operation_id, total_return, elapsed)
+	if result.is_empty(): return false
+	cash += float(result.profit)
+	if publish and float(result.profit) > 0:
+		emit_financial_event(float(result.profit), "owner_event_profit", {}, -1, {"actor": "owner", "operation_id": operation_id})
+	return true
+
+func owner_wager_refund(operation_id: int) -> bool:
+	return not owner_account.refund(operation_id, elapsed).is_empty()
+
+func owner_wager_loss(operation_id: int) -> bool:
+	return owner_wager_settle(operation_id, 0)
+
+func reward_owner_bankroll(operation_id: int, amount: float, reason: String) -> bool:
+	return owner_account.reward(operation_id, amount, reason, elapsed)
+
+func owner_wager_win(operation_id: int, net_profit_amount: float) -> bool:
+	if not OwnerAccount.money(net_profit_amount): return false
+	var key := str(operation_id)
+	if not owner_account.pending.has(key): return false
+	return owner_wager_settle(operation_id, float(owner_account.pending[key]) + net_profit_amount)
+
+func owner_play_transaction(action: Callable) -> bool:
+	# A failed checkpoint rolls back this rare gameplay transaction atomically.
+	if owner_checkpoint.is_valid() and not owner_checkpoint.call(): return false
+	var before: Dictionary = snapshot() if owner_checkpoint.is_valid() else {}
+	var already_done: bool = owner_play.get("status") == "done"
+	if not action.call(): return false
+	if owner_checkpoint.is_valid() and not owner_checkpoint.call():
+		restore(before)
+		log_event("Owner event action canceled because its save checkpoint failed.")
+		return false
+	if not already_done and owner_play.get("status") == "done":
+		var result: Dictionary = owner_play.result
+		if float(result.casino_profit) > 0:
+			emit_financial_event(float(result.casino_profit), "owner_event_profit", {}, -1, {"actor": "owner", "event_id": owner_play.event_id})
+		owner_event_completed.emit(result.duplicate(true))
+	return true
+
+func start_owner_event(event_id: int, stake: float) -> bool:
+	return owner_play_transaction(func(): return OwnerPlay.start(self, event_id, stake))
+
+func owner_event_action(action: String, sequence: int) -> bool:
+	return owner_play_transaction(func(): return OwnerPlay.act(self, action, sequence))
+
+func exit_owner_event() -> bool:
+	return owner_play_transaction(func(): return OwnerPlay.exit(self))
+
+func owner_event_table() -> Dictionary:
+	return OwnerPlay.view_table(self)

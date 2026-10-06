@@ -241,3 +241,41 @@ Construction is capital spending; property upkeep has a separate recurring ledge
 flows into operating profit/cash and Finance Operations, and enters reserve advice.
 The first purchased expansion retains the prior bounded development credit;
 repeated empty land purchases do not farm Rating. Schema 16 saves are current-only.
+
+## Casino Momentum (0.4.2.5)
+
+Momentum starts at 35/100 (Busy). Bands are Quiet below 25, Busy below 50,
+Hot below 70, Packed below 85 and Electric above that. Open operation slowly
+tracks guest satisfaction, occupancy and usable game coverage. Normal healthy
+idle operation supplies its own baseline; player interaction is optional.
+Repairs, complaint comps, net-positive owner opportunities and rate-limited real
+big guest wins add bounded, slowly fading influence. Opening an event or simply
+viewing a table earns no boost. Ignored/expired Opportunities never penalize it.
+Real low satisfaction, unavailable games and dismissed complaints can lower it.
+
+Response takes roughly four game hours to halve distance to operating conditions,
+with at most 3.6 points/hour movement. Outcome influence has a 12-hour half-life
+and caps at +30/-15. Closed and offline sessions freeze it; loading never replays
+outcomes or catches up wall-clock time. Values above baseline add at most 10%
+to attraction within existing arrival/capacity limits. There are no changes to
+odds, payouts, stakes, direct money, dwell time or event frequency in this step.
+
+## Dynamic optional objectives (0.4.2.6)
+
+At most two opt-in goals are offered, checked every three game hours with a
+12-hour type cooldown. Targets use the last six game hours of actual guest net
+win, happy gambling departures and paid drink deliveries, or currently occupied
+operating games/Momentum. Owner-win goals require an available funded opportunity.
+Offers last six hours; starting gives a six-hour window, completion gives twelve
+hours to claim. Unstarted goals never earn progress or rewards. Ignore/expiration
+has no penalty. Closed departures never count; closed or idle games reset the
+45-minute sustained-operation streaks. Gaming progress includes losing results,
+excludes owner play and represents gaming win before operating expenses.
+
+Rewards replenish Owner Bankroll by $45-$85 according to development, plus two
+points of slowly fading Momentum influence. There is no casino cash reward.
+Claims cap at $300 per elapsed game day and $2,000 personal funds including
+committed stakes. Partial claims consume the goal and only spend actual budget;
+full caps leave the reward unclaimed. Ready IDs, cooldowns, recent samples and
+budget persist; claims checkpoint the consumed ID and account together. Closed
+or offline time never replays outcomes or generates a backlog of rewards.

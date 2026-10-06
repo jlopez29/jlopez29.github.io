@@ -193,7 +193,7 @@ func _input(event: InputEvent) -> void:
 		elif motion: queue_redraw()
 
 func snapshot(table: Dictionary) -> Dictionary:
-	return {"table": table.duplicate(true), "wallet": sim.wallet, "guests": sim.seated(int(table.id)).duplicate(true)}
+	return {"table": table.duplicate(true), "owner_bankroll": sim.owner_bankroll, "guests": sim.seated(int(table.id)).duplicate(true)}
 
 func capture_roll(table: Dictionary) -> void:
 	if not throw_pending:
@@ -393,7 +393,7 @@ func _draw() -> void:
 	box(rail.grow(5), Color("211f20"), 36)
 	box(rail, Color("065d18"), 30, INK, 2)
 	label(Vector2(18, 24), "NEON HOUSE / CRAPS %02d" % sim.joined, 14, GOLD)
-	label(Vector2(18, 46), "Wallet $%d" % (previous.wallet if animation > 1 and not previous.is_empty() else sim.wallet), 16)
+	label(Vector2(18, 46), "Owner $%d" % (previous.owner_bankroll if animation > 1 and not previous.is_empty() else sim.owner_bankroll), 16)
 	label(Vector2(canvas.x - 160, 24), "POINT %d" % table.point if table.point else "COME-OUT", 15, GOLD)
 	# Cropped half-table: crew at the center edge, players along the outer rail.
 	var dealer := Vector2(canvas.x / 2 - 58, 77) if portrait else Vector2(27, 260)

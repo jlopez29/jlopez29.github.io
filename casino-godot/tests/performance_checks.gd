@@ -22,7 +22,7 @@ func run() -> void:
 		var guest: Dictionary = sim.guests[0]
 		guest.x = 200
 		guest.y = 200
-		var before := [sim.cash, sim.revenue, sim.guest_revenue, sim.wallet]
+		var before := [sim.cash, sim.revenue, sim.guest_revenue, sim.owner_bankroll]
 		var delivered: Array = []
 		sim.financial_event.connect(func(event): delivered.append(event.amount))
 		var expected := 0.0
@@ -40,7 +40,7 @@ func run() -> void:
 		check(delivered.size() == 5 * speed, "Immediate individual economic events at %dx" % speed)
 		check(floor.floating_results.size() == 1 and absf(floor.floating_results[0].amount - expected) < 0.001, "Single net batch at %dx" % speed)
 		check(floor.thought_bubbles.size() == 1 and floor.pending_thoughts.is_empty(), "One thought per window at %dx" % speed)
-		check(before == [sim.cash, sim.revenue, sim.guest_revenue, sim.wallet], "Presentation does not alter balances")
+		check(before == [sim.cash, sim.revenue, sim.guest_revenue, sim.owner_bankroll], "Presentation does not alter balances")
 		floor._on_financial_event({"amount": 10, "category": "gaming", "position": Vector2.ZERO})
 		floor._on_guest_thought({"guest_id": guest.id, "text": "stale", "priority": 2})
 		floor.set_presentation_speed(0)

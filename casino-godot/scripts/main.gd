@@ -18,6 +18,11 @@ var treasury_target := 0.0
 var treasury_flash := 0.0
 var treasury_direction := 0.0
 var developer_panel: PanelContainer
+var event_focus_staff := -1
+var owner_checkpoint_path := CasinoTuning.SAVE_PATH
+var event_cards: VBoxContainer
+var objective_cards: VBoxContainer
+var event_nav: Button
 var milestone_notice: PanelContainer
 var sim := CasinoSimulation.new()
 var floor_view: Control
@@ -47,6 +52,7 @@ var layout_identity: Array = []
 var rolling := 0.0
 var page := "table"
 var stats: Label
+var momentum_expanded := false
 var hud_summary: Label
 var objective: VBoxContainer
 var asset_details := false
@@ -241,19 +247,30 @@ func _ready() -> void:
 	var log_scroll := ScrollContainer.new()
 	log_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	events_panel.add_child(log_scroll)
+	var log_content := VBoxContainer.new()
+	log_content.size_flags_horizontal = SIZE_EXPAND_FILL
+	log_scroll.add_child(log_content)
+	event_cards = preload("res://scripts/event_cards.gd").new()
+	log_content.add_child(event_cards)
+	event_cards.changed.connect(refresh)
+	objective_cards = preload("res://scripts/objective_cards.gd").new()
+	log_content.add_child(objective_cards)
+	objective_cards.changed.connect(refresh)
 	feed = VBoxContainer.new()
 	feed.size_flags_horizontal = SIZE_EXPAND_FILL
 	feed.add_theme_constant_override("separation", 6)
-	log_scroll.add_child(feed)
+	log_content.add_child(feed)
 	bottom_nav = HBoxContainer.new()
 	bottom_nav.add_theme_constant_override("separation", 6)
 	add_child(bottom_nav)
 	for tab in ["Floor", "Table", "Manage", "Log"]:
-		add_button(bottom_nav, tab, func(): switch_mobile(tab.to_lower()))
+		var nav_button := add_button(bottom_nav, tab, func(): switch_mobile(tab.to_lower()))
+		if tab == "Log": event_nav = nav_button
 	get_viewport().size_changed.connect(func(): call_deferred("layout_ui"))
 	milestone_notice = MilestoneNotice.new()
 	add_child(milestone_notice)
 	sim.milestone_reached.connect(on_milestone)
+	bind_optional_events()
 	if OS.is_debug_build():
 		developer_panel = DeveloperPanel.new(sim)
 		add_child(developer_panel)
@@ -333,25 +350,33 @@ func layout_ui() -> void:
 		var right_width := clampf(w * 0.25, 290, 350)
 		var middle_x := side_width + 36
 		var middle_width := w - middle_x - right_width - 36
+		var activity_height := 200.0 if not sim.optional_events.active.is_empty() else 108.0
+		var event_extra := activity_height - 108.0
 		side_panel.position = Vector2(16, 100)
 		side_panel.size = Vector2(side_width, h - 116)
 		inspector_panel.position = Vector2(w - right_width - 16, 100)
 		inspector_panel.size = Vector2(right_width, h - 116)
 		floor_view.position = Vector2(middle_x, 126)
-		floor_view.size = Vector2(middle_width, h - 312)
+		floor_view.size = Vector2(middle_width, h - 312 - event_extra)
 		mode_hint.position = Vector2(middle_x, 96)
 		mode_hint.size = Vector2(middle_width, 26)
-		floor_actions.position = Vector2(middle_x, h - 180)
+		floor_actions.position = Vector2(middle_x, h - 180 - event_extra)
 		floor_actions.size = Vector2(middle_width, 44)
-		events_panel.position = Vector2(middle_x, h - 124)
-		events_panel.size = Vector2(middle_width, 108)
+		events_panel.position = Vector2(middle_x, h - activity_height - 16)
+		events_panel.size = Vector2(middle_width, activity_height)
 	apply_visibility()
 	if is_instance_valid(developer_panel): developer_panel._layout()
-	if modal != null:
-		modal.position = Vector2(maxf(12, (w - 660) / 2), 12)
-		modal.size = Vector2(minf(660, w - 24), h - 24)
-		for child in get_children():
-			if child.has_meta("modal_shade"): child.size = dimensions
+	layout_dialog()
+
+func layout_dialog() -> void:
+	if not is_instance_valid(modal): return
+	var dimensions := Vector2(get_window().content_scale_size)
+	# Containers may briefly expand before wrapped labels finish measuring.
+	# Reapply the viewport width after minimum-size changes, then center actual size.
+	modal.size = Vector2(minf(660, dimensions.x - 24), dimensions.y - 24)
+	modal.position = Vector2(maxf(12, (dimensions.x - modal.size.x) / 2), 12)
+	for child in get_children():
+		if child.has_meta("modal_shade"): child.size = dimensions
 
 # Interaction invariants are applied on every refresh and viewport resize.
 # Future floor-targeting modes should participate here, rather than patch panes.
@@ -381,7 +406,7 @@ func cancel_placement() -> void:
 
 func apply_visibility() -> void:
 	normalize_interaction_ui()
-	var at_table := sim.joined >= 0
+	var at_table := sim.joined >= 0 or not sim.owner_play.is_empty()
 	game_view.hide()
 	if at_table:
 		var dimensions := Vector2(get_window().content_scale_size)
@@ -400,7 +425,7 @@ func apply_visibility() -> void:
 		hud_summary.visible = not mobile
 		stats.visible = not mobile
 		status.visible = not mobile
-		var is_craps := sim.table_kind(sim.get_table(sim.joined)) == "craps"
+		var is_craps := sim.owner_play.is_empty() and sim.table_kind(sim.get_table(sim.joined)) == "craps"
 		felt.visible = is_craps
 		table_scroll.visible = is_craps
 		game_view.visible = not is_craps
@@ -636,7 +661,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event.keycode == KEY_ESCAPE:
 		if building:
 			cancel_placement()
-		elif sim.joined >= 0:
+		elif sim.joined >= 0 or not sim.owner_play.is_empty():
 			leave_table()
 		refresh()
 	if event.keycode == KEY_E and visitor and sim.joined < 0:
@@ -644,6 +669,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 func money(amount: float) -> String:
 	return FinancialText.cash(amount, 0)
+
+func compact_money(amount: float) -> String:
+	if absf(amount) < 10000: return money(amount)
+	for unit in [{"scale": 1.0e12, "suffix": "T"}, {"scale": 1.0e9, "suffix": "B"}, {"scale": 1.0e6, "suffix": "M"}, {"scale": 1.0e3, "suffix": "K"}]:
+		if absf(amount) >= float(unit.scale):
+			return "%s$%.1f%s" % ["-" if amount < 0 else "", absf(amount) / float(unit.scale), unit.suffix]
+	return money(amount)
 
 func reset_treasury_display() -> void:
 	displayed_cash = sim.cash
@@ -663,12 +695,13 @@ func animate_treasury(delta: float) -> void:
 	render_treasury()
 
 func render_treasury() -> void:
-	stats.text = FinancialText.cash(displayed_cash, 0)
+	stats.text = ("" if mobile else "Cash ") + FinancialText.cash(displayed_cash, 0)
 	if mobile and absf(displayed_cash) >= 10000:
 		var divisor := 1000000.0 if absf(displayed_cash) >= 1000000 else 1000.0
 		stats.text = "%s$%.1f%s" % ["-" if displayed_cash < 0 else "", absf(displayed_cash) / divisor, "M" if divisor == 1000000 else "K"]
-	hud_summary.text = ("Guests %d   Rating %.0f" if mobile else "%d guests    Casino Rating %.0f") % [sim.guests.size(), sim.casino_rating]
-	hud_summary.tooltip_text = "Casino Rating measures property development: %.1f / 100. Development level %d: %s. Reputation measures guest perception: %.0f%%." % [sim.casino_rating, sim.stars(), CasinoTuning.STAR_NAMES[sim.stars() - 1], sim.reputation]
+	hud_summary.text = "Owner " + compact_money(sim.owner_bankroll) if mobile else "Owner %s | %d guests | %s" % [compact_money(sim.owner_bankroll), sim.guests.size(), sim.momentum.band()]
+	hud_summary.tooltip_text = "Owner Bankroll: personal gambling funds %s, separate from casino operating cash. Guests: %d. " % [money(sim.owner_bankroll), sim.guests.size()] + "Casino Rating measures property development: %.1f / 100. Development level %d: %s. Reputation measures guest perception: %.0f%%." % [sim.casino_rating, sim.stars(), CasinoTuning.STAR_NAMES[sim.stars() - 1], sim.reputation]
+	hud_summary.tooltip_text += "\n" + sim.momentum.detail()
 	stats.tooltip_text = "Treasury display animates toward actual cash: %s. Gambling popups show settled net house results." % FinancialText.cash(sim.cash)
 	var change_color := TEAL if treasury_direction >= 0 else Color("ff9486")
 	stats.add_theme_color_override("font_color", TEXT.lerp(change_color, 0.45 * treasury_flash / CasinoTuning.TREASURY_FLASH_SECONDS))
@@ -686,6 +719,14 @@ func render_asset_financial_activity(parent: Node, asset_id: int = -1, limit: in
 func refresh(structural: bool = true) -> void:
 	floor_view.set_presentation_speed(speed if modal == null else 0)
 	normalize_interaction_ui()
+	if not sim.optional_events.action_requested.is_connected(on_optional_event_action): bind_optional_events()
+	event_cards.refresh(sim)
+	objective_cards.refresh(sim)
+	var optional_count := sim.optional_events.active.size() + sim.optional_objectives.active.size()
+	event_nav.text = "Log (%d)" % optional_count if optional_count > 0 else "Log"
+	var event_category := "" if sim.optional_events.active.is_empty() else str(sim.optional_events.DEFINITIONS[sim.optional_events.active[0].type].category)
+	event_nav.tooltip_text = "Optional goals, events and House Activity" if event_category.is_empty() else event_category + " event available in Log"
+	event_nav.add_theme_color_override("font_color", Color("ff9486") if event_category == "EMERGENCY" else GOLD if event_category == "MANAGEMENT" else TEAL if event_category == "OPPORTUNITY" else TEXT)
 	var dev_active: bool = OS.is_debug_build() and is_instance_valid(developer_panel) and (developer_panel.visible or developer_panel.actions.used or speed > 4 or previous_speed > 4)
 	subtitle.text = ("DEV MODE | " if dev_active else "") + "CASINO TYCOON / " + BuildInfo.VERSION
 	render_treasury()
@@ -716,7 +757,7 @@ func refresh(structural: bool = true) -> void:
 	game_view.paused = speed == 0
 	floor_view.selected = selected
 	mode_hint.text = "Click to place | R to rotate | Esc to cancel" if building else ("Tap to walk | tap a table to approach | E or Join to play" if visitor else "Select a table or guest to inspect | build and staff to expand")
-	var layout_key := [page, mobile_pane, visitor, building, moving, sim.joined, modal, table_options]
+	var layout_key := [page, mobile_pane, visitor, building, moving, sim.joined, modal, table_options, not sim.optional_events.active.is_empty(), not sim.owner_play.is_empty()]
 	if layout_key != layout_identity:
 		layout_identity = layout_key
 		layout_ui()
@@ -852,6 +893,13 @@ func render_development() -> void:
 	add_label(inspector, "Level %d - %s" % [sim.stars(), CasinoTuning.STAR_NAMES[sim.stars() - 1]], 14, GOLD)
 	add_label(inspector, "Property quality and real guest business develop your casino. Reputation measures how guests feel.", 13, MUTED)
 	add_label(inspector, "Guest reputation  %.0f%%" % sim.reputation, 15, TEAL)
+	var momentum_row := add_label(inspector, "Momentum: " + sim.momentum.band(), 15, TEAL)
+	momentum_row.tooltip_text = sim.momentum.detail()
+	add_button(inspector, "Hide momentum details" if momentum_expanded else "Momentum details", func():
+		momentum_expanded = not momentum_expanded
+		refresh())
+	var explanation := add_label(inspector, sim.momentum.detail(), 13, MUTED)
+	explanation.visible = momentum_expanded
 	render_traffic()
 	add_gap(inspector, 12)
 	render_progression(inspector)
@@ -1113,7 +1161,7 @@ func render_staff_role(role: String, title: String) -> void:
 	for employee in sim.staff:
 		if employee.role != role: continue
 		add_gap(inspector, 8)
-		add_label(inspector, str(employee.name) + " - " + str(employee.duty), 16, TEXT)
+		add_label(inspector, ("> " if int(employee.id) == event_focus_staff else "") + str(employee.name) + " - " + str(employee.duty), 16, GOLD if int(employee.id) == event_focus_staff else TEXT)
 		finance_short_metric(inspector, "Energy", "%.0f%%" % float(employee.energy))
 		if employee.rest_due != "":
 			add_label(inspector, "Finishing committed bets, then " + str(employee.rest_due).to_lower(), 13, GOLD)
@@ -1351,13 +1399,19 @@ func render_finance_investment(parent: Node) -> void:
 
 func render_finance_advanced(parent: Node) -> void:
 	finance_row(parent, "All settled gaming", sim.gaming_profit())
-	finance_row(parent, "Visitor's house result", sim.visitor_house_result())
+	finance_row(parent, "Owner floor house result", sim.visitor_house_result())
 	finance_row(parent, "Drink sales", float(sim.bar_totals.revenue))
 	finance_row(parent, "All costs incl. investment", -sim.operating_costs())
+	finance_row(parent, "Owner event profit transfers", sim.owner_account.profit_transferred)
+	finance_row(parent, "Owner Bankroll (personal)", sim.owner_bankroll)
 	finance_row(parent, "Recorded net cash flow", sim.net_profit(), false)
 	finance_row(parent, "Pending stakes", sim.live_stakes())
-	var note := add_label(parent, "Cash flow includes visitor transfers and pending stakes.", 12, MUTED)
+	var note := add_label(parent, "Cash flow includes owner floor transfers, event net winnings and pending floor stakes.", 12, MUTED)
 	note.tooltip_text = "Starting cash and developer funding are outside recorded flow. Operating profit excludes capital, hiring and owner gambling; gaming win excludes unresolved stakes."
+	if not sim.owner_account.history.is_empty():
+		add_label(parent, "Recent owner transactions", 12, GOLD)
+		for entry in sim.owner_account.history.slice(0, 6):
+			add_label(parent, "%s: %s | casino profit %s" % [entry.kind, money(float(entry.amount)), money(float(entry.profit))], 12, MUTED)
 	if sim.payroll > 0:
 		add_label(parent, "Payroll allocation", 12, GOLD)
 		var states: Dictionary = sim.payroll_by_state
@@ -1463,7 +1517,7 @@ func render_finance() -> void:
 		detail = finance_card("investment", "Investment / setup", -investment)
 		if detail != null: render_finance_investment(detail)
 	finance_row(inspector, "Net cash flow", sim.net_profit(), false)
-	if not finance_advanced: add_label(inspector, "Cash flow includes visitor transfers and pending stakes.", 12, MUTED)
+	if not finance_advanced: add_label(inspector, "Cash flow includes owner floor transfers, event net winnings and pending floor stakes.", 12, MUTED)
 	var advanced := add_button(inspector, "Advanced accounting -" if finance_advanced else "Advanced accounting >", func(): finance_advanced = not finance_advanced; refresh())
 	advanced.tooltip_text = "Reconciliation and payroll diagnostics"
 	if finance_advanced: render_finance_advanced(inspector)
@@ -1549,7 +1603,7 @@ func render_craps() -> void:
 	add_button(inspector, "Resume time" if speed == 0 else "Pause time", toggle_pause)
 	var table := sim.get_table(sim.joined)
 	var locked: bool = rolling > 0 or felt.busy() or speed == 0 or not sim.ready_for_play(table)
-	add_label(inspector, "CRAPS %02d  /  WALLET %s" % [sim.joined, money(sim.wallet)], 18, GOLD)
+	add_label(inspector, "CRAPS %02d  /  OWNER %s" % [sim.joined, money(sim.owner_bankroll)], 18, GOLD)
 	add_label(inspector, "SHOOTER: %s | hand roll %d" % [sim.shooter_name(table), int(table.hand_rolls)], 15, TEAL)
 	render_asset_financial_activity(inspector, int(table.id))
 	var heading := "COME-OUT" if int(table.point) == 0 else "POINT %d" % int(table.point)
@@ -1607,7 +1661,7 @@ func render_craps() -> void:
 			kinds = CrapsRules.PROPS.keys()
 			explanation = "One roll only. Any craps 7:1; any seven 4:1; 3/11 pay 15:1; 2/12 pay 30:1."
 		"My bets":
-			add_label(inspector, "On layout: %s | wallet net: %s" % [money(CrapsRules.exposure(table.owner)), money(sim.visitor_net)], 14, GOLD)
+			add_label(inspector, "On layout: %s | owner floor net: %s" % [money(CrapsRules.exposure(table.owner)), money(sim.visitor_net)], 14, GOLD)
 			for kind in table.owner:
 				if table.owner[kind] <= 0: continue
 				var removable := CrapsRules.removable(kind, int(table.point))
@@ -1729,6 +1783,15 @@ func join_table() -> void:
 	refresh()
 
 func leave_table() -> void:
+	if not sim.owner_play.is_empty():
+		if not sim.exit_owner_event(): return
+		sim.owner_play.clear()
+		checkpoint_owner_play()
+		visitor = false
+		page = "table"
+		transition_pane("floor")
+		refresh()
+		return
 	if rolling > 0:
 		return
 	sim.leave_table()
@@ -1784,6 +1847,8 @@ func load_game() -> bool:
 	else:
 		milestone_notice.reset()
 		reset_dev_speed()
+		event_focus_staff = -1
+		bind_optional_events()
 		if is_instance_valid(developer_panel): developer_panel.reset_session(sim)
 		reset_treasury_display()
 		floor_view.clear_financial_feedback()
@@ -1811,6 +1876,7 @@ func dialog(title: String, body: String, confirm: String, action: Callable, canc
 	if modal != null:
 		return null
 	modal = panel_at(Vector2(390, 190), Vector2(660, 500))
+	modal.minimum_size_changed.connect(func(): call_deferred("layout_dialog"))
 	var shade := ColorRect.new()
 	shade.color = Color(0, 0, 0, 0.72)
 	shade.position = Vector2(-390, -190)
@@ -1840,7 +1906,7 @@ func dialog(title: String, body: String, confirm: String, action: Callable, canc
 func show_help() -> void:
 	var body := "Version %s | Last updated %s\n\n" % [BuildInfo.VERSION, BuildInfo.UPDATED_AT]
 	body += sim.onboarding_text() + "\n\n" + sim.next_milestone_text()
-	body += "\n\nTap a game to inspect it. Walk mode: approach a game, then Join. Visitor play uses a separate $1,000 wallet; casino cash pays for construction, staff and payouts."
+	body += "\n\nTap a game to inspect it. Walk mode: approach a game, then Join. Owner play uses a separate Owner Bankroll starting at $1,000; casino cash pays for construction, staff and payouts."
 	if sim.feature_owned("service"): body += "\n\nDrink staff walk the floor. Recent gamblers receive basic comps; waiting and watching guests pay. Deliveries relieve thirst and support longer sessions."
 	if sim.feature_owned("craps"):
 		body += "\n\nCraps needs two dealers. The shooter keeps the dice until seven-out. Pass dice hands off to a CPU; Hold betting pauses that table's CPU rolls. My bets lists contracts and removable stakes."
@@ -1855,6 +1921,8 @@ func show_new_game_setup(initial: bool = false) -> void:
 	mode.add_item("Normal | intended progression")
 	mode.add_item("Easy / Sandbox-lite | permissive access")
 	mode.custom_minimum_size.y = 44
+	mode.fit_to_longest_item = false
+	mode.clip_text = true
 	var games_box := VBoxContainer.new()
 	var choices: Array = []
 	add_label(games_box, "Easy starting games - choose one or more (equipment and required crews included):", 14, MUTED)
@@ -1891,6 +1959,7 @@ func show_new_game_setup(initial: bool = false) -> void:
 	layout_ui()
 
 func start_casino(mode: String, preferred: Array) -> void:
+	event_focus_staff = -1
 	sim = CasinoSimulation.new(mode, preferred)
 	sim.milestone_reached.connect(on_milestone)
 	milestone_notice.reset()
@@ -1898,6 +1967,7 @@ func start_casino(mode: String, preferred: Array) -> void:
 	floor_view.sim = sim
 	felt.sim = sim
 	game_view.sim = sim
+	bind_optional_events()
 	if is_instance_valid(developer_panel): developer_panel.reset_session(sim)
 	selected = int(sim.tables[0].id)
 	selected_guest = -1
@@ -1929,7 +1999,7 @@ func publish_debug() -> void:
 	debug_full_timer += CasinoTuning.DEBUG_SNAPSHOT_SECONDS
 	var full := debug_full_timer >= CasinoTuning.DEBUG_FULL_SNAPSHOT_SECONDS or bool(JavaScriptBridge.eval("window.neonHouseRequestFullState === true", true))
 	if full: debug_full_timer = 0
-	var diagnostics := {"elapsed": sim.elapsed, "day": sim.day, "minute": sim.minute, "cash": sim.cash, "speed": speed, "guests": sim.guests.size(), "assets": sim.tables.size(), "staff": sim.staff.size(), "nodes": Performance.get_monitor(Performance.OBJECT_NODE_COUNT), "redraws": floor_view.redraw_count}
+	var diagnostics := {"elapsed": sim.elapsed, "day": sim.day, "minute": sim.minute, "cash": sim.cash, "speed": speed, "guests": sim.guests.size(), "assets": sim.tables.size(), "staff": sim.staff.size(), "nodes": Performance.get_monitor(Performance.OBJECT_NODE_COUNT), "redraws": floor_view.redraw_count, "momentum": sim.momentum.value, "momentum_band": sim.momentum.band(), "momentum_contributors": sim.momentum.contributors}
 	JavaScriptBridge.eval("window.neonHouseDiagnostics = " + JSON.stringify(diagnostics), true)
 	var layout := {
 		"responsive_state": responsive_state, "pane": mobile_pane, "page": page,
@@ -1987,3 +2057,50 @@ func finish_render() -> void:
 			obsolete.queue_free()
 	render_cursors.clear()
 	retained_render = false
+
+func bind_optional_events() -> void:
+	sim.owner_checkpoint = checkpoint_owner_play
+	if not sim.optional_events.action_requested.is_connected(on_optional_event_action):
+		sim.optional_events.action_requested.connect(on_optional_event_action)
+	if is_instance_valid(event_cards): event_cards.current_id = -1
+	if is_instance_valid(objective_cards): objective_cards.reset()
+
+func on_optional_event_action(event: Dictionary) -> void:
+	# Game commitment stays in the expandable card; no blocking dialog.
+	match str(event.action):
+		"focus_asset":
+			selected = int(event.target)
+			selected_guest = -1
+			open_page("table")
+			sim.optional_events.resolve(sim, int(event.id), "success")
+		"open_staff":
+			if sim.optional_events.DEFINITIONS[event.type].target_kind == "staff":
+				for employee in sim.staff:
+					if int(employee.id) == int(event.target):
+						selected = int(employee.table)
+						event_focus_staff = int(employee.id)
+						staff_details_role = "Dealer"
+			else: selected = int(event.target) if int(event.target) >= 0 else selected
+			open_page("staff")
+			sim.optional_events.resolve(sim, int(event.id), "success")
+		"open_bar":
+			open_page("bar")
+			sim.optional_events.resolve(sim, int(event.id), "success")
+		"owner_game":
+			event_cards.details.show()
+	refresh()
+
+func checkpoint_owner_play() -> bool:
+	# Rename a complete snapshot, preserving the last good save on write failure.
+	var temporary := owner_checkpoint_path + ".tmp"
+	var file := FileAccess.open(temporary, FileAccess.WRITE)
+	if file == null:
+		sim.log_event("Owner event unavailable: local save storage cannot be written.")
+		return false
+	file.store_string(JSON.stringify(sim.snapshot()))
+	file.flush()
+	var ok := file.get_error() == OK
+	file.close()
+	if ok: ok = DirAccess.rename_absolute(ProjectSettings.globalize_path(temporary), ProjectSettings.globalize_path(owner_checkpoint_path)) == OK
+	if not ok: sim.log_event("Owner event checkpoint failed. Local storage is unavailable.")
+	return ok

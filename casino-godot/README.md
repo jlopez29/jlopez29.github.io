@@ -33,9 +33,12 @@ dealers, choose **Walk the floor**, approach the rail, and join. Bets and payout
 still affect your wallet and the casino treasury; new guests only arrive after
 you open the doors. Unpause the simulation to bet and roll.
 
-Your visitor wallet starts at $1,000 and is separate from the casino treasury.
-This is an owner playtesting account: visitor bets still transfer against the
-same house cash, and finance displays the visitor's net separately. All money is
+Your Owner Bankroll starts at $1,000 and is separate from casino operating cash.
+Normal play at your own tables still transfers against house cash; Finance keeps
+that result separate from guest business. Optional event wagers use a separate
+settlement API: the stake returns to your bankroll and only net winnings enter
+casino cash. Losses spend personal funds only. Previous current-version saves
+retain their personal wallet balance as the Owner Bankroll. All money is
 fictional. No accounts, purchases, payments, or multiplayer are involved.
 
 Joining opens a dedicated table view with players around the rail, chip stacks,
@@ -72,7 +75,7 @@ yours; blue stacks belong to guests. Chip labels show the total stack value.
 - Incidents: repair damaged rails or decide how to respond to drink complaints.
 - Staff: assign standby dealers and swap a rested dealer for a tired one.
 - Save/Load: one local versioned save, including guests, contracts, staff, clock,
-  incidents, wallet, layout, and random-generator state. Browser storage must be
+  incidents, Owner Bankroll, event queue/cooldowns, layout, and random-generator state. Browser storage must be
   available. Clearing site data removes the save. There is no cloud sync.
 
 ## Craps rules implemented
@@ -293,3 +296,20 @@ roulette multiple guests, and craps unresolved/standing contracts. Confirm cage
 visits and removable-bet refunds do not add duplicate net results; observe genuine
 large wins/losses, busy-table overlap, purchase/payroll treasury motion, and fresh
 visuals after Load/New Casino. No automated tests or spin suites are required.
+
+Optional events appear in House Activity; on mobile, Log shows a colored event
+count without covering the floor or game controls. Opportunities are safe to
+ignore or let expire. Countdown uses game minutes and pauses with the game.
+The starter catalog now includes owner slot/blackjack opportunities, real crowds,
+large guest slot payouts, drink demand, service queues, tired dealers, breakdowns
+and service complaints. Management cards explain the existing simulation effects
+and add no ignored-event penalty. Emergency examples remain developer-only.
+
+Owner opportunities offer a stake review before commitment. Lucky Machine commits
+three spins; Owner's Hand plays one blackjack hand, including split hands and
+optional extra stakes. Committing autosaves the current casino, and every accepted
+action and result updates that checkpoint. Leaving resolves committed spins or
+stands the remaining blackjack hands; it never refunds an already dealt loss.
+Normal play at your own tables remains available with its existing accounting.
+F10 in debug builds can trigger each catalog entry only when its real prerequisites
+exist, bypassing cooldowns for manual checks without changing production odds.

@@ -62,3 +62,59 @@ The fixture export is isolated in `/tmp`, including for release; production does
 not expose test state hooks. Browser smoke uses the current starter game and
 checks desktop/mobile move/build/cancel, orientation, walk/manage and navigation.
 Full-state debug polling is explicitly enabled by browser tests.
+
+## Owner bankroll / optional events foundation
+
+The current `run_tests.gd` entry point also checks initialization, previous
+version-16 wallet defaults, current JSON round trips, pending/settled operation
+IDs, invalid money, duplicate debit/settlement/rewards, normal-game conservation,
+net-only event profit, optional ignore/expiry neutrality, asynchronous engagement,
+explicit sample consequences, cooldowns and overdue-load deferral. UI checks at
+desktop, landscape, portrait and 320px verify event cards remain in the activity
+pane, touch controls and personal currency stays on one line. Headless layout
+checks do not replace real touch/browser gameplay verification.
+
+## Focused owner/floor event smoke checks (0.4.2.3 / 0.4.2.4)
+
+Run only the new event/game checks, without the broad regression or long runs:
+
+```sh
+/home/codespace/.cache/neon-house-tools/Godot_v4.7.2-stable_linux.x86_64 --headless --path casino-godot --script tests/owner_events_smoke.gd
+```
+
+This uses actual seeded rules for losses/pushes/wins, blackjack extra stakes,
+committed slots/cards across load/exit, duplicate guards, unavailable storage and
+checkpoint rollback. Floor checks cover actual eligibility, repair/comp costs,
+staff/bar context, guests watching real play and already settled guest payouts.
+The UI smoke uses `/tmp` saves and desktop/landscape/portrait/320px viewports.
+Use `tests/startup_smoke.py` for normal startup, and `export_web.py --both` for
+source parsing and playable release/debug output. Browser/touch feel still needs
+manual gameplay checks; no new broad regression run is required for this step.
+
+## Casino Momentum (0.4.2.5)
+
+```sh
+/home/codespace/.cache/neon-house-tools/Godot_v4.7.2-stable_linux.x86_64 --headless --path casino-godot --script tests/momentum_smoke.gd
+```
+
+Focused checks cover gradual idle/active behavior, real operating conditions,
+all bands, bounded effects, neutral ignored/expired Opportunities, real seeded
+owner wins/losses, repairs, duplicate guards, persisted cooldowns, additive save
+defaults, atomic invalid loads and closed-session freezing. Desktop, landscape,
+portrait and 320px checks cover retained controls and touch-accessible details.
+Core momentum checks also run through the existing regression entry point.
+
+## Dynamic optional objectives (0.4.2.6)
+
+```sh
+/home/codespace/.cache/neon-house-tools/Godot_v4.7.2-stable_linux.x86_64 --headless --path casino-godot --script tests/objectives_smoke.gd
+```
+
+Covers achievable context/scaling, opt-in progress, actual net settlements,
+happy departures, paid deliveries, seeded owner wins, sustained operation,
+neutral ignore/expiry, close-toggle guards, small active limits, JSON progress,
+atomic invalid loads, duplicate rewards, committed-stake caps, partial budgets,
+checkpoint rollback/retry and retained desktop/mobile Log controls. Core checks
+also run through the normal regression entry point. Browser save/load checks
+pause while sampling saved state so telemetry timing cannot masquerade as a
+failed load, then advance past it before verifying restoration.
