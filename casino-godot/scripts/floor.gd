@@ -41,15 +41,15 @@ var compact_labels := false
 var close_view := false
 var landscape_view := false
 var pan_center := Vector2(267, 250)
+var view_configured := false
 var pointer_down := false
 var dragging := false
 var pointer_start := Vector2.ZERO
 
 func configure_view(compact: bool, landscape: bool) -> void:
-	if landscape_view != landscape:
+	if not view_configured:
 		close_view = landscape
-		var table := sim.get_table(selected)
-		pan_center = sim.bounds(table).get_center() if not table.is_empty() else Vector2(267, 250)
+		view_configured = true
 	landscape_view = landscape
 	compact_labels = compact
 
@@ -93,6 +93,7 @@ func _process(delta: float) -> void:
 	var room := sim.floor_rect()
 	var fit := minf(size.x / room.size.x, size.y / room.size.y)
 	var focus_zoom := minf(size.x / CasinoTuning.STARTER_PROPERTY.size.x, size.y / CasinoTuning.STARTER_PROPERTY.size.y)
+	if landscape_view: focus_zoom = size.x / CasinoTuning.STARTER_PROPERTY.size.x
 	var target_zoom := focus_zoom * view_scale if close_view or visitor_mode else fit
 	zoom = lerpf(zoom, target_zoom, minf(1, delta * 8))
 	pan_center = pan_center.clamp(room.position, room.end)
@@ -134,19 +135,18 @@ func _gui_input(event: InputEvent) -> void:
 		accept_event()
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if not building and not visitor_mode:
-			if event.pressed:
-				pointer_down = true
-				dragging = false
-				pointer_start = event.position
-			else:
-				if pointer_down and not dragging: select_at(event.position)
-				pointer_down = false
-			accept_event()
-		elif event.pressed: select_at(event.position)
-	elif event is InputEventMouseMotion and pointer_down and close_view:
+		if event.pressed:
+			pointer_down = true
+			dragging = false
+			pointer_start = event.position
+		else:
+			if pointer_down and not dragging: select_at(event.position)
+			pointer_down = false
+		accept_event()
+	elif event is InputEventMouseMotion and pointer_down:
 		if event.position.distance_to(pointer_start) > 8: dragging = true
-		if dragging:
+		if dragging and not visitor_mode:
+			close_view = true
 			pan_center -= event.relative / maxf(zoom, 0.01)
 			pan_center = pan_center.clamp(sim.floor_rect().position, sim.floor_rect().end)
 			accept_event()

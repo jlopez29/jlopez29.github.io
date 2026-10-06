@@ -81,6 +81,8 @@ Use Summary -> Expand -> Detail -> Action. Reveal management detail when its sys
 
 Keep desktop, mobile landscape and mobile portrait usable. Reflow by viewport width, height and orientation; do not uniformly shrink the desktop UI. Give the floor the largest practical mobile area, and move details into contextual inspectors, tabs or full-screen management views rather than shrinking typography. Prefer viewport/aspect breakpoints over device detection, share gameplay logic, and consider all three layouts when adding UI.
 
+Any mode requiring direct floor targeting on mobile must automatically prioritize the floor and contextual controls. Full-screen inspectors and management panes must not obscure the target surface. Enforce interaction visibility invariants centrally on refresh and resize; route explicit pane navigation through the shared transition helper rather than adding per-button pane fixes. Orientation changes must preserve interaction and selection state.
+
 Financial values and other short high-value metrics must remain atomic and readable in responsive layouts. Never allow currency to wrap character-by-character. When a label and value cannot fit horizontally, reflow vertically instead of crushing the value column.
 
 ## House Activity vs money feedback

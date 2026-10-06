@@ -65,6 +65,8 @@ var inspector_scroll: ScrollContainer
 var events_panel: PanelContainer
 var bottom_nav: HBoxContainer
 var floor_actions: HBoxContainer
+var floor_walk_button: Button
+var cancel_placement_button: Button
 var rotate_button: Button
 var floor_join_button: Button
 var felt: Control
@@ -207,7 +209,8 @@ func _ready() -> void:
 	floor_actions = HBoxContainer.new()
 	floor_actions.add_theme_constant_override("separation", 6)
 	add_child(floor_actions)
-	add_button(floor_actions, "Walk / Manage", toggle_walk)
+	floor_walk_button = add_button(floor_actions, "Walk", toggle_walk)
+	cancel_placement_button = add_button(floor_actions, "Cancel", cancel_placement)
 	floor_join_button = add_button(floor_actions, "Inspect table", func():
 		if visitor and can_join(): join_table()
 		else: open_page("table"))
@@ -294,8 +297,8 @@ func layout_ui() -> void:
 	brand.visible = not mobile
 
 	stats.position = Vector2(8, 5) if mobile else Vector2(280, 10)
-	stats.add_theme_font_size_override("font_size", 22 if mobile else 30)
-	stats.clip_text = true
+	stats.add_theme_font_size_override("font_size", 18 if mobile and w < 400 and OS.is_debug_build() else 22 if mobile else 30)
+	stats.clip_text = false
 	stats.size = Vector2(maxf(96, w - (212 if OS.is_debug_build() else 146)) if mobile else 330, 32)
 	hud_summary.position = Vector2(8, 48) if mobile else Vector2(280, 48)
 	hud_summary.add_theme_font_size_override("font_size", 14 if mobile else 13)
@@ -344,7 +347,34 @@ func layout_ui() -> void:
 		for child in get_children():
 			if child.has_meta("modal_shade"): child.size = dimensions
 
+# Interaction invariants are applied on every refresh and viewport resize.
+# Future floor-targeting modes should participate here, rather than patch panes.
+func requires_floor_targeting() -> bool:
+	return building or moving > 0
+
+func normalize_interaction_ui() -> void:
+	if moving > 0: building = true
+	if requires_floor_targeting():
+		visitor = false
+		mobile_pane = "floor"
+
+func transition_pane(value: String) -> void:
+	# Explicit navigation away ends placement; Floor preserves its preview.
+	if value != "floor" and requires_floor_targeting():
+		building = false
+		moving = -1
+		floor_view.building = false
+	mobile_pane = value
+	if value == "floor": table_options = false
+
+func cancel_placement() -> void:
+	building = false
+	moving = -1
+	transition_pane("floor")
+	refresh()
+
 func apply_visibility() -> void:
+	normalize_interaction_ui()
 	var at_table := sim.joined >= 0
 	game_view.hide()
 	if at_table:
@@ -377,7 +407,13 @@ func apply_visibility() -> void:
 	hud_summary.show()
 	status.show()
 	bottom_nav.visible = mobile
-	mode_hint.visible = not mobile
+	mode_hint.visible = not mobile or building
+	if mobile and building:
+		mode_hint.position = Vector2(8, 48)
+		mode_hint.size = Vector2(get_window().content_scale_size.x - 16, 22)
+		mode_hint.text = "Tap grid to move | Drag to pan" if moving > 0 else "Tap grid to build | Drag to pan"
+		hud_summary.hide()
+		status.hide()
 	side_panel.visible = not mobile or mobile_pane == "manage"
 	inspector_panel.visible = not mobile or mobile_pane == "table"
 	events_panel.visible = not mobile or mobile_pane == "log"
@@ -386,6 +422,10 @@ func apply_visibility() -> void:
 	floor_actions.visible = floor_view.visible
 	floor_fit.visible = not visitor and not building
 	floor_fit.text = "Fit" if floor_view.close_view else "Closer"
+	floor_walk_button.visible = not building
+	floor_walk_button.text = "Manage" if visitor else "Walk"
+	floor_join_button.visible = not building
+	cancel_placement_button.visible = building
 	rotate_button.visible = building
 	floor_join_button.text = "Join" if visitor and can_join() else "Inspect" if mobile else "Inspect table"
 
@@ -394,15 +434,18 @@ func open_page(value: String) -> void:
 		finance_section = ""
 		finance_advanced = false
 	page = value
-	mobile_pane = "table"
+	if value == "table": selected_guest = -1
+	transition_pane("table")
 	inspector_scroll.scroll_vertical = 0
 	refresh()
 
 func switch_mobile(value: String) -> void:
 	if rolling > 0: return
 	if value == "floor" and sim.joined >= 0: leave_table()
-	mobile_pane = value
-	if value == "table": page = "table"
+	transition_pane(value)
+	if value == "table":
+		page = "guest" if selected_guest >= 0 else "table"
+		inspector_scroll.scroll_vertical = 0
 	refresh()
 
 func can_join() -> bool:
@@ -578,9 +621,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		floor_view.rotated = not floor_view.rotated
 	if event.keycode == KEY_ESCAPE:
 		if building:
-			building = false
-			moving = -1
-			floor_view.building = false
+			cancel_placement()
 		elif sim.joined >= 0:
 			leave_table()
 		refresh()
@@ -629,6 +670,7 @@ func render_asset_financial_activity(parent: Node, asset_id: int = -1, limit: in
 		if shown >= limit: break
 
 func refresh() -> void:
+	normalize_interaction_ui()
 	var dev_active: bool = OS.is_debug_build() and is_instance_valid(developer_panel) and (developer_panel.visible or developer_panel.actions.used or speed > 4 or previous_speed > 4)
 	subtitle.text = ("DEV MODE | " if dev_active else "") + "CASINO TYCOON / " + BuildInfo.VERSION
 	render_treasury()
@@ -989,7 +1031,7 @@ Suggested reserve %s" % [money(profile.top_return * profile.maximum), money(prof
 		add_button(inspector, "Join " + Games.NAMES[sim.table_kind(table)], join_table, not sim.ready_for_play(table) or distance > 165 or (sim.table_kind(table) == "slots" and not sim.reserved_guests(selected).is_empty()))
 		add_label(inspector, "Approach the rail to join." if distance > 165 else "You're close enough to take a seat.", 12, MUTED)
 		if distance > 165:
-			add_button(inspector, "Walk to this table", func(): floor_view.walk_to_table(selected); mobile_pane = "floor"; refresh())
+			add_button(inspector, "Walk to this table", func(): floor_view.walk_to_table(selected); transition_pane("floor"); refresh())
 	else:
 		add_button(inspector, "Experience this table", func(): toggle_walk())
 	var limit_labels := PackedStringArray()
@@ -997,8 +1039,14 @@ Suggested reserve %s" % [money(profile.top_return * profile.maximum), money(prof
 	var limits := " / ".join(limit_labels)
 	add_button(inspector, "Minimum: " + limits, func(): sim.change_minimum(selected); refresh())
 
-	add_button(inspector, "Move table", begin_move, sim.busy(table))
-	button_tone(add_button(inspector, "Sell for %s" % money(sim.purchase_cost(sim.table_kind(table), str(table.slot_profile)) / 2), func(): sim.sell(selected); refresh(), sim.busy(table)), "danger")
+	var move_button := add_button(inspector, "Move table", begin_move, visitor or sim.busy(table))
+	if visitor: move_button.tooltip_text = "Return to management before moving equipment."
+	button_tone(add_button(inspector, "Sell for %s" % money(sim.purchase_cost(sim.table_kind(table), str(table.slot_profile)) / 2), func():
+		if not sim.sell(selected): return
+		selected = -1
+		selected_guest = -1
+		transition_pane("floor")
+		refresh(), sim.busy(table)), "danger")
 
 func render_staff() -> void:
 	add_label(inspector, "STAFF & COVERAGE", 11, GOLD)
@@ -1438,8 +1486,8 @@ func render_guest() -> void:
 	add_label(inspector, "Watch your guests for clues about staffing, limits, and service." if sim.bar_available() else "Watch your guests for clues about available games and busy seats.", 13, MUTED)
 
 func row(parent: Node, columns: int = 0) -> Container:
-	var container: Container = GridContainer.new() if columns > 0 else HBoxContainer.new()
-	if columns > 0: container.columns = columns
+	var container: Container = preload("res://scripts/responsive_grid.gd").new() if columns > 0 else preload("res://scripts/responsive_row.gd").new()
+	if columns > 0: container.maximum_columns = columns
 	container.add_theme_constant_override("h_separation", 6)
 	container.add_theme_constant_override("v_separation", 6)
 	container.add_theme_constant_override("separation", 6)
@@ -1578,7 +1626,7 @@ func select_table(id: int) -> void:
 	selected_guest = -1
 	page = "table"
 	if visitor: floor_view.walk_to_table(id)
-	elif mobile: mobile_pane = "table"
+	elif mobile: transition_pane("table")
 	refresh()
 
 func select_guest(id: int) -> void:
@@ -1586,7 +1634,7 @@ func select_guest(id: int) -> void:
 		return
 	selected_guest = id
 	page = "guest"
-	mobile_pane = "table"
+	transition_pane("table")
 	refresh()
 
 func click_floor(at: Vector2) -> void:
@@ -1600,24 +1648,28 @@ func click_floor(at: Vector2) -> void:
 			table.rotated = floor_view.rotated
 			moving = -1
 			building = false
+			transition_pane("floor")
 			sim.reroute()
 			sim.log_event("Table moved. Clear aisles help guests reach the rail.")
 	else:
 		var id := sim.place(at, floor_view.rotated, build_kind, build_slot_profile)
 		if id > 0:
 			selected = id
+			selected_guest = -1
 			page = "table"
 			building = false
 	refresh()
 
 func begin_move() -> void:
-	if visitor:
+	if visitor or sim.joined >= 0:
 		return
+	var table := sim.get_table(selected)
+	if table.is_empty() or sim.busy(table): return
 	moving = selected
 	building = true
-	build_kind = sim.table_kind(sim.get_table(selected))
-	if build_kind == "slots": build_slot_profile = str(sim.get_table(selected).slot_profile)
-	floor_view.rotated = bool(sim.get_table(selected).rotated)
+	build_kind = sim.table_kind(table)
+	if build_kind == "slots": build_slot_profile = str(table.slot_profile)
+	floor_view.rotated = bool(table.rotated)
 	refresh()
 
 func toggle_build() -> void:
@@ -1629,7 +1681,7 @@ func toggle_build() -> void:
 	visitor = false
 	moving = -1
 	building = not building
-	mobile_pane = "floor"
+	transition_pane("floor")
 	refresh()
 
 func toggle_walk() -> void:
@@ -1639,9 +1691,9 @@ func toggle_walk() -> void:
 		leave_table()
 		if sim.joined >= 0: return
 	visitor = not visitor
-	mobile_pane = "floor"
 	building = false
 	moving = -1
+	transition_pane("floor")
 	page = "table"
 	refresh()
 
@@ -1655,7 +1707,7 @@ func join_table() -> void:
 		return
 	if not sim.join_table(selected): return
 	table_options = false
-	mobile_pane = "table"
+	transition_pane("table")
 	page = "table"
 	inspector_scroll.scroll_vertical = 0
 	sim.player = sim.approach_position(table)
@@ -1671,7 +1723,7 @@ func leave_table() -> void:
 		return
 	table_options = false
 	layout_ui()
-	mobile_pane = "floor"
+	transition_pane("floor")
 	refresh()
 
 func toggle_doors() -> void:
@@ -1723,10 +1775,11 @@ func load_game() -> bool:
 		floor_view.clear_financial_feedback()
 		visitor = sim.joined >= 0
 		page = "table"
-		mobile_pane = "table" if visitor else "floor"
 		selected = sim.joined if sim.joined >= 0 else (int(sim.tables[0].id) if not sim.tables.is_empty() else -1)
 		building = false
 		moving = -1
+		selected_guest = -1
+		transition_pane("table" if visitor else "floor")
 		tick = 0
 		sim.log_event("Casino restored, including guests, wagers and dice state.")
 	refresh()
@@ -1843,7 +1896,7 @@ func start_casino(mode: String, preferred: Array) -> void:
 	rolling = 0
 	active_roll_table = -1
 	page = "table"
-	mobile_pane = "floor"
+	transition_pane("floor")
 	refresh()
 
 func publish_debug() -> void:
@@ -1859,7 +1912,25 @@ func publish_debug() -> void:
 				if ancestor is ScrollContainer: clip = clip.intersection(ancestor.get_global_rect())
 				ancestor = ancestor.get_parent()
 			buttons.append({"text": button.text, "disabled": button.disabled, "x": rect.position.x, "y": rect.position.y, "w": rect.size.x, "h": rect.size.y, "clip": [clip.position.x, clip.position.y, clip.size.x, clip.size.y]})
+	var layout := {
+		"responsive_state": responsive_state, "pane": mobile_pane, "page": page,
+		"building": building, "moving": moving, "visitor": visitor,
+		"selected": selected, "selected_guest": selected_guest, "joined": sim.joined,
+		"floor_visible": floor_view.visible, "inspector_visible": inspector_panel.visible,
+		"floor": [floor_view.position.x, floor_view.position.y, floor_view.size.x, floor_view.size.y],
+		"camera": [floor_view.camera.x, floor_view.camera.y], "zoom": floor_view.zoom,
+		"labels": debug_label_layout(inspector),
+	}
+	JavaScriptBridge.eval("window.neonHouseLayout = " + JSON.stringify(layout), true)
 	JavaScriptBridge.eval("window.neonHouseSnapshot = " + JSON.stringify(sim.snapshot()) + ";window.neonHouseUI = " + JSON.stringify(buttons), true)
+
+func debug_label_layout(parent: Node) -> Array:
+	var labels: Array = []
+	for child in parent.get_children():
+		if child is Label:
+			labels.append({"text": child.text, "width": child.size.x, "minimum": child.get_combined_minimum_size().x, "wrap": child.autowrap_mode})
+		labels.append_array(debug_label_layout(child))
+	return labels
 
 # Preserve live buttons across simulation refreshes: a mouse-down must not lose
 # its button before mouse-up just because the clock advanced.
@@ -1909,6 +1980,9 @@ func patch_children(parent: Control, proposed: Control) -> void:
 		elif live is ProgressBar:
 			live.value = fresh.value
 		elif live is Container:
-			if live is GridContainer: live.columns = fresh.columns
+			if live is GridContainer:
+				live.columns = fresh.columns
+				if live.get_script() == preload("res://scripts/responsive_grid.gd"):
+					live.maximum_columns = fresh.maximum_columns
 			patch_children(live, fresh)
-			if live.get_script() == preload("res://scripts/finance_layout.gd"): live.queue_sort()
+			live.queue_sort()

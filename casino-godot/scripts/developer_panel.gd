@@ -32,12 +32,13 @@ func _ready() -> void:
 	scroll.add_child(content)
 	var title := Label.new()
 	title.text = "DEV MODE | F10 to close"
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(title)
 	feedback = Label.new()
 	feedback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	feedback.text = actions.message
 	content.add_child(feedback)
-	var speeds := HBoxContainer.new()
+	var speeds := preload("res://scripts/responsive_row.gd").new()
 	content.add_child(speeds)
 	for multiplier in [1, 4, 100, 1000]:
 		_add_button(speeds, "%dx" % multiplier, func(): speed_requested.emit(multiplier))
@@ -49,6 +50,9 @@ func _ready() -> void:
 	_add_button(content, "+$10,000", func(): actions.add_cash(10000))
 	_add_button(content, "Advance to Next Unlock", actions.advance_next_unlock)
 	var choice := OptionButton.new()
+	choice.custom_minimum_size.y = 44
+	choice.size_flags_horizontal = SIZE_EXPAND_FILL
+	choice.clip_text = true
 	for milestone in actions.sim.progression_targets():
 		if milestone.id == "slots": continue
 		choice.add_item(str(milestone.name).replace("’", "'"))
@@ -65,6 +69,8 @@ func _ready() -> void:
 func _add_button(parent: Node, text: String, action: Callable) -> void:
 	var button := Button.new()
 	button.text = text
+	button.add_to_group("debug_buttons")
+	button.clip_text = true
 	button.custom_minimum_size.y = 44
 	button.pressed.connect(func():
 		if not OS.is_debug_build(): return

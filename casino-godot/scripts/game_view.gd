@@ -77,6 +77,7 @@ func button(text: String, callback: Callable, parent: Node = null, disabled: boo
 	var item := Button.new()
 	item.text = text
 	item.custom_minimum_size = Vector2(0, 46)
+	item.clip_text = true
 	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	item.pressed.connect(callback)
 	item.disabled = disabled
@@ -84,8 +85,8 @@ func button(text: String, callback: Callable, parent: Node = null, disabled: boo
 	return item
 
 func grid(columns: int) -> GridContainer:
-	var item := GridContainer.new()
-	item.columns = columns
+	var item := preload("res://scripts/responsive_grid.gd").new()
+	item.maximum_columns = columns
 	item.add_theme_constant_override("h_separation", 6)
 	item.add_theme_constant_override("v_separation", 6)
 	controls.add_child(item)
@@ -103,7 +104,7 @@ func _process(_delta: float) -> void:
 		trips = false
 		art.spinning = 0
 	var seated_guests := sim.seated(int(table.id)).map(func(guest): return {"id": guest.id, "name": guest.name, "seat": guest.seat, "thought": guest.thought})
-	var next := JSON.stringify([seated_guests, current_id, sim.wallet, table.round, table.roulette_bets, paused, bet, trips, feedback, show_rules, sim.financial_sequence, art.spinning > 0, int(size.x / 100), table.broken])
+	var next := JSON.stringify([seated_guests, current_id, sim.wallet, table.round, table.roulette_bets, paused, bet, trips, feedback, show_rules, sim.financial_sequence, art.spinning > 0, int(size.x), table.broken])
 	if next == signature: return
 	signature = next
 	render(table)
@@ -171,6 +172,19 @@ func render(table: Dictionary) -> void:
 	art.configure()
 	var visible_round: Dictionary = art.round
 	if art.spinning <= 0 and not visible_round.is_empty(): label(str(visible_round.message), controls, 18)
+	# Canvas art scales to the screen; wager controls and totals must stay legible.
+	if size.x < 600 and kind != "roulette":
+		var amount := FinancialText.cash(bet)
+		if kind == "holdem": amount += " Ante + matching Blind"
+		label("Current wager: " + amount)
+		if kind == "slots" and not visible_round.is_empty() and art.spinning <= 0:
+			label("Returned: " + FinancialText.cash(float(visible_round.get("credit", 0))))
+		if kind in ["blackjack", "holdem"] and not pending:
+			var chips := grid(4)
+			for value in [5, 10, 25, 100]:
+				button("+$%d" % value, func(): bet += value; changed.emit(), chips, locked)
+			if kind == "holdem":
+				button("Trips: " + ("On" if trips else "Off"), func(): trips = not trips; changed.emit(), controls, locked)
 	if not visible_round.is_empty() and visible_round.get("phase", "") == "done" and art.spinning <= 0:
 		for npc in visible_round.get("npcs", []): label("%s | returned $%.2f" % [npc.name, npc.returned], controls, 13)
 	if art.spinning <= 0:
