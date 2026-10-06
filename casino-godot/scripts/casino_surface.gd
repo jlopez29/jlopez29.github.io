@@ -25,22 +25,28 @@ func _ready() -> void:
 	resized.connect(arrange)
 
 func configure() -> void:
-	for item in buttons: item.queue_free()
-	buttons.clear()
-	if kind == "roulette": return
+	queue_redraw()
+	if kind == "roulette":
+		for item in buttons: item.hide()
+		return
+	var index := 0
 	for action in options:
-		var item := Button.new()
+		var item: Button
+		if index < buttons.size(): item = buttons[index]
+		else:
+			item = Button.new()
+			add_child(item)
+			buttons.append(item)
+		item.show()
 		item.text = options[action].text
+		if action in ["Deal", "Spin"]:
+			item.add_theme_stylebox_override("normal", PitBoss.box(Color("544624"), PitBoss.GOLD, 10))
+		else: item.remove_theme_stylebox_override("normal")
 		item.disabled = locked or options[action].disabled
+		for connection in item.get_signal_connection_list("pressed"): item.disconnect("pressed", connection.callable)
 		item.pressed.connect(func(): command.emit(action))
-		var skin := StyleBoxFlat.new()
-		skin.bg_color = Color("e5d6a1") if action in ["Deal", "Spin"] else Color("253d3e")
-		skin.border_color = GOLD
-		skin.set_border_width_all(2)
-		skin.set_corner_radius_all(8)
-		item.add_theme_stylebox_override("normal",skin)
-		item.add_theme_color_override("font_color",Color("17252a") if action in ["Deal","Spin"] else Color("fff1cb"))
-		add_child(item); buttons.append(item)
+		index += 1
+	for i in range(index, buttons.size()): buttons[i].hide()
 	arrange()
 
 func arrange() -> void:
@@ -49,27 +55,23 @@ func arrange() -> void:
 	zoom = minf(1.0 if kind == "blackjack" else 1.2, size.x / canvas_width)
 	origin = Vector2((size.x - canvas_width * zoom)/2,0)
 	var base := blackjack_height() + 16 if kind == "blackjack" else 620.0
-	var cols := 1 if kind == "blackjack" and size.x < 400 else (2 if size.x < 600 else maxi(1, buttons.size()))
-	custom_minimum_size.y = base * zoom + ceili(buttons.size() / float(cols)) * 50 + 12
-	for i in range(buttons.size()):
-		buttons[i].position = Vector2(8+(i%cols)*(size.x-16)/cols,base*zoom+int(i/cols)*50)
-		buttons[i].size = Vector2((size.x-16)/cols-6,46)
+	var visible_buttons := buttons.filter(func(item): return item.visible)
+	var cols := 1 if kind == "blackjack" and size.x < 400 else (2 if size.x < 600 else maxi(1, visible_buttons.size()))
+	custom_minimum_size.y = base * zoom + ceili(visible_buttons.size() / float(cols)) * 50 + 12
+	for i in range(visible_buttons.size()):
+		visible_buttons[i].position = Vector2(8+(i%cols)*(size.x-16)/cols,base*zoom+int(i/cols)*50)
+		visible_buttons[i].size = Vector2((size.x-16)/cols-6,46)
 	queue_redraw()
 
 func centered(at: Vector2, value: String, fs: int, color: Color = GOLD) -> void:
 	text(at-Vector2(font.get_string_size(value,HORIZONTAL_ALIGNMENT_LEFT,-1,fs).x/2,0),value,fs,color)
 
 func stack(at: Vector2, amount: float, color: Color = Color("b8394f"), radius: float = 22.0) -> void:
-	var count := mini(5, maxi(1, int(amount / 10)))
+	var denomination := 1
+	for value in [1, 5, 25, 100, 500, 1000]:
+		if amount >= value: denomination = value
 	var top := at
-	for i in range(count):
-		var position := at - Vector2(0, i * 3)
-		top = position
-		draw_circle(position, radius, Color("f4e9c4"))
-		draw_circle(position, radius - 3, color)
-		for j in range(8):
-			var direction := Vector2.from_angle(j * TAU / 8)
-			draw_line(position + direction * (radius - 7), position + direction * (radius - 2), Color("f4e9c4"), 3)
+	draw_texture_rect(PitBoss.texture("casino_play/shared/chips/chip_%d.svg" % denomination), Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2), false)
 	var value := "$%d" % amount
 	var font_size := maxi(13, floori(radius * 0.6))
 	var available_width := (radius - 5) * 2
@@ -79,28 +81,16 @@ func stack(at: Vector2, amount: float, color: Color = Color("b8394f"), radius: f
 	centered(top + Vector2(0, baseline), value, font_size, Color.WHITE)
 
 func symbol(at: Vector2, value: int, s: float = 1.0) -> void:
-	if value == 0:
-		for offset in [Vector2(-17,7),Vector2(17,13)]:
-			draw_circle(at+offset*s,19*s,Color("631526"))
-			draw_circle(at+(offset-Vector2(2,3))*s,16*s,Color("e73640"))
-			draw_circle(at+(offset-Vector2(6,9))*s,4*s,Color("ffada2"))
-		draw_polyline(PackedVector2Array([at+Vector2(-17,-6)*s,at+Vector2(3,-35)*s,at+Vector2(17,-2)*s]),Color("356b35"),5*s)
-		draw_colored_polygon(PackedVector2Array([at+Vector2(3,-35)*s,at+Vector2(36,-39)*s,at+Vector2(19,-19)*s]),Color("66a741"))
-	elif value == 1:
+	# The rules have five symbols; the pack has no lemon, so retain that silhouette.
+	if value == 1:
 		var oval := PackedVector2Array()
-		for i in range(40): oval.append(at+Vector2(cos(i*TAU/40)*32,sin(i*TAU/40)*20)*s)
-		draw_colored_polygon(oval,Color("ffe367"))
-	elif value == 2:
-		draw_circle(at+Vector2(0,-16)*s,8*s,GOLD)
-		draw_colored_polygon(PackedVector2Array([at+Vector2(-14,-20)*s,at+Vector2(14,-20)*s,at+Vector2(30,23)*s,at+Vector2(-30,23)*s]),Color("e6ae38"))
-		draw_line(at+Vector2(-31,24)*s,at+Vector2(31,24)*s,Color("fff0a3"),6*s)
-		draw_circle(at+Vector2(0,29)*s,7*s,GOLD)
-	elif value == 3:
-		panel(Rect2(at-Vector2(46,23)*s,Vector2(92,46)*s),Color("10202a"),3)
-		centered(at+Vector2(0,12*s),"BAR",int(32*s),Color("f6dd91"))
+		for i in range(32): oval.append(at + Vector2(cos(i * TAU / 32) * 32, sin(i * TAU / 32) * 20) * s)
+		draw_colored_polygon(oval, Color("ffe367"))
 	else:
-		centered(at+Vector2(3,30)*s,"7",int(88*s),Color("142437"))
-		centered(at+Vector2(0,25)*s,"7",int(82*s),Color("f3422d"))
+		var asset: String = ["cherry", "", "bell", "bar", "seven"][value]
+		draw_texture_rect(PitBoss.texture("casino_play/slots/symbols/" + asset + ".svg"), Rect2(at - Vector2(42, 42) * s, Vector2(84, 84) * s), false)
+		if value == 3: centered(at + Vector2(0, 8) * s, "BAR", int(18 * s), PitBoss.TEXT)
+		elif value == 4: centered(at + Vector2(0, 26) * s, "7", int(76 * s), Color("ef4444"))
 
 func _draw() -> void:
 	if kind == "roulette": super._draw(); return
@@ -114,13 +104,12 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO)
 
 func draw_cabinet() -> void:
-	panel(Rect2(7,7,746,601),Color("8c6735"),30)
-	panel(Rect2(19,18,722,577),Color("201c21"),25)
+	draw_texture_rect(PitBoss.texture("casino_play/slots/slot_cabinet_frame.svg"), Rect2(7, 7, 746, 601), false)
 	panel(Rect2(31,30,698,74),Color(str(machine_profile.color)),14)
 	centered(Vector2(380,67),str(machine_profile.name).to_upper(),28)
 	centered(Vector2(380,91),("VIDEO REELS | SINGLE PAYLINE" if machine_profile.screen == "video" else "CLASSIC THREE REEL | SINGLE PAYLINE"),12,Color("ded3af"))
 	for i in range(18):
-		draw_circle(Vector2(50+i*39,18),3,Color("ffeab1") if int(clock*4+i)%3 else Color("9d713f"))
+		draw_circle(Vector2(50+i*39,18),3,Color("d4af37"))
 	for i in range(3):
 		var x := 47.0+i*224
 		panel(Rect2(x,117,218,280),Color("af9967"),12)
@@ -156,7 +145,7 @@ func draw_table_surface() -> void:
 	panel(Rect2(19,18,722,574+extra),Color("172629"),48)
 	panel(Rect2(34,30,692,547+extra),Color("105447") if kind == "blackjack" else Color("163d66"),42)
 	for y in range(42,int(566+extra),7): draw_line(Vector2(49,y),Vector2(711,y),Color(1,1,1,0.018),1)
-	centered(Vector2(380,59),"NEON HOUSE  /  " + ("BLACKJACK" if kind == "blackjack" else "ULTIMATE TEXAS HOLD'EM"),20)
+	centered(Vector2(380,59),"PIT BOSS  /  " + ("BLACKJACK" if kind == "blackjack" else "ULTIMATE TEXAS HOLD'EM"),20)
 	panel(Rect2(286,74,188,23),Color("142323"),5)
 	for i in range(16): draw_line(Vector2(293+i*11,78),Vector2(293+i*11,93),[Color("c35259"),GOLD,Color("5d9bca")][i%3],7)
 	centered(Vector2(380,119),"DEALER",12)
@@ -218,10 +207,10 @@ func draw_blackjack_surface() -> void:
 	var height := blackjack_height()
 	panel(Rect2(4, 4, width - 8, height - 8), Color("372821"), 45)
 	panel(Rect2(19, 18, width - 38, height - 34), Color("172629"), 38)
-	panel(Rect2(34, 30, width - 68, height - 66), Color("105447"), 32)
+	draw_texture_rect(PitBoss.texture("casino_play/blackjack/blackjack_felt_base.png"), Rect2(34, 30, width - 68, height - 66), false)
 	for y in range(42, int(height - 42), 7):
 		draw_line(Vector2(49, y), Vector2(width - 49, y), Color(1, 1, 1, 0.018), 1)
-	centered(Vector2(center, 59), "NEON HOUSE / BLACKJACK", 20)
+	centered(Vector2(center, 59), "PIT BOSS / BLACKJACK", 20)
 	var done: bool = round.get("phase", "") == "done"
 	var dealer: Array = round.get("dealer", [])
 	var dealer_text := "DEALER - waiting for deal"

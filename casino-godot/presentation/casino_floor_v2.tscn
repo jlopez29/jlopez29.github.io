@@ -1,0 +1,42 @@
+[gd_scene load_steps=5 format=3]
+[ext_resource type="Script" path="res://presentation/casino_floor_v2.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/pit_boss/flooring/burgundy_carpet.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/pit_boss/flooring/marble_dark.png" id="3"]
+[ext_resource type="Texture2D" path="res://assets/pit_boss/casino/amenities/bar.png" id="4"]
+[node name="CasinoFloorV2" type="Control"]
+clip_contents = true
+script = ExtResource("1")
+[node name="World" type="Node2D" parent="."]
+[node name="Carpet" type="TextureRect" parent="World"]
+mouse_filter = 2
+texture_repeat = 2
+texture = ExtResource("2")
+expand_mode = 1
+stretch_mode = 1
+[node name="Lobby" type="TextureRect" parent="World"]
+mouse_filter = 2
+texture_repeat = 2
+texture = ExtResource("3")
+expand_mode = 1
+stretch_mode = 1
+[node name="Cage" type="Label" parent="World"]
+offset_left = 65.0
+offset_top = 20.0
+mouse_filter = 2
+text = "THE CAGE"
+theme_override_font_sizes/font_size = 12
+[node name="Entrance" type="Label" parent="World"]
+offset_left = 225.0
+offset_top = 79.0
+mouse_filter = 2
+text = "ENTRANCE"
+theme_override_font_sizes/font_size = 11
+[node name="Bar" type="TextureRect" parent="World"]
+mouse_filter = 2
+texture = ExtResource("4")
+expand_mode = 1
+stretch_mode = 5
+[node name="Assets" type="Node2D" parent="World"]
+[node name="Staff" type="Node2D" parent="World"]
+[node name="Guests" type="Node2D" parent="World"]
+[node name="Player" type="Sprite2D" parent="World"]

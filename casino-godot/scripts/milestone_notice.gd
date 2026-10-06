@@ -65,9 +65,9 @@ func _process(delta: float) -> void:
 
 func present(event: Dictionary) -> void:
 	var major := int(event.importance) >= 2
-	var color := Color("f2ba78") if event.tone == "caution" else Color("e3bb70") if major else Color("57d6b1")
+	var color := Color("f2ba78") if event.tone == "caution" else Color("d4af37") if major else Color("22c55e")
 	var skin := StyleBoxFlat.new()
-	skin.bg_color = Color("172735")
+	skin.bg_color = Color("1b1f24")
 	skin.border_color = color
 	skin.set_border_width_all(2 if major else 1)
 	skin.set_corner_radius_all(8)

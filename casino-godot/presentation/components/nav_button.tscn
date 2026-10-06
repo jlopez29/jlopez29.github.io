@@ -1,0 +1,11 @@
+[gd_scene format=3]
+[node name="NavButton" type="Button"]
+custom_minimum_size = Vector2(72, 52)
+focus_mode = 0
+text = "Navigate"
+expand_icon = true
+theme_override_constants/icon_max_width = 20
+theme_override_font_sizes/font_size = 12
+icon_alignment = 1
+vertical_icon_alignment = 0
+toggle_mode = true

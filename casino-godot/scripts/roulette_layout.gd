@@ -2,6 +2,7 @@ extends Control
 # Geometry is shared by rendering and hit testing, including inside-bet seams.
 signal wager_requested(name: String, amount: float)
 signal denomination_changed(amount: float)
+const PitBoss = preload("res://scripts/pit_boss_theme.gd")
 const Games = preload("res://scripts/casino_games.gd")
 var bets := {}
 var selected := 10.0
@@ -93,16 +94,16 @@ func caption(at: Vector2, value: String, fs: int, color: Color = Color.WHITE) ->
 	draw_string(font, at + Vector2(-width/2,fs*0.35),value,HORIZONTAL_ALIGNMENT_LEFT,-1,fs,color)
 
 func chip(at: Vector2, amount: float, active: bool = false) -> void:
-	draw_circle(at, 23 if active else 19, Color("e8c778"))
-	draw_circle(at, 20 if active else 16, Color("b83852"))
-	for i in range(8):
-		var a := Vector2.from_angle(i*TAU/8)
-		draw_line(at+a*14,at+a*18,Color.WHITE,2)
+	var denomination := 1
+	for value in [1, 5, 25, 100, 500, 1000]:
+		if amount >= value: denomination = value
+	var radius := 23.0 if active else 19.0
+	draw_texture_rect(PitBoss.texture("casino_play/shared/chips/chip_%d.svg" % denomination), Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2), false)
 	caption(at,"$%d" % amount,12)
 
 func _draw() -> void:
 	if font == null: return
-	draw_rect(Rect2(Vector2.ZERO,size),Color("17472d"))
+	draw_texture_rect(PitBoss.texture("casino_play/roulette/roulette_felt_base.png"), Rect2(Vector2.ZERO, size), false)
 	for name in cells:
 		var rect: Rect2 = cells[name]
 		var color := Color("246039")

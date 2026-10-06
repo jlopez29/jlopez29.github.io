@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="336" viewBox="0 0 240 336">
+<pattern id="p" width="28" height="28" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+<rect width="28" height="28" fill="#72202A"/>
+<rect x="1" y="1" width="26" height="26" fill="#3B0D14" stroke="#D4AF37" stroke-width="1" opacity=".9"/>
+</pattern>
+
+<rect x="3" y="3" width="234" height="330" rx="18" fill="#F7F3E9" stroke="#D8D2C4" stroke-width="5"/>
+<rect x="14" y="14" width="212" height="308" rx="12" fill="url(#p)" stroke="#D4AF37" stroke-width="3"/>
+<circle cx="120.0" cy="168.0" r="58" fill="#0E0F10" stroke="#F4D06F" stroke-width="4"/>
+<text x="120.0" y="188.0" text-anchor="middle" font-family="Georgia, serif" font-size="55" font-weight="700" fill="#F4D06F">PB</text>
+
+</svg>

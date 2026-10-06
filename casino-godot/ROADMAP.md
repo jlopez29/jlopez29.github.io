@@ -4,6 +4,16 @@ Current milestone: **V0.3 integration complete in source; manual acceptance pend
 The game remains an early 2D pre-alpha. Build success is not proof of first-hour
 balance, strategy viability or commercial appeal.
 
+## 0.4.6.5 - Pit Boss Full UI & Art Foundation
+
+Inserted presentation milestone before 0.4.7 Promotions / Raffles / Events.
+The existing game launches directly into the shared Pit Boss interface. Scope is
+management/mobile UI, unobstructed placement, guest dots, individual world assets
+and the existing direct-play games. Gameplay systems are retained; this milestone
+does not implement missing loyalty mechanics or future event systems.
+See `PIT_BOSS_UI_PASS.md` for integration and acceptance evidence. Physical-device
+and final art-direction acceptance remain before calling the visual pass final.
+
 ## V0.3 implemented
 
 - Earned Normal climb from two starter slots to developed machines and Blackjack;

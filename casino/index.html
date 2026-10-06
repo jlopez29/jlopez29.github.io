@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="Neon House: a playable casino tycoon prototype. Build and staff your casino, walk the floor, and play craps at your own tables.">
-  <meta name="theme-color" content="#0b121d">
-  <title>Neon House — Casino Tycoon</title>
+  <meta name="description" content="Pit Boss: a playable casino tycoon prototype. Build and staff your casino, walk the floor, and play craps at your own tables.">
+  <meta name="theme-color" content="#0e0f10">
+  <title>Pit Boss — Casino Tycoon</title>
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; background: #0b121d; color: #dbe5ed; font: 14px system-ui, sans-serif; }
+    html, body { margin: 0; height: 100%; background: #0e0f10; color: #eae4d6; font: 14px system-ui, sans-serif; }
     body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
     header { min-height: 46px; flex-shrink: 0; display: flex; align-items: center; gap: 20px; padding: 6px max(12px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left)); border-bottom: 1px solid #293847; }
-    a { color: #e3bb70; text-decoration: none; }
+    a { color: #d4af37; text-decoration: none; }
     .name { font-weight: 600; letter-spacing: 2px; }
     .hint { margin-left: auto; color: #8195a9; font-size: 12px; }
-    button { color: #dbe5ed; background: #233747; border: 1px solid #3c5360; border-radius: 5px; padding: 6px 12px; cursor: pointer; }
+    button { color: #eae4d6; background: #242e36; border: 1px solid #3c5360; border-radius: 5px; padding: 6px 12px; cursor: pointer; }
     main { flex: 1; min-height: 0; position: relative; }
     iframe { width: 100%; height: 100%; border: 0; display: block; }
     @media(max-width: 900px) { .hint { display: none; } header { gap: 10px; font-size: 11px; } .name { letter-spacing: 1px; } button { margin-left: auto; min-height: 36px; } }
@@ -23,18 +23,18 @@
       .hint { display: none; }
       button { min-height: 32px; margin-left: auto; }
     }
-    #game-container:fullscreen { width: 100%; height: 100dvh; background: #0b121d; }
+    #game-container:fullscreen { width: 100%; height: 100dvh; background: #0e0f10; }
   </style>
 </head>
 <body>
   <header>
     <a href="../" aria-label="Back to Jesse Lopez's portfolio">Portfolio</a>
-    <span class="name">NEON HOUSE <small>0.4</small></span>
+    <span class="name">PIT BOSS <small>0.4.6.5a</small></span>
     <span class="hint">Godot / fictional money / saves stay in this browser</span>
     <button id="fullscreen" type="button">Fullscreen</button>
   </header>
   <main id="game-container">
-    <iframe src="game.html" title="Neon House casino tycoon game" allow="fullscreen; autoplay" allowfullscreen></iframe>
+    <iframe src="game.html" title="Pit Boss casino tycoon game" allow="fullscreen; autoplay" allowfullscreen></iframe>
   </main>
   <script>
     if (!document.fullscreenEnabled) document.getElementById('fullscreen').hidden = true;

@@ -266,3 +266,52 @@ Mobile stake review stays in Log, while a committed event uses the existing
 scrollable game view with notifications hidden. The result offers an explicit
 return to management. All money-only result labels stay atomic; all existing
 standalone games keep their original accounting and controls.
+
+## 0.4.6.5 Pit Boss presentation
+
+`pit_boss_theme.gd` supplies one shared Theme and cached modular asset textures.
+The existing main controller, retained inspectors and event components are migrated
+in place. Mobile contextual inspectors use a bottom sheet; full management pages
+keep their scroll viewport. Floor targeting owns visibility on refresh and resize.
+Mobile placement stages a world-space target, then submits the existing placement
+or move callback through an explicit button outside the grid. Desktop retains
+click placement. No simulation rules, RNG order, save schema or user-data path change.
+
+Floor art is drawn inside authoritative asset bounds using the existing read-only
+presentation indexes. Guest dots compose cached base/ring textures without per-guest
+nodes; flooring uses one repeated texture command. Direct play reuses real rules
+and persisted results with supplied cards, wheel, chips, dice and symbol assets.
+Play action controls are retained across value refreshes. Reference images are
+excluded from exports; details and remaining art limitations are recorded in
+`PIT_BOSS_UI_PASS.md`.
+
+## 0.4.6.5a management presentation migration
+
+`main.tscn` now instantiates `presentation/pit_boss_shell.tscn` as the default
+management presentation. Its script owns shell construction/binding and overlay
+layout; the main controller retains the existing actions, inspectors' content,
+simulation timing, saves and play views. Scene components own HUD metric cards,
+navigation buttons, contextual inspector and alert drawer structure. The HUD
+shows actual casino cash and personal wallet separately. The floor fills the
+viewport behind compact overlays; targeting still uses the central visibility
+and pane transition invariants.
+
+`presentation/casino_floor_v2.gd` renders retained `CasinoAssetView` and
+`GuestMarker` scene instances, with texture-backed flooring, lobby, bar, staff
+and player nodes. Nodes synchronize from the controller's SAME simulation.
+The existing read-only `floor_presentation()` index is invalidated by the existing
+revision contract and supplies tables, guests, operating states and table crews.
+Simulation footprints, clickable bounds and sprite dimensions remain separate;
+art rotation/scaling never changes placement, pathfinding or saved coordinates.
+Guest dots compose base, selection/distress/VIP/high-roller rings, rank/mood,
+actual thought indicators and status from existing state.
+
+During this milestone the new floor inherits the existing camera, input,
+walking and transient feedback implementation from `scripts/floor.gd`, but
+completely overrides its world renderer. No legacy world drawing is called.
+The old renderer and `scripts/pit_boss_shell.gd` layout remain in source for
+rollback; they are not instantiated as a second visible management view.
+To roll back presentation, use the old floor script/layout helper and restore
+controller construction from the prior revision. No simulation or play-mode
+source was modified by 0.4.6.5a. Desktop acceptance is the milestone; final mobile
+layout and further art work are deferred.

@@ -39,6 +39,7 @@ var launch := Vector2.ZERO
 var impact := Vector2.ZERO
 var landing := Vector2.ZERO
 var scroll_mode := ScrollContainer.SCROLL_MODE_AUTO
+const PitBoss = preload("res://scripts/pit_boss_theme.gd")
 const GOLD := Color("e6c888")
 const INK := Color("eee7cf")
 const TEAL := Color("89d7c6")
@@ -244,13 +245,10 @@ func box(rect: Rect2, color: Color, radius: int = 12, border: Color = Color.TRAN
 	draw_style_box(style, rect)
 
 func chip_at(at: Vector2, value: float, radius: float = 17, tint: Color = Color.TRANSPARENT) -> void:
-	var color := tint if tint.a > 0 else (Color("b9444b") if value <= 5 else (Color("277c63") if value <= 25 else Color("323d58")))
-	draw_circle(at + Vector2(1, 3), radius, Color("081c20"))
-	draw_circle(at, radius, color)
-	draw_arc(at, radius - 2, 0, TAU, 36, INK, 1.5)
-	for i in range(8):
-		var angle := i * TAU / 8
-		draw_line(at + Vector2.from_angle(angle) * (radius - 6), at + Vector2.from_angle(angle) * (radius - 1), INK, 3)
+	var denomination := 1
+	for amount in [1, 5, 25, 100, 500, 1000]:
+		if value >= amount: denomination = amount
+	draw_texture_rect(PitBoss.texture("casino_play/shared/chips/chip_%d.svg" % denomination), Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2), false)
 	var text := str(int(value))
 	var fs := 12 if radius < 20 else 15
 	label(at + Vector2(-font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x / 2, 5), text, fs)
@@ -391,9 +389,9 @@ func _draw() -> void:
 	var rail := Rect2(53, 106, canvas.x - 106, canvas.y - 280)
 	box(rail.grow(13), Color("48372d"), 42, Color("aa8351"), 3)
 	box(rail.grow(5), Color("211f20"), 36)
-	box(rail, Color("065d18"), 30, INK, 2)
-	label(Vector2(18, 24), "NEON HOUSE / CRAPS %02d" % sim.joined, 14, GOLD)
-	label(Vector2(18, 46), "Owner $%d" % (previous.owner_bankroll if animation > 1 and not previous.is_empty() else sim.owner_bankroll), 16)
+	draw_texture_rect(PitBoss.texture("casino_play/craps/craps_felt_base.png"), rail, false)
+	label(Vector2(18, 24), "PIT BOSS / CRAPS %02d" % sim.joined, 14, GOLD)
+	label(Vector2(18, 46), "Personal Wallet $%d" % (previous.owner_bankroll if animation > 1 and not previous.is_empty() else sim.owner_bankroll), 16)
 	label(Vector2(canvas.x - 160, 24), "POINT %d" % table.point if table.point else "COME-OUT", 15, GOLD)
 	# Cropped half-table: crew at the center edge, players along the outer rail.
 	var dealer := Vector2(canvas.x / 2 - 58, 77) if portrait else Vector2(27, 260)
@@ -483,7 +481,7 @@ func _draw() -> void:
 	var by := canvas.y - 52
 	var bw := (canvas.x - 30) / 4
 	if int(table.shooter) == 0:
-		label(Vector2(19, by + 28), "Your throw", 15, GOLD)
+		button(Rect2(9, by, bw, 46), "Roll", "shoot", can_throw())
 	else:
 		button(Rect2(9, by, bw, 46), "Resume" if table.betting_hold else "Hold", "shoot", not locked and not busy())
 	button(Rect2(13 + bw, by, bw, 46), "Pass dice" if table.shooter == 0 else ("Skip turn" if table.owner_queued else "Queue"), "pass", not busy())
@@ -496,10 +494,7 @@ func _draw() -> void:
 
 func die(at: Vector2, value: int, angle: float) -> void:
 	draw_set_transform(offset + at * factor, angle, Vector2.ONE * factor)
-	box(Rect2(-19, -17, 40, 40), Color("070f12"), 7)
-	box(Rect2(-20, -20, 40, 40), Color("f4eddb"), 6, Color("cfc4ad"))
-	var pips := {1: [Vector2.ZERO], 2: [Vector2(-10, -10), Vector2(10, 10)], 3: [Vector2(-10, -10), Vector2.ZERO, Vector2(10, 10)], 4: [Vector2(-10, -10), Vector2(10, -10), Vector2(-10, 10), Vector2(10, 10)], 5: [Vector2(-10, -10), Vector2(10, -10), Vector2.ZERO, Vector2(-10, 10), Vector2(10, 10)], 6: [Vector2(-10, -10), Vector2(10, -10), Vector2(-10, 0), Vector2(10, 0), Vector2(-10, 10), Vector2(10, 10)]}
-	for pip in pips[value]: draw_circle(pip, 3.5, Color("233c38"))
+	draw_texture_rect(PitBoss.texture("casino_play/craps/die_%d.svg" % value), Rect2(-20, -20, 40, 40), false)
 	draw_set_transform(offset, 0, Vector2.ONE * factor)
 
 func _gui_input(event: InputEvent) -> void:

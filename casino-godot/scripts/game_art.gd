@@ -1,4 +1,5 @@
 extends Control
+const PitBoss = preload("res://scripts/pit_boss_theme.gd")
 const Games = preload("res://scripts/casino_games.gd")
 var kind := "slots"
 var round := {}
@@ -14,8 +15,10 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	clock += delta
+	var was_spinning := spinning > 0
 	spinning = maxf(0, spinning - delta)
-	queue_redraw()
+	if is_visible_in_tree() and was_spinning:
+		queue_redraw()
 
 func text(at: Vector2, value: String, fs: int = 18, color: Color = Color.WHITE) -> void:
 	draw_string(font, at, value, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, color)
@@ -29,15 +32,16 @@ func panel(rect: Rect2, color: Color, radius: int = 12) -> void:
 	draw_style_box(style, rect)
 
 func card(at: Vector2, number: int, hidden: bool = false, scale: float = 1) -> void:
-	var rect := Rect2(at, Vector2(49, 67) * scale)
-	panel(rect, Color("263f68") if hidden else Color("f1eadc"), 5)
-	if hidden:
-		text(at + Vector2(12, 40) * scale, "NH", int(16 * scale), GOLD)
-	else:
-		var color := Color("b22d43") if int(number / 13) in [1, 2] else Color("152c30")
-		text(at + Vector2(5, 24) * scale, str(number % 13 + 2) if number % 13 < 9 else ["J", "Q", "K", "A"][number % 13 - 9], int(20 * scale), color)
-
+	var rank: String = str(number % 13 + 2) if number % 13 < 9 else ["J", "Q", "K", "A"][number % 13 - 9]
+	var suit: String = ["spades", "hearts", "diamonds", "clubs"][int(number / 13)]
+	var asset: String = "card_back" if hidden else rank + "_" + suit
+	draw_texture_rect(PitBoss.texture("casino_play/shared/cards/" + asset + ".svg"), Rect2(at, Vector2(49, 67) * scale), false)
+	# Godot's SVG importer omits <text>; keep ranks/suits as native presentation.
+	if not hidden:
+		var color := Color("72202a") if int(number / 13) in [1, 2] else Color("0e0f10")
+		text(at + Vector2(5, 24) * scale, rank, int(20 * scale), color)
 		suit_symbol(at + Vector2(25, 46) * scale, int(number / 13), scale, color)
+
 
 func suit_symbol(center: Vector2, suit: int, scale: float, color: Color) -> void:
 	var points := PackedVector2Array()
@@ -66,7 +70,7 @@ func _draw() -> void:
 	if kind in ["slots", "roulette"]: custom_minimum_size.y = 270
 	panel(Rect2(Vector2.ZERO, size), Color("0f493b"), 22)
 	if kind == "slots":
-		text(Vector2(18, 30), "N E O N   R E E L S", 22, GOLD)
+		text(Vector2(18, 30), "P I T   B O S S   R E E L S", 22, GOLD)
 		var width := (size.x - 48) / 3
 		for i in range(3):
 			var rect := Rect2(12 + i * (width + 12), 67, width, 118)
@@ -85,18 +89,21 @@ func _draw() -> void:
 		var center := Vector2(size.x / 2, 134)
 		var radius := minf(110, size.x / 2 - 20)
 		var angle := clock * 5 if spinning > 0 else 0.0
+		draw_set_transform(center, angle)
+		draw_texture_rect(PitBoss.texture("casino_play/roulette/roulette_wheel.svg"), Rect2(Vector2.ONE * -radius, Vector2.ONE * radius * 2), false)
+		draw_set_transform(Vector2.ZERO)
+		# Runtime pockets follow the rules' number/color order, over authored wood.
 		for i in range(37):
-			var a := i * TAU / 37 + angle
-			var b := (i + 1) * TAU / 37 + angle
-			var number: int = Games.WHEEL[i]
-			var color := Color("287451") if number == 0 else (Color("ac3247") if number in Games.RED else Color("152330"))
-			draw_colored_polygon(PackedVector2Array([center, center + Vector2.from_angle(a) * radius, center + Vector2.from_angle(b) * radius]), color)
-			var at := center + Vector2.from_angle((a + b) / 2) * (radius - 14)
-			text(at - Vector2(5, -4), str(number), 9)
-		draw_circle(center, radius * 0.51, Color("a17b46"))
+			var a := i * TAU / 37 - PI / 2 + angle
+			var b := (i + 1) * TAU / 37 - PI / 2 + angle
+			var pocket: int = Games.WHEEL[i]
+			var color := Color("0f5132") if pocket == 0 else Color("72202a") if pocket in Games.RED else Color("0e0f10")
+			draw_colored_polygon(PackedVector2Array([center + Vector2.from_angle(a) * radius * 0.46, center + Vector2.from_angle(a) * radius * 0.78, center + Vector2.from_angle(b) * radius * 0.78, center + Vector2.from_angle(b) * radius * 0.46]), color)
+			var at := center + Vector2.from_angle((i + 0.5) * TAU / 37 - PI / 2 + angle) * (radius * 0.73)
+			text(at - Vector2(4, -3), str(Games.WHEEL[i]), 8)
 		var number := int(round.get("number", 0))
-		var ball_angle := -clock * 9 if spinning > 0 else (Games.WHEEL.find(number) + 0.5) * TAU / 37
-		draw_circle(center + Vector2.from_angle(ball_angle) * (radius - 29), 5, Color.WHITE)
+		var ball_angle := -clock * 9 if spinning > 0 else (Games.WHEEL.find(number) + 0.5) * TAU / 37 - PI / 2
+		draw_circle(center + Vector2.from_angle(ball_angle) * (radius * 0.64), 5, Color.WHITE)
 		text(center + Vector2(-15, 9), "…" if spinning > 0 else str(number), 29)
 	else:
 		var done: bool = round.get("phase", "") == "done"

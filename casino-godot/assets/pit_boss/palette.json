@@ -1,0 +1,16 @@
+{
+  "background": "#0E0F10",
+  "panel": "#1B1F24",
+  "panel_alt": "#242E36",
+  "gold": "#D4AF37",
+  "gold_light": "#F4D06F",
+  "burgundy": "#72202A",
+  "felt": "#0F5132",
+  "success": "#22C55E",
+  "warning": "#F59E0B",
+  "danger": "#EF4444",
+  "accent": "#8B5CF6",
+  "info": "#38BDF8",
+  "text": "#EAE4D6",
+  "muted": "#9CA3AF"
+}

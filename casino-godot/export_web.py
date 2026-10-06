@@ -41,17 +41,17 @@ def main():
         output = project.parent / "casino-debug" / "game.html"
         output.parent.mkdir(parents=True, exist_ok=True)
         run_godot([args.godot, "--headless", "--path", str(project), "--export-debug", "Web", str(output)])
-        print(f"Built Neon House {args.version} DEVELOPMENT. F10 enables tools. Output: {output}")
+        print(f"Built Pit Boss {args.version} DEVELOPMENT. F10 enables tools. Output: {output}")
         if args.debug:
             return
     run_godot([args.godot, "--headless", "--path", str(project), "--export-release", "Web"])
     wrapper = project.parent / "casino" / "index.html"
     html = (project / "web" / "index.html").read_text(encoding="utf-8")
-    html, count = re.subn(r"(NEON HOUSE <small>)[^<]*(</small>)", lambda match: match[1] + args.version + match[2], html, count=1)
+    html, count = re.subn(r"(PIT BOSS <small>)[^<]*(</small>)", lambda match: match[1] + args.version + match[2], html, count=1)
     if count != 1:
         raise RuntimeError("Could not update the website version label")
     wrapper.write_text(html, encoding="utf-8")
-    print(f"Built Neon House {args.version}. Last updated {timestamp}")
+    print(f"Built Pit Boss {args.version}. Last updated {timestamp}")
 
 
 if __name__ == "__main__":

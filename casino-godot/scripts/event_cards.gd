@@ -4,6 +4,7 @@ signal changed
 const Events = preload("res://scripts/optional_events.gd")
 var sim: CasinoSimulation
 var current_id := -1
+var card_panel: PanelContainer
 var card: VBoxContainer
 var title: Label
 var description: Label
@@ -26,7 +27,10 @@ func _ready() -> void:
 	add_child(queue_label)
 	card = VBoxContainer.new()
 	card.size_flags_horizontal = SIZE_EXPAND_FILL
-	add_child(card)
+	card_panel = PanelContainer.new()
+	card_panel.add_theme_stylebox_override("panel", preload("res://scripts/pit_boss_theme.gd").box())
+	add_child(card_panel)
+	card_panel.add_child(card)
 	title = Label.new()
 	description = Label.new()
 	countdown = Label.new()
@@ -93,7 +97,7 @@ func refresh(simulation: CasinoSimulation) -> void:
 	queue_label.visible = sim.optional_events.active.size() > CasinoTuning.EVENT_VISIBLE_CAP
 	queue_label.text = "%d more event(s) queued" % (sim.optional_events.active.size() - CasinoTuning.EVENT_VISIBLE_CAP)
 	title.text = "%s - %s" % [definition.category, definition.title]
-	var color := Color("ff9486") if definition.theme == "urgent" else Color("e3bb70") if definition.theme == "caution" else Color("57d6b1")
+	var color := Color("ef4444") if definition.theme == "urgent" else Color("d4af37") if definition.theme == "caution" else Color("22c55e")
 	title.add_theme_color_override("font_color", color)
 	description.text = definition.description
 	if definition.target_kind == "asset":

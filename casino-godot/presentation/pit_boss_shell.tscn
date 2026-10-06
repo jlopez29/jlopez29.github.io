@@ -1,0 +1,66 @@
+[gd_scene load_steps=8 format=3]
+[ext_resource type="Script" path="res://presentation/pit_boss_shell.gd" id="1"]
+[ext_resource type="PackedScene" path="res://presentation/casino_floor_v2.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://presentation/components/metric_card.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://presentation/components/object_inspector.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://presentation/components/alert_drawer.tscn" id="5"]
+[ext_resource type="Texture2D" path="res://assets/pit_boss/branding/crown_mark.svg" id="6"]
+[ext_resource type="Theme" path="res://presentation/theme/pit_boss_theme.tres" id="7"]
+[node name="PitBossShell" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+theme = ExtResource("7")
+script = ExtResource("1")
+[node name="Backdrop" type="ColorRect" parent="."]
+mouse_filter = 2
+color = Color(0.055, 0.059, 0.063, 1)
+[node name="CasinoFloorV2" parent="." instance=ExtResource("2")]
+[node name="TopHUD" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+[node name="Bar" type="Panel" parent="TopHUD"]
+mouse_filter = 2
+[node name="Logo" type="TextureRect" parent="TopHUD"]
+mouse_filter = 2
+texture = ExtResource("6")
+expand_mode = 1
+stretch_mode = 5
+[node name="Brand" type="Label" parent="TopHUD"]
+mouse_filter = 2
+text = "PIT BOSS"
+theme_override_font_sizes/font_size = 24
+[node name="Subtitle" type="Label" parent="TopHUD"]
+mouse_filter = 2
+theme_override_font_sizes/font_size = 11
+[node name="Cash" parent="TopHUD" instance=ExtResource("3")]
+[node name="Caption" parent="TopHUD/Cash" index="0"]
+text = "CASINO CASH"
+[node name="Wallet" parent="TopHUD" instance=ExtResource("3")]
+[node name="Caption" parent="TopHUD/Wallet" index="0"]
+text = "PERSONAL WALLET"
+[node name="Guests" parent="TopHUD" instance=ExtResource("3")]
+[node name="Caption" parent="TopHUD/Guests" index="0"]
+text = "GUESTS"
+[node name="Reputation" parent="TopHUD" instance=ExtResource("3")]
+[node name="Caption" parent="TopHUD/Reputation" index="0"]
+text = "REPUTATION"
+[node name="Clock" type="Label" parent="TopHUD"]
+mouse_filter = 2
+[node name="Actions" type="HBoxContainer" parent="TopHUD"]
+theme_override_constants/separation = 6
+[node name="NavigationRail" type="VBoxContainer" parent="."]
+theme_override_constants/separation = 6
+[node name="AlertDrawer" parent="." instance=ExtResource("5")]
+[node name="ObjectInspector" parent="." instance=ExtResource("4")]
+[node name="ContextControls" type="HBoxContainer" parent="."]
+theme_override_constants/separation = 6
+[editable path="TopHUD/Cash"]
+[editable path="TopHUD/Wallet"]
+[editable path="TopHUD/Guests"]
+[editable path="TopHUD/Reputation"]

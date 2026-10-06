@@ -19,6 +19,7 @@ var player_round: Dictionary = {}
 var felt: Control
 var feedback := ""
 var show_rules := false
+var cursors := {}
 var controls: VBoxContainer
 
 func _ready() -> void:
@@ -42,6 +43,10 @@ func _ready() -> void:
 			return
 		match action:
 			"Deal", "Spin": transact(true)
+			"Bet down":
+				var table := sim.get_table(sim.joined)
+				var denominations: Array = sim.slot_profile(table).denominations
+				bet = maxf(float(denominations[maxi(0, denominations.find(bet) - 1)]), float(table.minimum))
 			"Bet":
 				var table := sim.get_table(sim.joined)
 				var denominations: Array = sim.slot_profile(table).denominations
@@ -70,30 +75,29 @@ func _ready() -> void:
 
 func label(text: String, parent: Node = null, font_size: int = 16) -> void:
 	if parent == null: parent = controls
-	var item := Label.new()
+	var item: Label = retained(parent, "label", func(): return Label.new())
 	item.text = text
 	item.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	item.add_theme_font_size_override("font_size", font_size)
-	parent.add_child(item)
 
 func button(text: String, callback: Callable, parent: Node = null, disabled: bool = false) -> Button:
 	if parent == null: parent = controls
-	var item := Button.new()
+	var item: Button = retained(parent, "button", func(): return Button.new())
 	item.text = text
 	item.custom_minimum_size = Vector2(0, 46)
 	item.clip_text = true
 	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for connection in item.get_signal_connection_list("pressed"): item.disconnect("pressed", connection.callable)
 	item.pressed.connect(callback)
 	item.disabled = disabled
-	parent.add_child(item)
 	return item
 
 func grid(columns: int) -> GridContainer:
-	var item := preload("res://scripts/responsive_grid.gd").new()
+	var item: GridContainer = retained(controls, "grid", func(): return preload("res://scripts/responsive_grid.gd").new())
 	item.maximum_columns = columns
 	item.add_theme_constant_override("h_separation", 6)
 	item.add_theme_constant_override("v_separation", 6)
-	controls.add_child(item)
+	cursors[item] = 0
 	return item
 
 func _process(_delta: float) -> void:
@@ -113,6 +117,7 @@ func _process(_delta: float) -> void:
 	if next == signature: return
 	signature = next.duplicate(true)
 	render(table)
+	finish_controls()
 
 func transact(start: bool, action: String = "") -> void:
 	if paused or art.spinning > 0: return
@@ -129,7 +134,8 @@ func transact(start: bool, action: String = "") -> void:
 	changed.emit()
 
 func render(table: Dictionary) -> void:
-	for child in controls.get_children(): controls.remove_child(child); child.queue_free()
+	cursors.clear()
+	cursors[controls] = 0
 	var kind := sim.table_kind(table)
 	stage.vertical = kind != "roulette" or size.x < 1050
 	art.custom_minimum_size.x = 250 if not stage.vertical else 0
@@ -144,7 +150,7 @@ func render(table: Dictionary) -> void:
 		return
 	var pending := sim.game_pending(table)
 	var locked: bool = paused or art.spinning > 0 or not sim.ready_for_play(table)
-	label("%s  |  OWNER $%.2f" % [sim.asset_name(table), sim.owner_bankroll], controls, 23)
+	label("%s  |  Personal Wallet $%.2f" % [sim.asset_name(table), sim.owner_bankroll], controls, 23)
 	var companions := sim.seated(int(table.id))
 	if not companions.is_empty():
 		var speaker: Dictionary = companions[0]
@@ -176,7 +182,7 @@ func render(table: Dictionary) -> void:
 	art.machine_profile = sim.slot_profile(table) if kind == "slots" else {}
 	art.options = {}
 	if kind == "slots":
-		art.options = {"Bet": {"text": "BET / $%d" % bet, "disabled": false}, "Spin": {"text": "SPIN REELS", "disabled": sim.owner_bankroll < bet}, "Max": {"text": "PLAY MAX / $%d" % sim.maximum_wager(table), "disabled": sim.owner_bankroll < sim.maximum_wager(table)}}
+		art.options = {"Bet down": {"text": "BET -", "disabled": bet <= table.minimum}, "Bet": {"text": "BET + / $%d" % bet, "disabled": false}, "Spin": {"text": "SPIN REELS", "disabled": sim.owner_bankroll < bet}, "Max": {"text": "PLAY MAX / $%d" % sim.maximum_wager(table), "disabled": sim.owner_bankroll < sim.maximum_wager(table)}}
 	elif kind != "roulette":
 		if pending:
 			var actions := Games.actions(table.round, sim.owner_bankroll)
@@ -219,7 +225,6 @@ func render(table: Dictionary) -> void:
 			"blackjack": label("Six decks shuffled each round | blackjack 3:2 | dealer stands on soft 17 and peeks | double any first two cards, including after split | up to four hands | split aces receive one card | late surrender before splitting | insurance 2:1.", controls, 13)
 			"holdem": label("Ante + equal Blind. Preflop raise 3x/4x or check; flop raise 2x or check; river raise 1x or fold. Dealer qualifies with a pair. Blind win pays straight 1:1, flush 3:2, full house 3:1, quads 10:1, straight flush 50:1, royal 500:1; weaker wins push Blind. Trips pays independently, even after folding: trips 3, straight 4, flush 7, full house 8, quads 30, straight flush 40, royal 50 to 1.", controls, 13)
 	button("Resume time" if paused else "Pause time", func(): pause_requested.emit(), controls, art.spinning > 0)
-	button("Leave / walk floor", func(): leave_requested.emit(), controls, pending or art.spinning > 0)
 
 var rendered_sequence := -1
 
@@ -275,3 +280,26 @@ func render_owner_event(table: Dictionary) -> void:
 		button("Resolve and return to management", func(): leave_requested.emit(), controls, art.spinning > 0)
 		button("Resume time" if paused else "Pause time", func(): pause_requested.emit(), controls, art.spinning > 0)
 	if feedback != "": label(feedback)
+
+# Retain controls through financial refreshes; change structure only when needed.
+func retained(parent: Node, kind: String, create: Callable) -> Control:
+	var index := int(cursors.get(parent, 0))
+	cursors[parent] = index + 1
+	if index < parent.get_child_count() and parent.get_child(index).get_meta("pit_kind", "") == kind:
+		return parent.get_child(index)
+	while parent.get_child_count() > index:
+		var obsolete := parent.get_child(index)
+		parent.remove_child(obsolete)
+		obsolete.queue_free()
+	var item: Control = create.call()
+	item.set_meta("pit_kind", kind)
+	parent.add_child(item)
+	return item
+
+func finish_controls() -> void:
+	for parent in cursors:
+		while parent.get_child_count() > int(cursors[parent]):
+			var obsolete: Node = parent.get_child(int(cursors[parent]))
+			parent.remove_child(obsolete)
+			obsolete.queue_free()
+	cursors.clear()
