@@ -90,7 +90,7 @@ Communicate actionable demand, preferences, service needs, satisfaction, frustra
 
 ## Living guest behavior
 
-Visits may include gambling, browsing, waiting, watching, switching games and seeking service before departure. Finishing a session should offer another decision, not automatically end the visit. Departure should reflect bankroll, satisfaction, entertainment, patience and stay tendency rather than a single age cutoff. Reconsider periodically without constant bouncing. Let retention and turnover produce population organically; never force a target headcount. Individual behavior belongs here; aggregate traffic/demand remains Phase 07.
+Visits may include gambling, browsing, waiting, watching, switching games and seeking service before departure. Finishing a session should offer another decision, not automatically end the visit. Departure should reflect bankroll, satisfaction, entertainment, patience and stay tendency rather than a single age cutoff. Reconsider periodically without constant bouncing. Let retention and turnover produce population organically; never force a target headcount. Keep aggregate arrival and capacity pressure separate from individual guest decisions.
 
 ## Developer testing tools
 

@@ -104,7 +104,8 @@ func symbol(at: Vector2, value: int, s: float = 1.0) -> void:
 
 func _draw() -> void:
 	if kind == "roulette": super._draw(); return
-	if font == null: return
+	# Visibility can change one frame before GameView assigns the asset profile.
+	if font == null or (kind == "slots" and machine_profile.is_empty()): return
 	draw_set_transform(origin,0,Vector2.ONE*zoom)
 	zones.clear(); tray.clear()
 	if kind == "slots": draw_cabinet()

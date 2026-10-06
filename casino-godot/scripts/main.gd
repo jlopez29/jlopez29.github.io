@@ -2,6 +2,7 @@ extends Control
 
 const FinancialText = preload("res://scripts/financial_text.gd")
 const DeveloperPanel = preload("res://scripts/developer_panel.gd")
+const MilestoneNotice = preload("res://scripts/milestone_notice.gd")
 const BuildInfo = preload("res://scripts/build_info.gd")
 const FloorScript = preload("res://scripts/floor.gd")
 const Games = preload("res://scripts/casino_games.gd")
@@ -17,6 +18,7 @@ var treasury_target := 0.0
 var treasury_flash := 0.0
 var treasury_direction := 0.0
 var developer_panel: PanelContainer
+var milestone_notice: PanelContainer
 var sim := CasinoSimulation.new()
 var floor_view: Control
 var selected := 1
@@ -35,6 +37,7 @@ const DEV_FRAME_BUDGET_USEC := 8000
 const DEV_MAX_PENDING_SECONDS := 60.0
 var tick := 0.0
 var refresh_timer := 0.0
+var debug_snapshot_timer := 0.0
 var rolling := 0.0
 var page := "table"
 var stats: Label
@@ -76,6 +79,7 @@ var responsive_state := "desktop"
 var finance_section := ""
 var finance_advanced := false
 var finance_compare_group := ""
+var traffic_details := false
 var table_scroll: ScrollContainer
 var table_options := false
 var chip_value := 25.0
@@ -232,6 +236,9 @@ func _ready() -> void:
 	for tab in ["Floor", "Table", "Manage", "Log"]:
 		add_button(bottom_nav, tab, func(): switch_mobile(tab.to_lower()))
 	get_viewport().size_changed.connect(func(): call_deferred("layout_ui"))
+	milestone_notice = MilestoneNotice.new()
+	add_child(milestone_notice)
+	sim.milestone_reached.connect(on_milestone)
 	if OS.is_debug_build():
 		developer_panel = DeveloperPanel.new(sim)
 		add_child(developer_panel)
@@ -474,10 +481,19 @@ func clear(parent: Node) -> void:
 		parent.remove_child(child)
 		child.queue_free()
 
+func on_milestone(event: Dictionary) -> void:
+	var notice := event.duplicate(true)
+	notice.dev = OS.is_debug_build() and is_instance_valid(developer_panel) and (developer_panel.actions.used or not sim.debug_forced_unlocks.is_empty())
+	milestone_notice.enqueue(notice)
+
 func _process(delta: float) -> void:
+	milestone_notice.enabled = modal == null and not (is_instance_valid(developer_panel) and developer_panel.visible)
 	animate_treasury(delta)
 	if OS.has_feature("web") and OS.is_debug_build():
-		publish_debug()
+		debug_snapshot_timer += delta
+		if debug_snapshot_timer >= CasinoTuning.DEBUG_SNAPSHOT_SECONDS:
+			debug_snapshot_timer = 0
+			publish_debug()
 	if modal != null:
 		return
 	if not OS.is_debug_build() and (speed > 4 or previous_speed > 4): reset_dev_speed()
@@ -737,12 +753,34 @@ func render_progression(parent: Node, compact: bool = false) -> void:
 			parent.add_child(bar)
 	add_label(parent, "Earn access through your property and guest business. Unlocking never forces a purchase.", 12, MUTED)
 
+func render_traffic() -> void:
+	var traffic := sim.traffic_snapshot()
+	add_label(inspector, "GUEST DEMAND", 12, GOLD)
+	finance_short_metric(inspector, "Guest positions reserved", "%d / %d" % [traffic.occupied, traffic.positions])
+	finance_short_metric(inspector, "Looking for a game", str(traffic.waiting))
+	add_label(inspector, "A waiting guest is demand, not an instruction to spend. Protect your reserve.", 12, MUTED)
+	add_button(inspector, "Hide traffic detail" if traffic_details else "Traffic & departure detail", func(): traffic_details = not traffic_details; refresh())
+	if not traffic_details: return
+	var totals: Dictionary = sim.traffic_totals
+	finance_short_metric(inspector, "Traffic period", str(traffic.cycle) if sim.opened else "Closed")
+	finance_short_metric(inspector, "Guests on floor", str(traffic.active))
+	finance_short_metric(inspector, "Arrivals / visits with unmet demand", "%d / %d" % [totals.arrivals, totals.unmet_visits])
+	if int(totals.position_minutes) > 0:
+		finance_short_metric(inspector, "Average guest position occupancy", "%.0f%%" % (float(totals.occupied_minutes) / float(totals.position_minutes) * 100))
+	finance_short_metric(inspector, "Long-wait departures", str(totals.severe_departures))
+	finance_short_metric(inspector, "Arrival opportunities deferred", str(totals.deferred_attempts))
+	add_label(inspector, "Deferred opportunities are not spawned guests or lost sales. Mild waiting does not harm reputation.", 12, MUTED)
+	var reasons: Dictionary = totals.departures
+	for item in [{"key": "capacity", "name": "No room after retrying"}, {"key": "affordability", "name": "No affordable staffed game"}, {"key": "service", "name": "Poor drink service"}, {"key": "closed", "name": "Casino closing"}, {"key": "visit", "name": "Other visit endings"}]:
+		if int(reasons[item.key]) > 0: finance_short_metric(inspector, item.name, str(reasons[item.key]))
+
 func render_development() -> void:
 	add_label(inspector, "CASINO DEVELOPMENT", 12, MUTED)
 	add_label(inspector, "Casino Rating %.1f" % sim.casino_rating, 25, TEXT)
 	add_label(inspector, "Level %d - %s" % [sim.stars(), CasinoTuning.STAR_NAMES[sim.stars() - 1]], 14, GOLD)
 	add_label(inspector, "Property quality and real guest business develop your casino. Reputation measures how guests feel.", 13, MUTED)
 	add_label(inspector, "Guest reputation  %.0f%%" % sim.reputation, 15, TEAL)
+	render_traffic()
 	add_gap(inspector, 12)
 	render_progression(inspector)
 	add_gap(inspector, 12)
@@ -769,6 +807,12 @@ func activity_presentation(message: String) -> Dictionary:
 	elif body.begins_with("DEVELOPMENT - "):
 		category = "DEVELOPMENT"
 		body = body.trim_prefix("DEVELOPMENT - ").replace("stars", "development levels")
+	elif body.begins_with("MILESTONE - "):
+		category = "MILESTONE"
+		body = body.trim_prefix("MILESTONE - ")
+	elif body.begins_with("DEMAND - "):
+		category = "DEMAND"
+		body = body.trim_prefix("DEMAND - ")
 	elif body.begins_with("RESERVE - "):
 		category = "RESERVE"
 		body = body.trim_prefix("RESERVE - ")
@@ -1529,6 +1573,7 @@ func load_game() -> bool:
 	if not restored:
 		sim.log_event("Save is invalid or incompatible. Start a new casino.")
 	else:
+		milestone_notice.reset()
 		reset_dev_speed()
 		if is_instance_valid(developer_panel): developer_panel.reset_session(sim)
 		reset_treasury_display()
@@ -1637,6 +1682,8 @@ func show_new_game_setup(initial: bool = false) -> void:
 
 func start_casino(mode: String, preferred: Array) -> void:
 	sim = CasinoSimulation.new(mode, preferred)
+	sim.milestone_reached.connect(on_milestone)
+	milestone_notice.reset()
 	reset_treasury_display()
 	floor_view.sim = sim
 	felt.sim = sim

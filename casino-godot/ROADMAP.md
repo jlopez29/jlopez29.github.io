@@ -1,45 +1,41 @@
 # Roadmap
 
-Current milestone: **0.2 browser playtest — expanded craps, shooter rotation, and touch controls**.
+Current milestone: **V0.3 integration complete in source; manual acceptance pending**.
+The game remains an early 2D pre-alpha. Build success is not proof of first-hour
+balance, strategy viability or commercial appeal.
 
-## Completed
+## V0.3 implemented
 
-- Playable slots, roulette, blackjack, and Ultimate Texas Hold’em.
-- Visible cocktail-service routes and guest cage cash-outs with house-result labels.
+- Earned Normal climb from two starter slots to developed machines and Blackjack;
+  Easy supports chosen games/crews and broader access.
+- Fixed per-profile slot prices, denominations, payout math, appeal, development,
+  volatility/reliability, repair burden and visual differentiation.
+- Slots, blackjack, roulette, shared craps and Ultimate Hold'em with real funds.
+- Net financial floor feedback, animated treasury and compact expandable Finance
+  with asset performance, comparisons and advisory reserve/purchase plans.
+- Walking cocktail staff, paid drinks and recent-real-wager basic comps.
+- Guest archetypes, meaningful thoughts, multi-activity visits and direct exits
+  for never-gambled guests; capacity-based traffic, quiet/peaks and gentle pressure.
+- Persistent real-accomplishment notifications, expansion and filtered activity.
+- Responsive desktop/mobile, atomic financial values, disposable current saves.
+- Separate release/debug exports from one source; debug progression controls and
+  bounded extreme-speed operation.
+- Final integration fixes for aggregate craps milestones, duplicate service
+  complaints, navigation-grid reuse and matching runtime/save safety bounds.
 
-- Godot/GDScript foundation, 2D procedural floor and web export.
-- Place/rotate/move/sell tables with spacing/cash checks.
-- Hire/assign two-dealer crews, wages, fatigue, standby relief, service coverage.
-- Autonomous guest arrivals, navigation, seating, bankrolls, satisfaction, leaving.
-- Shared craps dice, real Pass Line contracts and house transfers.
-- Walkable visitor mode, touch navigation, and responsive phone panels.
-- Pass/Don’t, Come/Don’t Come, odds, all Place numbers, Field, hardways and props.
-- Shared shooter rotation, CPU handoff, betting holds, bet removal and roll history.
-- Rare rail repairs with an operating-time grace period.
-- VIP bankroll variation, repair/service decisions, alerts and inspection.
-- Finance with payout/stake accounting, reputation, clock/speed controls.
-- Versioned local save/load and headless/in-browser regression checks.
-- Portfolio integration and checked-in single-threaded web build.
+## Manual acceptance before calling V0.3 balanced
 
-## Next after playtesting
+Walk the Normal build/attract/operate/earn/reinvest/unlock loop. Compare slot-heavy,
+balanced, table-focused and later premium/high-limit choices over similar samples.
+Check 1x/4x requirements, reserve readiness, payroll/repairs, drinks/comps, demand
+and perception recovery. Observe real floor activity for 30 seconds and check
+mobile readability. Validate current-save round trips and reasonable busy-floor
+responsiveness. Follow `BALANCING.md` for the detailed checklist and assumptions.
 
-1. Tune throughput, operating costs, and guest patience using observed sessions.
-2. More visitor feedback: drink ordering, service wait, crowd reactions and audio.
-3. Refine the felt and touch feedback; consider Buy/Lay and advanced betting options.
-4. Meaningful reputation unlocks, room expansion, VIP preferences and comps.
-5. More differentiated guests and staff; surveillance and uncertain incidents.
-6. Playtest the four new games, their purchase prices, and guest strategies.
-7. Consider a 3D floor / eye-level visitor camera after the loop earns that effort.
+## Deferred beyond V0.3
 
-## Playtest questions
-
-- Can a new player staff and open the casino without help?
-- Do they understand why tables stop, guests leave, or profits change?
-- Do they choose to build another table within 10–20 minutes?
-- Does visitor mode reveal something useful about the casino's operation?
-- Does shooting with NPC guests feel like joining a shared table?
-- Is the owner/visitor bankroll separation clear?
-- Can they recover from a bad session rather than simply restart?
-- Do they want to run another casino evening?
-
-Commercial viability and long-term fun are open questions, not completed features.
+Future policy/audio/presentation refinements and larger guest/staff systems need
+observed playtest evidence and separately approved scope. 3D, multiplayer, Steam
+integration/achievements, hotels/restaurants, sophisticated security and major
+entertainment/resort systems are outside this release. No V0.4 feature set or
+release schedule is committed here.

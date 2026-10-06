@@ -375,7 +375,13 @@ func draw_other_game(table: Dictionary) -> void:
 			draw_rect(Rect2(at, Vector2(20, 29)), Color("ede6d8"))
 			text_at(at + Vector2(3, 19), ["A", "K", "Q"][i], Color("b64354"), 13)
 	if not compact_labels: text_at(rect.position + Vector2(0, -13), "%s %02d" % [sim.slot_profile(table).short_name if kind == "slots" else CasinoGames.NAMES[kind], table.id], GOLD, 12)
-	if not compact_labels: text_at(rect.position + Vector2(0, rect.size.y + 17), "%s | %d/%d" % [sim.table_status(table), sim.seated(int(table.id)).size(), sim.capacity(table)], TEAL, 10)
+	if not compact_labels:
+		var status := sim.table_status(table)
+		if status.begins_with("Doors closed"): status = "Closed"
+		elif status == "Repair needed": status = "Repair"
+		# Long closed-door explanations overlapped adjacent tiny slot cabinets.
+		var caption := "Owner" if sim.joined == int(table.id) else "%s | %d/%d" % [status, sim.seated(int(table.id)).size(), sim.guest_capacity(table)]
+		text_at(rect.position + Vector2(0, rect.size.y + 17), caption, TEAL, 10)
 	for i in range(sim.crew(int(table.id)).size()):
 		draw_circle(rect.position + Vector2(rect.size.x + 15, 25 + i * 30), 8, INK)
 

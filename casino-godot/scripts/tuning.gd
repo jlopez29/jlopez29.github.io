@@ -96,7 +96,7 @@ const HIGH_LIMIT_COST := 3500.0
 # Property development and settled guest business earn Rating; perception is reputation.
 const MILESTONES := [
 	{"id": "slots", "name": "Slot Machine", "rating": 0.0},
-	{"id": "blackjack", "name": "Blackjack", "rating": 16.0},
+	{"id": "blackjack", "name": "Blackjack", "rating": 14.0},
 	{"id": "service", "name": "Bar / drink service", "rating": 20.0},
 	{"id": "roulette", "name": "Roulette", "rating": 28.0},
 	{"id": "expansion", "name": "Floor expansion", "rating": 35.0},
@@ -127,7 +127,7 @@ const TABLE_RESERVE_PROFILES := {
 	"craps": {"base": 2500.0, "return_multiple": 35.0},
 	"holdem": {"base": 3000.0, "return_multiple": 100.0},
 }
-const BLACKJACK_REQUIREMENTS := {"rating": 16.0, "development": 4.0, "capacity": 3, "handle": 12000.0, "guests": 80, "cash": 2450.0}
+const BLACKJACK_REQUIREMENTS := {"rating": 14.0, "development": 4.0, "capacity": 3, "handle": 12000.0, "guests": 40, "cash": 2450.0}
 const BLACKJACK_RESERVE := 650.0 # Suggested after table + onboarding; includes payroll and payouts.
 const GUEST_BUDGETS := [
 	{"rating": 0.0, "bankroll": Vector2i(40, 140), "wager": 5.0},
@@ -144,6 +144,9 @@ const FULL_BUILD_AREA := Rect2(65, 100, 720, 400)
 const TABLE_GAME_ROUND_MINUTES := {"blackjack": 2, "roulette": 2, "holdem": 2} # Game minutes per occupied NPC hand/spin.
 const VISITOR_CASH := 1000.0
 const MAX_GUESTS := 40
+const MAX_ASSETS := 20 # Runtime placement and current-save bounds must agree.
+const MAX_STAFF := 16
+const DEBUG_SNAPSHOT_SECONDS := 0.25
 # Hospitality is settled on physical delivery; prices and policy are independent.
 const DRINK_PROFILES := {"basic": {"name": "Basic drink", "price": 5.0, "cost": 1.0, "comp_eligible": true}}
 const COMP_POLICY := {"recent_wager_minutes": 12, "basic_gambling_comps": true}
@@ -151,26 +154,41 @@ const DRINK_THIRST_TRIGGER := 12.0
 const THIRST_PER_MINUTE := 0.5
 const THIRST_DISCOMFORT := 25.0
 const THIRST_SATISFACTION_LOSS := 0.6
+# A locked service system should not punish the opening like a neglected bar.
+const PRE_SERVICE_THIRST_DISCOMFORT := 40.0
+const PRE_SERVICE_THIRST_LOSS_SCALE := 0.25
 const DRINK_SATISFACTION_GAIN := 6.0
 const DRINK_PREP_SECONDS := 2.0 # Simulated movement seconds, as with the existing service route.
 const ENTITY_WALK_SPEED := 64.0 # World units per simulated second, independent of update size.
-const ARRIVAL_MINUTES := Vector2i(18, 32) # Small parties, with quiet gaps at 1x.
-const ARRIVAL_OVERFLOW_RATIO := 0.25 # One extra visitor for two/four slots; scales with seats.
+# Traffic scales with real positions. These are arrival opportunities, not targets.
+const ARRIVAL_MINUTES := Vector2i(18, 32)
 const QUIET_ARRIVAL_MINUTES := Vector2i(28, 48)
+const TRAFFIC_RULES := {
+	"normal": {"overflow": 0.25, "peak_overflow": 0.35, "pressure": 1.0, "patience": 1.0, "rep_loss": 1.0},
+	"easy": {"overflow": 0.20, "peak_overflow": 0.25, "pressure": 0.85, "patience": 1.5, "rep_loss": 0.35},
+}
+const TRAFFIC_MAX_ACCELERATION := 4.0
+const TRAFFIC_FULL_ARRIVAL_CHANCE := 0.45
+const TRAFFIC_GROUP_CHANCE := 0.30
+const TRAFFIC_WAIT_GRACE_FRACTION := 0.75
+const TRAFFIC_WAIT_LIMIT_FRACTION := 1.5
+const TRAFFIC_WAIT_SATISFACTION_LOSS := 0.15
+const TRAFFIC_BAD_VISITS_PER_REVIEW := 3
+const TRAFFIC_REPUTATION_COOLDOWN := 120
+const TRAFFIC_REPUTATION_LOSS := 0.3
+
 const OBSERVE_MINUTES := Vector2i(12, 24)
 const OBSERVERS_PER_TABLE := 3
 const TABLE_CAPACITY := 8
 const CREW_REQUIRED := 2 # Abstract crew for this prototype, not a full real-world crew.
-const CRAPS_COST := 6000.0
 const DEALER_WAGE := 20.0 # Per game hour; compressed prototype economy.
 const SERVICE_WAGE := 16.0
 const TABLE_OVERHEAD := 12.0
 const TABLE_REPAIR_COST := 120.0
-const TABLE_MINIMUM := 25.0
 const ROLL_SECONDS := 0.3 # NPC dice cadence in game minutes; pass bets resolve over several rolls.
 const NPC_ROLL_FATIGUE := 0.002 # Up to 0.17 extra game minutes at minimum crew energy.
 const VISITOR_ROLL_FATIGUE := 0.04 # Preserve the existing manually played rail cadence.
-const SAVE_VERSION := 10 # One current schema; pre-alpha saves are disposable.
+const SAVE_VERSION := 12 # One current schema; pre-alpha saves are disposable.
 const SAVE_PATH := "user://neon-house.json"
 const VISITOR_ROLL_SECONDS := 15.0
 const REPAIR_GRACE_MINUTES := 4320 # Three days of operation before any wear check.
@@ -182,6 +200,15 @@ const TABLE_SIZE := Vector2(190, 100)
 const CRAPS_SIZE := Vector2(230, 130)
 const NAMES := ["Alex", "Morgan", "Sam", "Jordan", "Riley", "Casey", "Taylor", "Drew", "Jesse", "Avery", "Blake", "Kai"]
 
+# Real accomplishments only. Notification timing is presentation time, not a gate.
+const MILESTONE_PROFIT := 100.0
+const MILESTONE_PROFIT_HANDLE := 1000.0
+const MILESTONE_LARGE_RESULT := 500.0
+const MILESTONE_MAJOR_RESULT := 1000.0
+const MILESTONE_QUEUE_LIMIT := 6
+const MILESTONE_SECONDS := 4.0
+const MILESTONE_MAJOR_SECONDS := 6.0
+const MILESTONE_GAP_SECONDS := 1.0
 # Real-time financial presentation; real seconds, independent of simulation speed.
 const MONEY_IMPORTANCE_THRESHOLDS := [10.0, 100.0, 1000.0]
 const MONEY_HISTORY_LIMIT := 12
