@@ -45,7 +45,6 @@ var hud_summary: Label
 var objective: VBoxContainer
 var asset_details := false
 var expanded_slot_details := ""
-var expanded_table_plan := ""
 var status: Label
 var mode_hint: Label
 var inspector: VBoxContainer
@@ -884,22 +883,18 @@ func render_build() -> void:
 			add_button(inspector, "LOCKED: Blackjack | Develop the slot floor" if feature == "blackjack" else "LOCKED: %s | Rating %.0f" % [milestone.name, milestone.rating], func(): pass, true)
 			continue
 		if Games.COSTS.has(feature):
-			add_button(inspector, "%s | $%d" % [milestone.name, sim.feature_cost(feature)], func(): build_kind = feature; toggle_build(), sim.cash < sim.feature_cost(feature))
-			add_button(inspector, "Hide purchase plan" if expanded_table_plan == feature else "Table + crew + reserve", func(): expanded_table_plan = "" if expanded_table_plan == feature else feature; refresh())
-			if expanded_table_plan == feature: render_purchase_readiness(inspector, feature)
+			var purchase := add_button(inspector, "%s | $%d" % [milestone.name, sim.feature_cost(feature)], func(): build_kind = feature; toggle_build(), sim.cash < sim.feature_cost(feature))
+			purchase.tooltip_text = table_purchase_tooltip(feature)
 		elif feature == "expansion":
 			add_button(inspector, "Directional floor expansion >", func(): open_page("development"))
 		elif feature == "service":
 			add_button(inspector, "Drink service | Staff & coverage", func(): open_page("staff"))
 		else:
 			add_button(inspector, "%s | %s" % [milestone.name, "Purchased" if sim.feature_owned(feature) else "$%d" % sim.feature_cost(feature)], func(): sim.purchase_upgrade(feature); refresh(), sim.feature_owned(feature) or sim.cash < sim.feature_cost(feature))
-	if sim.unlocked("craps"):
-		add_label(inspector, "Craps: $%d + two dealers ($%d each), $%d/hr crew wages and $%d/hr operations. Keep cash for payout swings." % [Games.COSTS.craps, CasinoTuning.HIRING_COST, 2 * CasinoTuning.DEALER_WAGE, CasinoTuning.TABLE_OVERHEAD], 12, MUTED)
 
 func render_slot_catalog() -> void:
 	add_label(inspector, "SLOT MACHINES", 16, GOLD)
 	add_label(inspector, "Add seats, improve machines, or protect your reserve.", 13, MUTED)
-	render_purchase_readiness(inspector, "blackjack")
 	for id in CasinoTuning.SLOT_PROFILES:
 		var profile := CasinoTuning.slot_profile(id)
 		var available: bool = sim.slot_unlocked(id)
@@ -1098,6 +1093,11 @@ func finance_short_metric(parent: Node, title: String, text: String) -> void:
 	var line := finance_line(parent)
 	add_label(line, title, 13, MUTED)
 	finance_value(line, text, 14, TEXT)
+
+func table_purchase_tooltip(kind: String) -> String:
+	var plan := sim.reserve_report(kind)
+	var crew := sim.required_crew({"kind": kind})
+	return "Setup estimate (table purchase only):\n%d dealer(s), %s/hr crew wages + %s/hr equipment upkeep.\nTable + needed dealer hiring: %s.\nCash above / below suggested buffer after purchase: %s.\nBuffer includes the existing floor, payout swings and %.0f hours of payroll/upkeep. Keep it available; it is not charged." % [crew, FinancialText.cash(crew * CasinoTuning.DEALER_WAGE, 0), FinancialText.cash(CasinoTuning.TABLE_OVERHEAD, 0), FinancialText.cash(float(plan.purchase) + float(plan.onboarding), 0), FinancialText.house_result(float(plan.margin)), CasinoTuning.RESERVE_OPERATING_HOURS]
 
 func render_purchase_readiness(parent: Node, kind: String, profile_id: String = "starter") -> void:
 	var plan := sim.reserve_report(kind, profile_id)
