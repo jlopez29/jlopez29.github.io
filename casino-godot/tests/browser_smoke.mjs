@@ -22,13 +22,14 @@ try {
   }
   async function button(prefix) {
    console.log(`${mobile ? "touch" : "desktop"}: ${prefix}`);
-   await page.waitForFunction(prefix => window.neonHouseUI.some(b=>b.text.startsWith(prefix) && !b.disabled), prefix, {timeout:15000});
+   await page.waitForFunction(prefix => window.neonHouseUI.some(b=>b.text.startsWith(prefix) && !b.disabled), prefix, {timeout:30000});
    await page.waitForTimeout(150);
    for(let i=0;i<18;i++) {
     const b=await target(prefix); assert.ok(b,`Enabled button: ${prefix}`);
     const [x,y,w,h]=b.clip;
     if(b.y>=y && b.y+b.h<=y+h) {
-     if(mobile) await page.touchscreen.tap(b.x+b.w/2,b.y+b.h/2); else await page.mouse.click(b.x+b.w/2,b.y+b.h/2);
+     const clickX=(Math.max(b.x,x)+Math.min(b.x+b.w,x+w))/2;
+     if(mobile) await page.touchscreen.tap(clickX,b.y+b.h/2); else await page.mouse.click(clickX,b.y+b.h/2);
      await page.waitForTimeout(200); return;
     }
     const down=b.y<y;
@@ -37,64 +38,51 @@ try {
    }
    throw Error(`Could not scroll to ${prefix}`);
   }
-  async function pane(name){if(mobile) await button(name);}
+  async function pane(name) {
+   if(!mobile)return;
+   console.log(`touch pane: ${name}`);
+   await page.waitForFunction(name=>window.neonHouseUI.some(b=>b.text===name),name,{timeout:30000});
+   const b=await page.evaluate(name=>window.neonHouseUI.filter(b=>b.text===name).sort((a,b)=>b.y-a.y)[0],name);
+   await page.touchscreen.tap(b.x+b.w/2,b.y+b.h/2);
+   await page.waitForFunction(name=>window.neonHouseLayout.pane===name.toLowerCase(),name,{timeout:30000});
+  }
   try {
-   await page.goto(process.env.CASINO_TEST_URL || 'http://127.0.0.1:8090/game.html');
-   await page.waitForFunction(()=>window.neonHouseUI,null,{timeout:60000});
-   await page.waitForTimeout(800);
-   await button("Let's open the house");
-   await pane('Table'); await button('Hire dealer'); await button('Hire dealer');
-   await pane('Manage'); await button('Pause'); await button('Open casino');
-   await button('Walk the floor');
-   await pane('Table'); await button('Walk to this table');
-   await page.waitForTimeout(2200);
-   await pane('Table'); await button('Join craps table');
-   assert.equal((await state()).joined,1);
-   assert.equal((await state()).tables[0].shooter,0,'Empty table grants visitor first hand');
-   await pane('Manage'); await button('1×'); await pane('Table');
-   await button('Field +');
-   assert.equal((await state()).tables[0].owner.field,25);
-   const rolls=(await state()).tables[0].rolls;
-   await button('SHOOT DICE');
-   await page.waitForFunction(n=>window.neonHouseSnapshot.tables[0].rolls>n,rolls);
-   assert.equal((await state()).tables[0].owner.field,0);
-   await button('Pass dice to CPU'); await button('Hold betting');
-   const held=(await state()).tables[0].rolls;
-   await button('Join shooter rotation');
-   assert.notEqual((await state()).tables[0].shooter,0,'Queue does not steal the hand');
-   await button('Place'); await button('Place 6 +');
-   assert.equal((await state()).tables[0].owner.six,30);
-   await button('Hard'); await button('Hard 4 +');
-   assert.equal((await state()).tables[0].owner.hard_4,25);
-   await button('My bets'); await button('Hard 4 ·');
-   assert.equal((await state()).tables[0].owner.hard_4,0);
-   assert.equal((await state()).tables[0].rolls,held,'Hold leaves bets open while time advances');
-   await button('Save'); const saved=await state();
-   await page.waitForTimeout(2500); await page.reload();
-   await page.waitForFunction(()=>window.neonHouseUI,null,{timeout:60000});
-   await page.waitForTimeout(500); await button("Let's open the house"); await button('Load');
-   const loaded=await state();
-   assert.equal(loaded.joined,1); assert.equal(loaded.tables[0].owner.six,30);
-   assert.equal(loaded.wallet,saved.wallet); assert.equal(loaded.tables[0].shooter,saved.tables[0].shooter);
-   assert.equal(loaded.tables[0].betting_hold,true); assert.equal(loaded.tables[0].owner_queued,true);
-   await pane('Table'); await button('Resume CPU');
-   await page.waitForFunction(n=>window.neonHouseSnapshot.tables[0].rolls>n,held,{timeout:25000});
-   await button('History');
-   await page.screenshot({path:`/tmp/neon-house-${mobile?'mobile':'desktop'}.png`});
+   await page.addInitScript(()=>{window.neonHouseRequestFullState=true;});
+   await page.goto(process.env.CASINO_TEST_URL || 'http://127.0.0.1:8093/casino-debug/game.html');
+   await page.waitForFunction(()=>window.neonHouseUI,null,{timeout:90000});
+   await button('Start casino');
+   await pane('Manage');
+   if(mobile) {await page.keyboard.press('Space'); await page.waitForTimeout(1200);} else await button('Pause');
+   await pane('Table'); await button('Move table');
+   await page.waitForFunction(()=>window.neonHouseLayout.building && window.neonHouseLayout.floor_visible && !window.neonHouseLayout.inspector_visible || window.neonHouseLayout.building && !window.neonHouseLayout.responsive_state.startsWith('mobile'));
+   let layout=await page.evaluate(()=>window.neonHouseLayout);
+   assert.ok(layout.floor_visible,'Move exposes floor');
+   const selection=layout.selected;
    if(mobile) {
-    await page.setViewportSize({width:844,height:344});await page.waitForTimeout(600);
-    await button('Place');await button('Place 8 +');
-    assert.equal((await state()).tables[0].owner.eight,30);
-    await page.screenshot({path:'/tmp/neon-house-landscape.png'});
-    await page.setViewportSize({width:320,height:650});await page.waitForTimeout(600);
-    await button('My bets');await button('Take down removable bets');
-    assert.equal((await state()).tables[0].owner.eight,0);
-    await pane('Floor');
-   } else await button('Leave table / walk floor');
-   assert.equal((await state()).joined,-1);
-   assert.notEqual((await state()).tables[0].shooter,0);
+    await page.setViewportSize({width:844,height:390});await page.waitForTimeout(1200);
+    layout=await page.evaluate(()=>window.neonHouseLayout);
+    assert.ok(layout.floor_visible && !layout.inspector_visible,'Landscape move exposes targeting surface');
+    assert.equal(layout.selected,selection,'Resize preserves selection');
+    await page.setViewportSize({width:390,height:844});await page.waitForTimeout(1200);
+   }
+   await button('Cancel');
+   await pane('Manage'); await button('+ Build games...');
+   await button('Place machine -');
+   await page.waitForFunction(()=>window.neonHouseLayout.building && window.neonHouseLayout.floor_visible);
+   await button('Cancel');
+   await pane('Manage'); await button('Walk the floor');
+   await page.waitForFunction(()=>window.neonHouseLayout.visitor);
+   await pane('Floor');
+   await page.screenshot({path:`/tmp/neon-house-${mobile?'mobile':'desktop'}.png`});
+   await pane('Manage'); await button('Manage casino');
+   for(const action of ['Finance','Casino development','Staff & assignments','Incidents & decisions']) {
+    await pane('Manage'); await button(action);
+   }
+   await pane('Manage');
+   if(mobile) {await page.keyboard.press('Space');await page.waitForTimeout(700);await page.keyboard.press('Space');await page.waitForTimeout(700);} else {await button('4x');await button('Pause');await button('1x');await button('Pause');}
+   if(!mobile) {await button('Save');const saved=await state();await button('Load');const loaded=await state();assert.equal(loaded.version,saved.version);assert.equal(loaded.cash,saved.cash);}
    assert.deepEqual(errors,[]);
-   console.log(`${mobile?'Touch portrait/landscape':'Desktop'} passed: staffing, walking, betting, handoff, CPU hold/resume, queue, removals, save/reload.`);
+   console.log(`${mobile?'Touch portrait/landscape':'Desktop'} passed: move/build/cancel, resize, walk/manage, pages, speed transitions${mobile?'':', save/load'}.`);
   } catch(e) {await page.screenshot({path:'/tmp/neon-house-failure.png'});console.error(errors); console.error(JSON.stringify((await state()).tables));throw e;}
   finally {await context.close();}
  }

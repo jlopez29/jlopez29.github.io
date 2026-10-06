@@ -36,8 +36,7 @@ From another terminal at the repository root:
 
 The browser checks retain screenshots and JSON reports in `/tmp`, use a fresh
 browser context (no existing saves), and fail on checked assertions or runtime
-errors. The speed smoke uses the desktop debug panel's current geometry; update
-its click coordinates if that panel layout changes. It checks continued activity,
+errors. The speed smoke locates debug speed buttons through the UI bridge. It checks continued activity,
 not achievement of the requested multiplier. Release F10 behavior and screenshot
 readability also require reviewing the retained screenshots. Software rendering
 in CI/codespaces is not a hardware performance benchmark.
@@ -45,3 +44,21 @@ in CI/codespaces is not a hardware performance benchmark.
 These checks do not establish first-hour fun, strategy dominance, every poker
 branch, rare-tail safety, audio/touch feel, or compatibility across browsers and
 real mobile devices. Development saves deliberately have no migration contract.
+
+## 0.4.2 performance
+
+See [PERFORMANCE_042_REPORT.md](PERFORMANCE_042_REPORT.md) for the measured baseline,
+limits, fixture exporter and 30-minute release-soak commands.
+
+`performance_checks.gd` covers deterministic feedback cadence and retained UI.
+`performance_idle.gd` checks paused redraw frequency. `performance_profile.gd` and
+`performance_profile_games.gd` measure scoped CPU work; `performance_feedback_rate.gd`
+counts actual visible feedback creations. `performance_equivalence.gd` emits seeded
+full state/RNG transcripts for comparison with a baseline checkout.
+
+`performance_browser.mjs` supports `PERF_SCENARIOS` (JSON pairs of scenario/speed),
+`PERF_WIDTH` / `PERF_HEIGHT`, `PERF_TRACE=1` (Chromium CPU profile), and `PERF_REPORT`.
+The fixture export is isolated in `/tmp`, including for release; production does
+not expose test state hooks. Browser smoke uses the current starter game and
+checks desktop/mobile move/build/cancel, orientation, walk/manage and navigation.
+Full-state debug polling is explicitly enabled by browser tests.

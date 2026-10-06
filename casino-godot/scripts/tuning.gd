@@ -166,7 +166,9 @@ const VISITOR_CASH := 1000.0
 const MAX_GUESTS := 80
 const MAX_ASSETS := 128 # Runtime placement and current-save bounds must agree.
 const MAX_STAFF := 64
-const DEBUG_SNAPSHOT_SECONDS := 0.25
+const DEBUG_SNAPSHOT_SECONDS := 0.5
+const DEBUG_FULL_SNAPSHOT_SECONDS := 2.0
+const FLOOR_PRESENTATION_SECONDS := 5
 # Hospitality is settled on physical delivery; prices and policy are independent.
 const BAR_COUNTER := Rect2(350, 18, 150, 39)
 const BAR_PICKUP_OFFSET := Vector2(80, 72) # Reachable aisle point below the counter.

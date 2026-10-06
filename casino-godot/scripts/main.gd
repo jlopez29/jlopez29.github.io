@@ -37,7 +37,13 @@ const DEV_FRAME_BUDGET_USEC := 8000
 const DEV_MAX_PENDING_SECONDS := 60.0
 var tick := 0.0
 var refresh_timer := 0.0
+var refreshed_elapsed := -1
 var debug_snapshot_timer := 0.0
+var debug_full_timer := 0.0
+var retained_render := false
+var render_cursors := {}
+var inspector_identity: Array = []
+var layout_identity: Array = []
 var rolling := 0.0
 var page := "table"
 var stats: Label
@@ -483,30 +489,37 @@ func label_at(at: Vector2, text: String, font_size: int, color: Color) -> Label:
 	return label
 
 func add_label(parent: Node, text: String, font_size: int = 14, color: Color = TEXT) -> Label:
-	var label := Label.new()
+	var label: Label = render_node(parent, "label", func(): return Label.new())
 	label.text = text
-	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", color)
+	label.tooltip_text = ""
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	if label.get_theme_font_size("font_size") != font_size: label.add_theme_font_size_override("font_size", font_size)
+	if label.get_theme_color("font_color") != color: label.add_theme_color_override("font_color", color)
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = SIZE_EXPAND_FILL
-	parent.add_child(label)
 	return label
 
 func add_button(parent: Node, title: String, callback: Callable, disabled: bool = false) -> Button:
-	var button := Button.new()
+	var button: Button = render_node(parent, "button", func(): return Button.new())
 	button.text = title
 	button.disabled = disabled
+	for connection in button.get_signal_connection_list("pressed"):
+		button.disconnect("pressed", connection.callable)
 	button.pressed.connect(callback)
+	button.tooltip_text = ""
+	button.set_meta("render_toned", false)
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size.y = 44
 	button.size_flags_horizontal = SIZE_EXPAND_FILL
 	button.clip_text = true
 	if OS.is_debug_build():
 		button.add_to_group("debug_buttons")
-	parent.add_child(button)
 	return button
 
 func button_tone(button: Button, tone: String) -> void:
+	button.set_meta("render_toned", true)
+	if str(button.get_meta("button_tone", "")) == tone: return
+	button.set_meta("button_tone", tone)
 	var color := Color("254e48") if tone == "primary" else Color("30232e")
 	for state in ["normal", "hover", "pressed"]:
 		var skin := style(color.lightened(0.1) if state == "hover" else color, TEAL.darkened(0.5) if tone == "primary" else Color("72424b"))
@@ -521,9 +534,8 @@ func button_at(at: Vector2, dimensions: Vector2, title: String, callback: Callab
 	return button
 
 func add_gap(parent: Node, height: float) -> void:
-	var gap := Control.new()
+	var gap: Control = render_node(parent, "gap", func(): return Control.new())
 	gap.custom_minimum_size.y = height
-	parent.add_child(gap)
 
 func clear(parent: Node) -> void:
 	for child in parent.get_children():
@@ -543,6 +555,7 @@ func _process(delta: float) -> void:
 		if debug_snapshot_timer >= CasinoTuning.DEBUG_SNAPSHOT_SECONDS:
 			debug_snapshot_timer = 0
 			publish_debug()
+	floor_view.set_presentation_speed(speed if modal == null else 0)
 	if modal != null:
 		return
 	if not OS.is_debug_build() and (speed > 4 or previous_speed > 4): reset_dev_speed()
@@ -555,6 +568,7 @@ func _process(delta: float) -> void:
 		while tick >= 1:
 			tick -= 1
 			sim.step()
+			floor_view.presentation_step()
 	if rolling > 0:
 		rolling -= delta
 		if rolling <= 0:
@@ -563,7 +577,7 @@ func _process(delta: float) -> void:
 	refresh_timer += delta
 	if refresh_timer >= 1:
 		refresh_timer = 0
-		refresh()
+		refresh(false)
 
 func set_dev_speed(multiplier: int) -> void:
 	# Guard the action as well as the controls; release cannot enter this path.
@@ -669,7 +683,8 @@ func render_asset_financial_activity(parent: Node, asset_id: int = -1, limit: in
 		shown += 1
 		if shown >= limit: break
 
-func refresh() -> void:
+func refresh(structural: bool = true) -> void:
+	floor_view.set_presentation_speed(speed if modal == null else 0)
 	normalize_interaction_ui()
 	var dev_active: bool = OS.is_debug_build() and is_instance_valid(developer_panel) and (developer_panel.visible or developer_panel.actions.used or speed > 4 or previous_speed > 4)
 	subtitle.text = ("DEV MODE | " if dev_active else "") + "CASINO TYCOON / " + BuildInfo.VERSION
@@ -682,7 +697,12 @@ func refresh() -> void:
 	if is_instance_valid(mobile_dev): mobile_dev.add_theme_color_override("font_color", GOLD if speed > 4 else TEXT)
 	if mobile: status.text = "DEV %dx" % speed if speed > 4 else "D%d %02d:%02d" % [sim.day, sim.minute / 60, sim.minute % 60]
 	status.tooltip_text = "Financial performance and operating costs are available in Finance."
-	clear(objective)
+	if not structural and not visitor and refreshed_elapsed == sim.elapsed: return
+	refreshed_elapsed = sim.elapsed
+	retained_render = true
+	render_cursors.clear()
+	render_cursors[objective] = 0
+	render_cursors[feed] = 0
 	render_progression(objective, true)
 	doors_button.text = "Close to new arrivals" if sim.opened else "Open casino"
 	build_button.text = "Cancel placement" if building else "+ Build games..."
@@ -696,19 +716,27 @@ func refresh() -> void:
 	game_view.paused = speed == 0
 	floor_view.selected = selected
 	mode_hint.text = "Click to place | R to rotate | Esc to cancel" if building else ("Tap to walk | tap a table to approach | E or Join to play" if visitor else "Select a table or guest to inspect | build and staff to expand")
-	layout_ui()
+	var layout_key := [page, mobile_pane, visitor, building, moving, sim.joined, modal, table_options]
+	if layout_key != layout_identity:
+		layout_identity = layout_key
+		layout_ui()
+	else:
+		apply_visibility()
+	floor_view.invalidate_presentation()
 	felt.chip = chip_value
 	felt.locked = rolling > 0 or speed == 0 or table_options or modal != null
 	felt.queue_redraw()
-	clear(feed)
 	add_label(feed, "HOUSE ACTIVITY", 12, MUTED)
 	if sim.house_activity.is_empty(): add_label(feed, "Your next important casino event will appear here.", 13, MUTED)
 	for i in range(mini(6 if mobile else 2, sim.house_activity.size())):
 		render_activity_row(feed, str(sim.house_activity[i]), i == 0)
 	var scroll: ScrollContainer = inspector.get_parent()
 	var scroll_position := scroll.scroll_vertical
-	var live_inspector := inspector
-	inspector = VBoxContainer.new()
+	var identity := [page, selected, selected_guest, sim.joined, asset_details, finance_section, responsive_state]
+	if identity != inspector_identity:
+		inspector_identity = identity
+		clear(inspector)
+	render_cursors[inspector] = 0
 	if sim.joined >= 0 and page == "table":
 		if sim.table_kind(sim.get_table(sim.joined)) == "craps": render_craps()
 	elif page == "development":
@@ -727,13 +755,8 @@ func refresh() -> void:
 		render_guest()
 	else:
 		render_table()
-	var new_inspector := inspector
-	inspector = live_inspector
-	patch_inspector(new_inspector)
-	new_inspector.free()
+	finish_render()
 	scroll.set_deferred("scroll_vertical", scroll_position)
-	if OS.has_feature("web") and OS.is_debug_build():
-		call_deferred("publish_debug")
 
 func next_unlock() -> Dictionary:
 	for target in sim.progression_targets():
@@ -788,7 +811,7 @@ func render_progression(parent: Node, compact: bool = false) -> void:
 		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		value.tooltip_text = requirement_text(requirement)
 		if not complete:
-			var bar := ProgressBar.new()
+			var bar: ProgressBar = render_node(parent, "progress", func(): return ProgressBar.new())
 			bar.value = clampf(float(requirement.value) / maxf(1, float(requirement.goal)) * 100, 0, 100)
 			bar.show_percentage = false
 			bar.custom_minimum_size.y = 5
@@ -800,8 +823,7 @@ func render_progression(parent: Node, compact: bool = false) -> void:
 			fill.bg_color = GOLD.darkened(0.2)
 			fill.set_corner_radius_all(2)
 			bar.add_theme_stylebox_override("fill", fill)
-			parent.add_child(bar)
-	add_label(parent, "Earn access through your property and guest business. Unlocking never forces a purchase.", 12, MUTED)
+			add_label(parent, "Earn access through your property and guest business. Unlocking never forces a purchase.", 12, MUTED)
 
 func render_traffic() -> void:
 	var traffic := sim.traffic_snapshot()
@@ -1112,8 +1134,7 @@ func finance_color(amount: float) -> Color:
 	return TEAL if amount > 0.005 else Color("ff9486") if amount < -0.005 else MUTED
 
 func finance_line(parent: Node) -> BoxContainer:
-	var line := preload("res://scripts/finance_layout.gd").new()
-	parent.add_child(line)
+	var line: BoxContainer = render_node(parent, "finance_line", func(): return preload("res://scripts/finance_layout.gd").new())
 	return line
 
 func finance_value(parent: Node, text: String, font_size: int, color: Color) -> Label:
@@ -1123,12 +1144,10 @@ func finance_value(parent: Node, text: String, font_size: int, color: Color) -> 
 	return value
 
 func finance_metric(parent: Node, title: String, amount: float, signed: bool = true) -> void:
-	var card := PanelContainer.new()
+	var card: PanelContainer = render_node(parent, "finance_metric_card", func(): return PanelContainer.new())
 	card.size_flags_horizontal = SIZE_EXPAND_FILL
 	card.add_theme_stylebox_override("panel", style(Color("182a38")))
-	parent.add_child(card)
-	var body := VBoxContainer.new()
-	card.add_child(body)
+	var body: VBoxContainer = render_node(card, "finance_metric_body", func(): return VBoxContainer.new())
 	add_label(body, title, 12, MUTED)
 	var summary := FinancialText.cash(amount, 0)
 	if signed:
@@ -1163,12 +1182,10 @@ func finance_row(parent: Node, title: String, amount: float, hide_zero: bool = t
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 func finance_card(id: String, title: String, amount: float) -> VBoxContainer:
-	var card := PanelContainer.new()
+	var card: PanelContainer = render_node(inspector, "finance_card_card", func(): return PanelContainer.new())
 	card.add_theme_stylebox_override("panel", style(Color("142331")))
-	inspector.add_child(card)
-	var stack := VBoxContainer.new()
+	var stack: VBoxContainer = render_node(card, "finance_card_stack", func(): return VBoxContainer.new())
 	stack.add_theme_constant_override("separation", 8)
-	card.add_child(stack)
 	var header := add_button(stack, "", func():
 		finance_section = "" if finance_section == id else id
 		refresh())
@@ -1180,13 +1197,12 @@ func finance_card(id: String, title: String, amount: float) -> VBoxContainer:
 	elif id == "investment": header.tooltip_text += ". Capital purchases minus sales, plus hiring; excluded from operating profit."
 	elif id == "gaming": header.tooltip_text += ". Settled guest gaming win, excluding visitor play and pending stakes."
 	header.custom_minimum_size.y = 50
-	var margin := MarginContainer.new()
+	var margin: MarginContainer = render_node(header, "finance_card_margin", func(): return MarginContainer.new())
 	margin.add_theme_constant_override("margin_left", 10)
 	margin.add_theme_constant_override("margin_right", 10)
 	margin.add_theme_constant_override("margin_top", 8)
 	margin.add_theme_constant_override("margin_bottom", 8)
 	margin.mouse_filter = MOUSE_FILTER_IGNORE
-	header.add_child(margin)
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var line := finance_line(margin)
 	line.fit_header = true
@@ -1196,9 +1212,8 @@ func finance_card(id: String, title: String, amount: float) -> VBoxContainer:
 	var value := finance_value(line, FinancialText.house_result(amount), 20, finance_color(amount))
 	value.mouse_filter = MOUSE_FILTER_IGNORE
 	if finance_section != id: return null
-	var detail := VBoxContainer.new()
+	var detail: VBoxContainer = render_node(stack, "finance_card_detail", func(): return VBoxContainer.new())
 	detail.add_theme_constant_override("separation", 8)
-	stack.add_child(detail)
 	return detail
 
 func render_finance_gaming(parent: Node) -> void:
@@ -1486,12 +1501,11 @@ func render_guest() -> void:
 	add_label(inspector, "Watch your guests for clues about staffing, limits, and service." if sim.bar_available() else "Watch your guests for clues about available games and busy seats.", 13, MUTED)
 
 func row(parent: Node, columns: int = 0) -> Container:
-	var container: Container = preload("res://scripts/responsive_grid.gd").new() if columns > 0 else preload("res://scripts/responsive_row.gd").new()
+	var container: Container = render_node(parent, "grid" if columns > 0 else "row", func(): return preload("res://scripts/responsive_grid.gd").new() if columns > 0 else preload("res://scripts/responsive_row.gd").new())
 	if columns > 0: container.maximum_columns = columns
 	container.add_theme_constant_override("h_separation", 6)
 	container.add_theme_constant_override("v_separation", 6)
 	container.add_theme_constant_override("separation", 6)
-	parent.add_child(container)
 	return container
 
 func table_action(action: String) -> void:
@@ -1912,6 +1926,11 @@ func publish_debug() -> void:
 				if ancestor is ScrollContainer: clip = clip.intersection(ancestor.get_global_rect())
 				ancestor = ancestor.get_parent()
 			buttons.append({"text": button.text, "disabled": button.disabled, "x": rect.position.x, "y": rect.position.y, "w": rect.size.x, "h": rect.size.y, "clip": [clip.position.x, clip.position.y, clip.size.x, clip.size.y]})
+	debug_full_timer += CasinoTuning.DEBUG_SNAPSHOT_SECONDS
+	var full := debug_full_timer >= CasinoTuning.DEBUG_FULL_SNAPSHOT_SECONDS or bool(JavaScriptBridge.eval("window.neonHouseRequestFullState === true", true))
+	if full: debug_full_timer = 0
+	var diagnostics := {"elapsed": sim.elapsed, "day": sim.day, "minute": sim.minute, "cash": sim.cash, "speed": speed, "guests": sim.guests.size(), "assets": sim.tables.size(), "staff": sim.staff.size(), "nodes": Performance.get_monitor(Performance.OBJECT_NODE_COUNT), "redraws": floor_view.redraw_count}
+	JavaScriptBridge.eval("window.neonHouseDiagnostics = " + JSON.stringify(diagnostics), true)
 	var layout := {
 		"responsive_state": responsive_state, "pane": mobile_pane, "page": page,
 		"building": building, "moving": moving, "visitor": visitor,
@@ -1919,10 +1938,11 @@ func publish_debug() -> void:
 		"floor_visible": floor_view.visible, "inspector_visible": inspector_panel.visible,
 		"floor": [floor_view.position.x, floor_view.position.y, floor_view.size.x, floor_view.size.y],
 		"camera": [floor_view.camera.x, floor_view.camera.y], "zoom": floor_view.zoom,
-		"labels": debug_label_layout(inspector),
+		"labels": debug_label_layout(inspector) if full else [],
 	}
 	JavaScriptBridge.eval("window.neonHouseLayout = " + JSON.stringify(layout), true)
-	JavaScriptBridge.eval("window.neonHouseSnapshot = " + JSON.stringify(sim.snapshot()) + ";window.neonHouseUI = " + JSON.stringify(buttons), true)
+	JavaScriptBridge.eval("window.neonHouseUI = " + JSON.stringify(buttons), true)
+	if full: JavaScriptBridge.eval("window.neonHouseSnapshot = " + JSON.stringify(sim.snapshot()), true)
 
 func debug_label_layout(parent: Node) -> Array:
 	var labels: Array = []
@@ -1932,57 +1952,38 @@ func debug_label_layout(parent: Node) -> Array:
 		labels.append_array(debug_label_layout(child))
 	return labels
 
-# Preserve live buttons across simulation refreshes: a mouse-down must not lose
-# its button before mouse-up just because the clock advanced.
-func patch_inspector(proposed: VBoxContainer) -> void:
-	patch_children(inspector, proposed)
+# Retain presentation nodes. Each parent has an ordered cursor; only a changed
+# node kind or child count creates/frees structure. Values update on live nodes.
+func render_node(parent: Node, kind: String, create: Callable) -> Control:
+	if not retained_render:
+		var child: Control = create.call()
+		parent.add_child(child)
+		return child
+	var index := int(render_cursors.get(parent, 0))
+	render_cursors[parent] = index + 1
+	var child: Control
+	if index < parent.get_child_count() and str(parent.get_child(index).get_meta("render_kind", "")) == kind:
+		child = parent.get_child(index)
+	else:
+		while parent.get_child_count() > index:
+			var obsolete := parent.get_child(index)
+			parent.remove_child(obsolete)
+			obsolete.queue_free()
+		child = create.call()
+		child.set_meta("render_kind", kind)
+		parent.add_child(child)
+	if child is Container or child is Button: render_cursors[child] = 0
+	return child
 
-func patch_children(parent: Control, proposed: Control) -> void:
-	var compatible := parent.get_child_count() == proposed.get_child_count()
-	if compatible:
-		for i in range(parent.get_child_count()):
-			if (parent.get_child(i).get_class() != proposed.get_child(i).get_class() or parent.get_child(i).get_script() != proposed.get_child(i).get_script()):
-				compatible = false
-				break
-	if not compatible:
-		clear(parent)
-		for child in proposed.get_children():
-			proposed.remove_child(child)
-			parent.add_child(child)
-		return
-	for i in range(parent.get_child_count()):
-		var live: Control = parent.get_child(i)
-		var fresh: Control = proposed.get_child(i)
-		live.custom_minimum_size = fresh.custom_minimum_size
-		live.size_flags_horizontal = fresh.size_flags_horizontal
-		if live is Label:
-			live.text = fresh.text
-			live.tooltip_text = fresh.tooltip_text
-			live.horizontal_alignment = fresh.horizontal_alignment
-			live.autowrap_mode = fresh.autowrap_mode
-			live.add_theme_font_size_override("font_size", fresh.get_theme_font_size("font_size"))
-			live.add_theme_color_override("font_color", fresh.get_theme_color("font_color"))
-			if dice_label == fresh: dice_label = live
-		elif live is Button:
-			live.text = fresh.text
-			live.disabled = fresh.disabled
-			live.tooltip_text = fresh.tooltip_text
-			for state in ["normal", "hover", "pressed"]:
-				if fresh.has_theme_stylebox_override(state): live.add_theme_stylebox_override(state, fresh.get_theme_stylebox(state))
-				else: live.remove_theme_stylebox_override(state)
-			live.toggle_mode = fresh.toggle_mode
-			live.set_pressed_no_signal(fresh.button_pressed)
-			for connection in live.get_signal_connection_list("pressed"):
-				live.disconnect("pressed", connection.callable)
-			for connection in fresh.get_signal_connection_list("pressed"):
-				live.connect("pressed", connection.callable)
-			if live.get_child_count() > 0 or fresh.get_child_count() > 0: patch_children(live, fresh)
-		elif live is ProgressBar:
-			live.value = fresh.value
-		elif live is Container:
-			if live is GridContainer:
-				live.columns = fresh.columns
-				if live.get_script() == preload("res://scripts/responsive_grid.gd"):
-					live.maximum_columns = fresh.maximum_columns
-			patch_children(live, fresh)
-			live.queue_sort()
+func finish_render() -> void:
+	for parent in render_cursors:
+		if parent is Button and not bool(parent.get_meta("render_toned", false)) and parent.has_meta("button_tone"):
+			for state in ["normal", "hover", "pressed"]: parent.remove_theme_stylebox_override(state)
+			parent.remove_meta("button_tone")
+		var count := int(render_cursors[parent])
+		while parent.get_child_count() > count:
+			var obsolete: Node = parent.get_child(count)
+			parent.remove_child(obsolete)
+			obsolete.queue_free()
+	render_cursors.clear()
+	retained_render = false

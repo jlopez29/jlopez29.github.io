@@ -13,7 +13,7 @@ var trips := false
 var art: Control
 var stage: BoxContainer
 var content: VBoxContainer
-var signature := ""
+var signature: Array = []
 var current_id := -1
 var player_round: Dictionary = {}
 var felt: Control
@@ -104,9 +104,9 @@ func _process(_delta: float) -> void:
 		trips = false
 		art.spinning = 0
 	var seated_guests := sim.seated(int(table.id)).map(func(guest): return {"id": guest.id, "name": guest.name, "seat": guest.seat, "thought": guest.thought})
-	var next := JSON.stringify([seated_guests, current_id, sim.wallet, table.round, table.roulette_bets, paused, bet, trips, feedback, show_rules, sim.financial_sequence, art.spinning > 0, int(size.x), table.broken])
+	var next: Array = [seated_guests, current_id, sim.wallet, table.round, table.roulette_bets, paused, bet, trips, feedback, show_rules, sim.financial_sequence, art.spinning > 0, int(size.x), table.broken]
 	if next == signature: return
-	signature = next
+	signature = next.duplicate(true)
 	render(table)
 
 func transact(start: bool, action: String = "") -> void:

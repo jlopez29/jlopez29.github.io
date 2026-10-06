@@ -1,0 +1,80 @@
+[
+  {
+    "assets": 2,
+    "debug": true,
+    "floor_queries": {
+      "mean_usec": 16.8766666666667,
+      "worst_usec": 39
+    },
+    "guests": 2,
+    "memory_bytes": 38297817.0,
+    "nodes": 173.0,
+    "page": "table",
+    "refresh": {
+      "mean_usec": 3159.46,
+      "worst_usec": 3755
+    },
+    "scenario": "small",
+    "snapshot_json": {
+      "mean_usec": 449.46,
+      "worst_usec": 710
+    },
+    "staff": 0,
+    "step": {
+      "mean_usec": 1043.87,
+      "worst_usec": 2946
+    }
+  },
+  {
+    "assets": 24,
+    "debug": true,
+    "floor_queries": {
+      "mean_usec": 1166.17,
+      "worst_usec": 2688
+    },
+    "guests": 32,
+    "memory_bytes": 39378243.0,
+    "nodes": 173.0,
+    "page": "table",
+    "refresh": {
+      "mean_usec": 3170.21,
+      "worst_usec": 4901
+    },
+    "scenario": "medium",
+    "snapshot_json": {
+      "mean_usec": 3536.53,
+      "worst_usec": 5846
+    },
+    "staff": 14,
+    "step": {
+      "mean_usec": 13522.63,
+      "worst_usec": 24877
+    }
+  },
+  {
+    "assets": 80,
+    "debug": true,
+    "floor_queries": {
+      "mean_usec": 7213.12666666667,
+      "worst_usec": 17588
+    },
+    "guests": 80,
+    "memory_bytes": 40777549.0,
+    "nodes": 173.0,
+    "page": "table",
+    "refresh": {
+      "mean_usec": 3351.38,
+      "worst_usec": 6847
+    },
+    "scenario": "large",
+    "snapshot_json": {
+      "mean_usec": 10247.09,
+      "worst_usec": 21654
+    },
+    "staff": 28,
+    "step": {
+      "mean_usec": 43128.45,
+      "worst_usec": 83260
+    }
+  }
+]

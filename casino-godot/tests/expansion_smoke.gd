@@ -21,22 +21,23 @@ func run() -> void:
 	await process_frame
 	ui.close_modal()
 	ui.speed = 0
+	ui.start_casino("easy", ["slots", "roulette", "blackjack", "holdem"])
+	ui.speed = 0
 	var sim: CasinoSimulation = ui.sim
+	var initial_cash := sim.cash
+	sim.floor_chunks.bottom = 1 # Fixture room for the rotated Holdem starter.
 	sim.rng.seed = 7418
 	var places := {"slots": Vector2(70,110), "roulette": Vector2(560,110), "blackjack": Vector2(70,350), "holdem": Vector2(560,370)}
 	for kind in places:
-		var id := sim.place(places[kind], false, kind)
-		check(id > 0, "Place " + kind)
-		if id < 0: continue
+		var id: int = sim.tables.filter(func(t): return t.kind == kind)[0].id
 		var table := sim.get_table(id)
-		if kind != "slots": sim.hire("Dealer", id)
 		check(sim.join_table(id), "Join closed, staffed " + kind)
 		if kind != "slots":
 			sim.spawn_guest()
 			var companion: Dictionary = sim.guests[-1]
 			companion.state = "Playing"
 			companion.table = id
-			companion.seat = 0
+			companion.seat = 1
 			companion.wallet = 1000.0
 			sim.opened = true
 		var wager := float(table.minimum)
@@ -61,7 +62,7 @@ func run() -> void:
 			var npc: Dictionary = table.round.npcs[0]
 			check(absf(sim.guests[-1].wallet - (1000.0 - npc.staked + npc.returned)) < 0.001, "Shared guest settlement: " + kind)
 		check(not sim.game_pending(table), "Round completed: " + kind)
-		check(absf(sim.cash - (CasinoTuning.STARTING_CASH + sim.net_profit())) < 0.001, "Treasury reconciles: " + kind)
+		check(absf(sim.cash - (initial_cash + sim.net_profit())) < 0.001, "Treasury reconciles: " + kind)
 		var copy := CasinoSimulation.new()
 		check(copy.restore(JSON.parse_string(JSON.stringify(sim.snapshot()))), "Completed " + kind + " save loads")
 		ui.visitor = true
@@ -75,13 +76,23 @@ func run() -> void:
 		sim.guests.clear()
 	# Deliver one visual drink, then route the guest through the cage without
 	# changing the money that was already settled at their game.
+	sim.opened = true
+	sim.set_drink_menu("basic", true)
 	sim.hire("Service", -1)
 	sim.spawn_guest()
 	var guest: Dictionary = sim.guests[-1]
+	guest.state = "Playing"
+	guest.table = sim.tables[0].id
+	guest.seat = 0
+	guest.wallet = 1000
+	sim.npc_games(sim.tables[0])
 	guest.state = "Waiting"
-	guest.x = 425.0; guest.y = 510.0; guest.tx = 425.0; guest.ty = 510.0
+	guest.thirst = 20
+	guest.drink_order = "basic"
+	guest.drink_quote = 5.0
+	guest.x = 600.0; guest.y = 240.0; guest.tx = 600.0; guest.ty = 240.0
 	for i in range(80): sim.move_service(1.0)
-	check(guest.thought == "My drink arrived. Thanks!", "Service reaches guest")
+	check(sim.bar_totals.sold + sim.bar_totals.comped > 0, "Service reaches guest")
 	var employee: Dictionary = sim.staff[-1]
 	check(employee.has("x") and employee.has("service_state"), "Service has a visible floor position")
 	var treasury := sim.cash

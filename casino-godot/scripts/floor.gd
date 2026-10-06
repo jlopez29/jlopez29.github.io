@@ -15,6 +15,18 @@ var sim: CasinoSimulation:
 		if sim != null:
 			sim.financial_event.connect(_on_financial_event)
 			sim.guest_thought.connect(_on_guest_thought)
+var presentation := {}
+var redraw_count := 0
+var feedback_batch_count := 0
+var thought_presentation_count := 0
+var presentation_speed := 1
+var presentation_tick := 0
+var presentation_amount := 0.0
+var presentation_anchor := Vector2.ZERO
+var presentation_revision := -1
+var thought_flush := false
+var idle_refresh := 0.0
+var visible_signature: Array = []
 var floating_results: Array = []
 var thought_bubbles: Array = []
 var pending_thoughts := {}
@@ -86,6 +98,11 @@ func blocked(at: Vector2) -> bool:
 func _process(delta: float) -> void:
 	if sim == null:
 		return
+	var old_camera := camera
+	var old_zoom := zoom
+	var old_player := sim.player
+	var old_preview := preview
+	var had_animation := not floating_results.is_empty() or not thought_bubbles.is_empty()
 	pulse += delta
 	update_thoughts(delta)
 	for effect in floating_results: effect.age += delta
@@ -125,7 +142,14 @@ func _process(delta: float) -> void:
 		if not blocked(sim.player + Vector2(0, motion.y)):
 			sim.player.y += motion.y
 	preview = (world_at(get_local_mouse_position()) / 10).floor() * 10
-	queue_redraw()
+	idle_refresh += delta
+	var state := [selected, building, moving_id, rotated, build_kind, build_slot_profile, visitor_mode, compact_labels, size, sim.elapsed, sim.opened, sim.tables.size(), sim.guests.size()]
+	var moving := presentation_speed > 0 and (sim.guests.any(func(g): return g.state in ["Arriving", "Walking", "To cage", "Leaving", "Browsing", "Exploring", "To bar"]) or sim.staff.any(func(e): return e.role == "Service" and e.duty == "Active"))
+	var hot_animation: bool = presentation.get("hot", {}).values().has(true)
+	if state != visible_signature or camera.distance_to(old_camera) > 0.01 or absf(zoom - old_zoom) > 0.0001 or sim.player != old_player or (building and preview != old_preview) or had_animation or not floating_results.is_empty() or not thought_bubbles.is_empty() or moving or visitor_mode or hot_animation or idle_refresh >= 1:
+		visible_signature = state
+		idle_refresh = 0
+		queue_redraw()
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
@@ -191,6 +215,10 @@ func text_at(at: Vector2, text: String, color: Color = INK, font_size: int = 14)
 func _draw() -> void:
 	if sim == null or font == null:
 		return
+	if presentation_revision != sim.presentation_revision:
+		presentation = sim.floor_presentation()
+		presentation_revision = sim.presentation_revision
+	redraw_count += 1
 	draw_rect(Rect2(Vector2.ZERO, size), Color("111c29"))
 	draw_set_transform(camera, 0, Vector2(zoom, zoom))
 	var room := sim.floor_rect()
@@ -242,7 +270,7 @@ func _draw() -> void:
 		draw_circle(at + Vector2(0, -3), 3, Color("f0cfb5"))
 		if guest.satisfaction < 50:
 			text_at(at + Vector2(8, -9), "!", Color("f08484"), 14)
-		var table := sim.get_table(int(guest.table))
+		var table: Dictionary = presentation.tables.get(int(guest.table), {})
 		if not table.is_empty() and int(table.shooter) == int(guest.id):
 			draw_arc(at, 12, 0, TAU, 20, GOLD, 2)
 			text_at(at + Vector2(-11, -14), "DICE", GOLD, 8)
@@ -300,19 +328,19 @@ func draw_asset_badges() -> void:
 		if overlaps: continue
 		occupied.append(rect)
 		draw_rect(rect, Color("101b26"))
-		var color := Color("ffa294") if table.broken else TEAL if sim.operating(table) else Color("9bafc2")
+		var color := Color("ffa294") if table.broken else TEAL if presentation.operating.get(int(table.id), false) else Color("9bafc2")
 		draw_circle(anchor + Vector2(6, 10), 3, color)
 		draw_string(font, anchor + Vector2(12, 15), str(table.id), HORIZONTAL_ALIGNMENT_LEFT, 24, 13, GOLD if selected == int(table.id) else INK)
 		# Occupancy stays visual: guests are visible; a small dot marks a busy asset.
-		if not sim.seated(int(table.id)).is_empty(): draw_circle(anchor + Vector2(34, 5), 2, GOLD)
+		if not presentation.seated.get(int(table.id), []).is_empty(): draw_circle(anchor + Vector2(34, 5), 2, GOLD)
 
 func draw_table(table: Dictionary) -> void:
 	if sim.table_kind(table) != "craps":
 		draw_other_game(table)
 		return
 	var rect := sim.bounds(table)
-	if sim.table_hot(table): draw_rect(rect.grow(5), Color(0.89, 0.74, 0.44, 0.25 + sin(pulse * 2) * 0.08), false, 2)
-	var active := sim.operating(table)
+	if presentation.hot.get(int(table.id), false): draw_rect(rect.grow(5), Color(0.89, 0.74, 0.44, 0.25 + sin(pulse * 2) * 0.08), false, 2)
+	var active: bool = presentation.operating.get(int(table.id), false)
 	var border := GOLD if selected == int(table.id) else Color("617078")
 	draw_style_box(box(Color("080f18"), Color("080f18"), 14), Rect2(rect.position + Vector2(4, 8), rect.size))
 	draw_style_box(box(Color("554330"), border, 14), rect)
@@ -333,9 +361,9 @@ func draw_table(table: Dictionary) -> void:
 	text_at(center + Vector2(-10, 6), marker, INK, 10)
 	var label_pos := rect.position + Vector2(0, -39)
 	if not compact_labels: text_at(label_pos, "CRAPS %02d" % int(table.id), GOLD if selected == int(table.id) else INK, 13)
-	var players := sim.seated(int(table.id)).size() + (1 if sim.joined == int(table.id) else 0)
-	if not compact_labels: text_at(rect.position + Vector2(0, rect.size.y + 44), "%s | %d/8" % [sim.table_status(table), players], TEAL if active else Color("899aaa"), 11)
-	for i in range(sim.crew(int(table.id)).size()):
+	var players: int = presentation.seated.get(int(table.id), []).size() + (1 if sim.joined == int(table.id) else 0)
+	if not compact_labels: text_at(rect.position + Vector2(0, rect.size.y + 44), "%s | %d/8" % [str(presentation.status.get(int(table.id), "")), players], TEAL if active else Color("899aaa"), 11)
+	for i in range(presentation.crew.get(int(table.id), []).size()):
 		var pos := rect.position + Vector2(rect.size.x + 15, 28 + i * 27)
 		draw_circle(pos, 7, Color("e0e5df"))
 		draw_rect(Rect2(pos + Vector2(-2, -4), Vector2(4, 9)), Color("26384d"))
@@ -369,7 +397,7 @@ func walk_to_table(id: int) -> void:
 func draw_other_game(table: Dictionary) -> void:
 	var rect := sim.bounds(table)
 	var kind := sim.table_kind(table)
-	if sim.table_hot(table): draw_rect(rect.grow(5), Color(0.89, 0.74, 0.44, 0.25 + sin(pulse * 2) * 0.08), false, 2)
+	if presentation.hot.get(int(table.id), false): draw_rect(rect.grow(5), Color(0.89, 0.74, 0.44, 0.25 + sin(pulse * 2) * 0.08), false, 2)
 	var color := Color(str(sim.slot_profile(table).color)) if kind == "slots" else (Color("174c42") if kind == "blackjack" else (Color("3e324f") if kind == "holdem" else Color("395041")))
 	draw_style_box(box(color, GOLD if selected == int(table.id) else Color("718b85"), 12), rect)
 	var center := rect.get_center()
@@ -395,17 +423,22 @@ func draw_other_game(table: Dictionary) -> void:
 			text_at(at + Vector2(3, 19), ["A", "K", "Q"][i], Color("b64354"), 13)
 	if not compact_labels: text_at(rect.position + Vector2(0, -13), "%s %02d" % [sim.slot_profile(table).short_name if kind == "slots" else CasinoGames.NAMES[kind], table.id], GOLD, 12)
 	if not compact_labels:
-		var status := sim.table_status(table)
+		var status := str(presentation.status.get(int(table.id), ""))
 		if status.begins_with("Doors closed"): status = "Closed"
 		elif status == "Repair needed": status = "Repair"
-		if status == "Open" and sim.seated(int(table.id)).is_empty() and not sim.reserved_guests(int(table.id)).is_empty(): status = "Reserved"
+		if status == "Open" and presentation.seated.get(int(table.id), []).is_empty() and not presentation.reserved.get(int(table.id), []).is_empty(): status = "Reserved"
 		# Long closed-door explanations overlapped adjacent tiny slot cabinets.
-		var caption := "Owner" if sim.joined == int(table.id) else "%s | %d/%d" % [status, sim.reserved_guests(int(table.id)).size(), sim.guest_capacity(table)]
+		var caption := "Owner" if sim.joined == int(table.id) else "%s | %d/%d" % [status, presentation.reserved.get(int(table.id), []).size(), sim.guest_capacity(table)]
 		text_at(rect.position + Vector2(0, rect.size.y + 17), caption, TEAL, 10)
-	for i in range(sim.crew(int(table.id)).size()):
+	for i in range(presentation.crew.get(int(table.id), []).size()):
 		draw_circle(rect.position + Vector2(rect.size.x + 15, 25 + i * 30), 8, INK)
 
 func clear_financial_feedback() -> void:
+	presentation_revision = -1
+	presentation.clear()
+	presentation_amount = 0
+	presentation_tick = 0
+	thought_flush = false
 	floating_results.clear()
 	thought_bubbles.clear()
 	pending_thoughts.clear()
@@ -413,32 +446,40 @@ func clear_financial_feedback() -> void:
 	thought_guest_seen.clear()
 	thought_next = thought_clock
 
-func _on_financial_event(event: Dictionary) -> void:
-	if event.category not in ["gaming", "bar", "comp"] or absf(float(event.amount)) < 0.005: return
-	# Same-asset, same-sign small bursts can share a label; never cancel a win
-	# against a loss or merge visitor money into guest business.
-	for effect in floating_results:
-		if int(event.importance) < 2 and int(effect.importance) < 2 and effect.asset_id == event.asset_id and effect.category == event.category and (event.category == "gaming" or effect.guest_id == event.guest_id) and effect.actor == event.actor and signf(float(effect.amount)) == signf(float(event.amount)) and float(effect.age) < CasinoTuning.MONEY_POPUP_MERGE_SECONDS:
-			effect.amount += float(event.amount)
-			effect.count += 1
-			effect.importance = CasinoTuning.money_importance(float(effect.amount))
-			effect.lifetime = CasinoTuning.MONEY_POPUP_SECONDS + int(effect.importance) * CasinoTuning.MONEY_POPUP_IMPORTANCE_SECONDS
-			return
-	var effect := event.duplicate(true)
-	effect.age = 0.0
-	effect.count = 1
-	effect.lifetime = CasinoTuning.MONEY_POPUP_SECONDS + int(effect.importance) * CasinoTuning.MONEY_POPUP_IMPORTANCE_SECONDS
-	floating_results.append(effect)
-	# Preserve stronger swings when a floor is busy; underlying events remain intact.
-	var on_asset := floating_results.filter(func(item): return item.asset_id == event.asset_id)
-	if on_asset.size() > CasinoTuning.MONEY_POPUPS_PER_ASSET: _discard_smallest(on_asset)
-	if floating_results.size() > CasinoTuning.MONEY_POPUP_LIMIT: _discard_smallest(floating_results.duplicate())
+func invalidate_presentation() -> void:
+	presentation_revision = -1
+	queue_redraw()
 
-func _discard_smallest(candidates: Array) -> void:
-	var discard: Dictionary = candidates[0]
-	for effect in candidates:
-		if int(effect.importance) < int(discard.importance) or (effect.importance == discard.importance and float(effect.age) > float(discard.age)): discard = effect
-	floating_results.erase(discard)
+func set_presentation_speed(value: int) -> void:
+	if value == presentation_speed: return
+	presentation_speed = value
+	presentation_tick = 0
+	presentation_amount = 0
+	pending_thoughts.clear()
+	thought_flush = false
+
+func presentation_step() -> void:
+	if presentation_speed <= 0 or presentation_speed > 4: return
+	presentation_tick += 1
+	if presentation_tick < CasinoTuning.FLOOR_PRESENTATION_SECONDS * presentation_speed: return
+	presentation_tick = 0
+	flush_presentation()
+
+func flush_presentation() -> void:
+	if absf(presentation_amount) >= 0.005:
+		feedback_batch_count += 1
+		var importance := CasinoTuning.money_importance(presentation_amount)
+		floating_results.append({"amount": presentation_amount, "importance": importance, "position": presentation_anchor, "asset_id": -1, "guest_id": -1, "category": "batch", "age": 0.0, "lifetime": CasinoTuning.MONEY_POPUP_SECONDS + importance * CasinoTuning.MONEY_POPUP_IMPORTANCE_SECONDS})
+		if floating_results.size() > CasinoTuning.MONEY_POPUP_LIMIT: floating_results.pop_front()
+		queue_redraw()
+	presentation_amount = 0
+	thought_flush = true
+
+func _on_financial_event(event: Dictionary) -> void:
+	if presentation_speed <= 0 or presentation_speed > 4: return
+	if event.category not in ["gaming", "bar", "comp"] or absf(float(event.amount)) < 0.005: return
+	presentation_amount += float(event.amount)
+	presentation_anchor = event.position
 
 func draw_financial_feedback() -> void:
 	# Draw after resetting the world transform: fixed pixel size remains legible
@@ -448,7 +489,7 @@ func draw_financial_feedback() -> void:
 	var ordered := floating_results.duplicate()
 	ordered.sort_custom(func(a, b): return int(a.importance) > int(b.importance))
 	for effect in ordered:
-		var table := sim.get_table(int(effect.asset_id))
+		var table: Dictionary = presentation.tables.get(int(effect.asset_id), {})
 		var anchor: Vector2 = effect.position
 		if effect.category == "gaming" and not table.is_empty(): anchor = Vector2(sim.bounds(table).get_center().x, sim.bounds(table).position.y)
 		elif effect.category in ["bar", "comp"]:
@@ -456,7 +497,7 @@ func draw_financial_feedback() -> void:
 				if int(guest.id) == int(effect.guest_id):
 					anchor = Vector2(guest.x, guest.y - 18)
 					break
-		var at := screen_at(anchor)
+		var at := Vector2(size.x * 0.5, size.y * 0.25) if effect.category == "batch" else screen_at(anchor)
 		if not Rect2(Vector2(-50, -50), size + Vector2(100, 100)).has_point(at): continue
 		var age := float(effect.age)
 		var lifetime := float(effect.lifetime)
@@ -497,6 +538,7 @@ func _money_box(importance: int, alpha: float) -> StyleBoxFlat:
 	return box
 
 func _on_guest_thought(event: Dictionary) -> void:
+	if presentation_speed <= 0 or presentation_speed > 4: return
 	var previous: Dictionary = pending_thoughts.get(int(event.guest_id), {})
 	if previous.is_empty() or int(event.priority) >= int(previous.priority):
 		var item := event.duplicate()
@@ -507,17 +549,22 @@ func _on_guest_thought(event: Dictionary) -> void:
 func update_thoughts(delta: float) -> void:
 	thought_clock += delta
 	thought_bubbles = thought_bubbles.filter(func(item): return thought_clock - float(item.started) < CasinoTuning.THOUGHT_SECONDS)
+	if not thought_flush and thought_bubbles.is_empty(): return
 	var live := {}
 	for guest in sim.guests: live[int(guest.id)] = guest
 	thought_bubbles = thought_bubbles.filter(func(item): return live.has(int(item.guest_id)))
 	for id in pending_thoughts.keys():
-		if not live.has(id) or thought_clock - float(pending_thoughts[id].queued) > 4: pending_thoughts.erase(id)
+		if not live.has(id) or thought_clock - float(pending_thoughts[id].queued) > CasinoTuning.FLOOR_PRESENTATION_SECONDS + 1: pending_thoughts.erase(id)
 	# Walking surfaces current real intent even between simulation thought events.
-	if visitor_mode and sim.joined < 0:
+	if thought_flush and visitor_mode and sim.joined < 0:
 		for guest in sim.guests:
 			if sim.player.distance_to(Vector2(guest.x, guest.y)) < 130 and not pending_thoughts.has(int(guest.id)):
 				_on_guest_thought({"guest_id": int(guest.id), "text": guest.thought, "priority": 1, "position": Vector2(guest.x, guest.y)})
-	if not is_visible_in_tree() or thought_clock < thought_next or thought_bubbles.size() >= (2 if compact_labels else 3): return
+	if not thought_flush: return
+	thought_flush = false
+	if not is_visible_in_tree() or thought_clock < thought_next or not thought_bubbles.is_empty():
+		pending_thoughts.clear()
+		return
 	var best: Dictionary = {}
 	var best_score := -INF
 	for event in pending_thoughts.values():
@@ -532,11 +579,12 @@ func update_thoughts(delta: float) -> void:
 		if score > best_score:
 			best_score = score
 			best = event
+	pending_thoughts.clear()
 	if best.is_empty(): return
-	pending_thoughts.erase(int(best.guest_id))
 	var bubble := best.duplicate()
 	bubble.started = thought_clock
 	thought_bubbles.append(bubble)
+	thought_presentation_count += 1
 	thought_guest_seen[int(best.guest_id)] = thought_clock
 	thought_seen["%d:%s" % [best.guest_id, best.text]] = thought_clock
 	for history in [thought_seen, thought_guest_seen]:

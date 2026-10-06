@@ -62,6 +62,10 @@ var slot_access: Array = ["starter"]
 var earned_milestones: Array = []
 var milestone_initializing := true
 var financial_sequence := 0
+var presentation_revision := 0
+var step_tables := {}
+var step_crew := {}
+var indexed_step := false
 var thought_last := {} # Transient emission cooldowns, not saved guest history.
 var table_interest := {} # Bounded recent actual guest wagers, never an odds input.
 const CAGE_PICKUP := Vector2(120, 90)
@@ -443,12 +447,14 @@ func emit_gaming_result(table: Dictionary, staked: float, returned: float, guest
 	emit_financial_event(staked - returned, "gaming", table, guest_id, {"settled_stake": staked, "returned": returned, "asset_wagers": float(table.wagers), "asset_payouts": float(table.payouts), "asset_repair_expense": float(table.repair_expense), "asset_operating_expense": float(table.operating_expense), "asset_payroll_expense": float(table.payroll_expense), "asset_available_minutes": int(table.available_minutes), "asset_occupied_minutes": int(table.occupied_minutes), "asset_downtime_minutes": int(table.downtime_minutes), "participants": participants.duplicate(true), "slot_profile": str(table.slot_profile) if table_kind(table) == "slots" else "", "round": int(table.rolls) + 1})
 
 func get_table(id: int) -> Dictionary:
+	if indexed_step: return step_tables.get(id, {})
 	for table in tables:
 		if int(table.id) == id:
 			return table
 	return {}
 
 func crew(id: int) -> Array:
+	if indexed_step: return step_crew.get(id, [])
 	return staff.filter(func(s): return s.role == "Dealer" and s.duty == "Active" and int(s.table) == id)
 
 func seated(id: int) -> Array:
@@ -476,21 +482,46 @@ func game_pending(table: Dictionary) -> bool:
 	return not table.get("round", {}).is_empty() and table.round.get("phase", "done") != "done"
 
 func ready_for_play(table: Dictionary) -> bool:
-	return not table.is_empty() and not table.broken and crew(int(table.id)).size() >= required_crew(table)
+	return not table.is_empty() and not table.broken and (required_crew(table) == 0 or crew(int(table.id)).size() >= required_crew(table))
 
 func operating(table: Dictionary) -> bool:
 	return opened and accepting_new_play(table)
 
-func table_status(table: Dictionary) -> String:
-	if table.broken:
-		return "Repair needed"
-	if required_crew(table) > 0:
-		if crew(int(table.id)).any(func(e): return e.rest_due != ""):
-			return "Finishing bets for staff rest"
+func table_status(table: Dictionary, assigned: Variant = null) -> String:
+	if table.broken: return "Repair needed"
+	var required := required_crew(table)
+	if required > 0:
+		var employees: Array = crew(int(table.id)) if assigned == null else assigned
+		if employees.any(func(e): return e.rest_due != ""): return "Finishing bets for staff rest"
 		if not table.staff_enabled: return "Staffing paused"
-	if crew(int(table.id)).size() < required_crew(table):
-		return "Needs %d dealers" % (required_crew(table) - crew(int(table.id)).size())
+		if employees.size() < required: return "Needs %d dealers" % (required - employees.size())
 	return "Open" if opened else "Doors closed | owner play available"
+
+func floor_presentation() -> Dictionary:
+	# Read-only references scoped to a draw/refresh; never used to settle gameplay.
+	var result := {"tables": {}, "guests": {}, "seated": {}, "reserved": {}, "crew": {}, "status": {}, "operating": {}, "hot": {}}
+	for guest in guests:
+		result.guests[int(guest.id)] = guest
+		var id := int(guest.table)
+		if guest.state == "Playing":
+			if not result.seated.has(id): result.seated[id] = []
+			result.seated[id].append(guest)
+		if int(guest.seat) >= 0 and guest.state in ["Walking", "Playing"]:
+			if not result.reserved.has(id): result.reserved[id] = []
+			result.reserved[id].append(guest)
+	for employee in staff:
+		if employee.role != "Dealer" or employee.duty != "Active": continue
+		var id := int(employee.table)
+		if not result.crew.has(id): result.crew[id] = []
+		result.crew[id].append(employee)
+	for table in tables:
+		var id := int(table.id)
+		result.tables[id] = table
+		var employees: Array = result.crew.get(id, [])
+		result.status[id] = table_status(table, employees)
+		result.operating[id] = opened and not table.broken and (required_crew(table) == 0 or (table.staff_enabled and employees.size() >= required_crew(table) and not employees.any(func(e): return e.rest_due != "")))
+		result.hot[id] = table_hot(table, result.seated.get(id, []).size(), bool(result.operating[id]))
+	return result
 
 func hire(role: String, target: int) -> bool:
 	if role not in ["Dealer", "Service"]: return false
@@ -657,8 +688,10 @@ func note_guest_wager(table: Dictionary, guest: Dictionary, amount: float) -> vo
 	if recent.size() > 64: recent.pop_front()
 	table_interest[int(table.id)] = recent
 
-func table_hot(table: Dictionary) -> bool:
-	if table.is_empty() or table_kind(table) == "slots" or not operating(table) or seated(int(table.id)).size() < CasinoTuning.HOT_PLAYER_COUNT: return false
+func table_hot(table: Dictionary, occupancy: int = -1, active: Variant = null) -> bool:
+	if table.is_empty() or table_kind(table) == "slots": return false
+	if not (operating(table) if active == null else bool(active)): return false
+	if (seated(int(table.id)).size() if occupancy < 0 else occupancy) < CasinoTuning.HOT_PLAYER_COUNT: return false
 	var recent: Array = table_interest.get(int(table.id), [])
 	var count := 0
 	var players := {}
@@ -1165,6 +1198,7 @@ func move_guests(delta: float) -> void:
 	for guest in guests:
 		if guest.state in ["To cage", "Cashing out"] and int(guest.rounds) == 0:
 			# Never allow an unplayed wallet to produce a cage visit or cash-out effect.
+			presentation_revision += 1
 			guest.state = "Waiting"
 			leave(guest, "No games are available. I'll come back later.")
 		if guest.state == "Cashing out":
@@ -1175,6 +1209,7 @@ func move_guests(delta: float) -> void:
 				if cashout_effects.size() > 4: cashout_effects.pop_back()
 				log_event("CAGE - %s cashed out $%.2f%s" % [guest.name, guest.wallet, " | VIP" if guest.vip else ""])
 				# Wagers already settled against treasury. Do not pay/debit twice here.
+				presentation_revision += 1
 				guest.state = "Leaving"
 				guest.tx = CasinoTuning.ENTRY.x
 				guest.ty = CasinoTuning.ENTRY.y
@@ -1195,20 +1230,25 @@ func move_guests(delta: float) -> void:
 		if moved.distance_to(target) < 2:
 			guest.erase("path")
 			if guest.state == "To cage":
+				presentation_revision += 1
 				guest.state = "Cashing out"
 				guest.cage_wait = 2.0
 			elif guest.state == "Walking":
+				presentation_revision += 1
 				guest.state = "Playing"
 				think(guest, "Ready to play %s!" % Games.NAMES[table_kind(get_table(int(guest.table)))])
 			elif guest.state == "Browsing":
+				presentation_revision += 1
 				guest.state = "Watching"
 				think(guest, "Watching the slot player before deciding." if table_kind(get_table(int(guest.table))) == "slots" else "Watching the table before deciding.")
 			elif guest.state == "To bar":
+				presentation_revision += 1
 				guest.state = "At bar"
 				guest.activity_since = elapsed
 				guest.decision_at = elapsed + rng.randi_range(CasinoTuning.GUEST_DRINK_BREAK_MINUTES.x, CasinoTuning.GUEST_DRINK_BREAK_MINUTES.y)
 				think(guest, "A drink while I wait would be nice." if guest.thirst >= CasinoTuning.DRINK_THIRST_TRIGGER else "Taking a break and watching the floor.", 2)
 			elif guest.state == "Arriving":
+				presentation_revision += 1
 				guest.state = "Waiting"
 				guest.decision_at = elapsed + rng.randi_range(1, 5)
 
@@ -1335,12 +1375,14 @@ func move_service(delta: float) -> void:
 				send_to_bar(employee)
 
 func step() -> void:
+	presentation_revision += 1
+	# Scoped indexes: staffing mutates assignments first; guest membership stays live.
 	elapsed += 1
 	minute += 1
 	if minute >= 1440:
 		minute = 0
 		day += 1
-	var service_count := staff.filter(func(s): return s.role == "Service" and s.duty == "Active").size()
+	var service_count := 0
 	var wages := 0.0
 	for employee in staff:
 		if employee.duty == "Off Duty": continue
@@ -1356,6 +1398,15 @@ func step() -> void:
 	payroll += wages
 	cash -= wages
 	Staffing.tick(self)
+	step_tables.clear()
+	step_crew.clear()
+	for table in tables: step_tables[int(table.id)] = table
+	for employee in staff:
+		if employee.role != "Dealer" or employee.duty != "Active": continue
+		var id := int(employee.table)
+		if not step_crew.has(id): step_crew[id] = []
+		step_crew[id].append(employee)
+	indexed_step = true
 	service_count = staff.filter(func(s): return s.role == "Service" and s.duty == "Active").size()
 	var costs := 0.0
 	for table in tables:
@@ -1380,7 +1431,7 @@ func step() -> void:
 	guests = guests.filter(func(g): return not (g.state == "Leaving" and Vector2(g.x, g.y).distance_to(CasinoTuning.ENTRY) < 3))
 	for table in tables:
 		# Closed tables finish contracts and allow owner play; guests place no new bets.
-		if table.broken or crew(int(table.id)).size() < required_crew(table):
+		if table.broken or (required_crew(table) > 0 and crew(int(table.id)).size() < required_crew(table)):
 			continue
 		if not opened and joined != int(table.id) and not seated(int(table.id)).any(func(g): return CrapsRules.exposure(g.bets) > 0) and CrapsRules.exposure(table.owner) == 0:
 			continue
@@ -1437,6 +1488,9 @@ func step() -> void:
 	refresh_progression()
 	update_reserve_warning()
 	check_profit_milestone()
+	indexed_step = false
+	step_tables.clear()
+	step_crew.clear()
 
 func take_bet(table: Dictionary, bettor: Dictionary, kind: String, amount: float, owner: bool) -> bool:
 	var funds: float = wallet if owner else float(bettor.wallet)

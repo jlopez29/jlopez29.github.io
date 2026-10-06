@@ -94,7 +94,7 @@ func startup_and_progression() -> void:
 		copy.set(field, 0)
 		check(not copy.blackjack_ready(), "Readiness requires " + field)
 	var easy := CasinoSimulation.new("easy", ["blackjack", "craps", "roulette", "holdem"])
-	check(easy.tables.size() == 4 and easy.staff.size() == 5 and near(easy.cash, 30000) and easy.expanded, "Easy preferred games and crews")
+	check(easy.tables.size() == 4 and easy.staff.size() == 5 and near(easy.cash, 30000) and easy.floor_chunks == CasinoTuning.DIFFICULTIES.easy.floor_chunks, "Easy preferred games and crews")
 	check(easy.unlocked("holdem") and easy.slot_unlocked("high_limit"), "Easy unrestricted access")
 
 func game_rules() -> void:
@@ -192,13 +192,19 @@ func hospitality_and_departure() -> void:
 	var guest := seat(sim, sim.tables[0])
 	guest.thirst = 20
 	guest.last_wager_minute = -1
+	sim.drink_access.append("basic")
+	sim.drink_menu.append("basic")
+	guest.drink_order = "basic"
+	guest.drink_quote = 5.0
 	var before := sim.cash
-	sim.deliver_drink(guest, {"name": "Service"})
+	sim.deliver_drink(guest, {"name": "Service", "duty": "Active", "service_product": "basic"})
 	check(sim.bar_totals.sold == 1 and sim.bar_totals.comped == 0 and near(sim.cash-before, 4), "Seat without wagers pays $5 drink, $1 product")
 	guest.thirst = 20
 	guest.last_wager_minute = sim.elapsed
+	guest.drink_order = "basic"
+	guest.drink_quote = 5.0
 	before = sim.cash
-	sim.deliver_drink(guest, {"name": "Service"})
+	sim.deliver_drink(guest, {"name": "Service", "duty": "Active", "service_product": "basic"})
 	check(sim.bar_totals.comped == 1 and near(sim.cash-before, -1), "Recent real wagering comp cost")
 	guest.thirst = 20
 	guest.state = "Watching"
@@ -579,8 +585,9 @@ func milestones_and_wear() -> void:
 	check(not table.broken, "Starter protected before repair grace")
 	sim = CasinoSimulation.new("easy", ["blackjack"])
 	var start := sim.cash
+	var property_cost := sim.property_upkeep_rate()
 	for i in range(60): sim.step()
-	check(near(sim.payroll,20) and near(sim.overhead,12) and near(start-sim.cash,32), "One-hour dealer/table recurring cost")
+	check(near(sim.payroll,20) and near(sim.overhead,12 + property_cost) and near(start-sim.cash,32 + property_cost), "One-hour dealer/table/property recurring cost")
 	check(near(sim.tables[0].payroll_expense,20) and near(sim.tables[0].operating_expense,12), "Per-asset wages/upkeep")
 	var plan := sim.reserve_report("craps")
 	check(plan.onboarding == 300 and plan.payroll > 0, "Reserve includes full proposed crew")

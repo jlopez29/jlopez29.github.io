@@ -1,0 +1,172 @@
+[
+  {
+    "scale": "small",
+    "speed": 1,
+    "samples": [
+      {
+        "assets": 2,
+        "cash": 9999937.90639999,
+        "elapsed": 18,
+        "events": 18,
+        "fps": 4,
+        "guests": 3,
+        "memory": 0,
+        "nodes": 134,
+        "objects": 1760,
+        "page": "table",
+        "process_seconds": 0.2332,
+        "speed": 1,
+        "staff": 0,
+        "wasm_bytes": 10600000,
+        "frame_mean_ms": 230.30461538461574,
+        "frame_p99_ms": 483.2999999999993,
+        "frame_worst_ms": 499.90000000000055,
+        "browser": {
+          "Nodes": 46,
+          "LayoutCount": 0,
+          "RecalcStyleCount": 0,
+          "TaskDuration": 30.311551,
+          "JSHeapUsedSize": 9366560
+        },
+        "real_seconds": 30.186
+      }
+    ],
+    "errors": []
+  },
+  {
+    "scale": "small",
+    "speed": 4,
+    "samples": [
+      {
+        "assets": 2,
+        "cash": 9999911.19319997,
+        "elapsed": 59,
+        "events": 58,
+        "fps": 2,
+        "guests": 3,
+        "memory": 0,
+        "nodes": 134,
+        "objects": 1771,
+        "page": "table",
+        "process_seconds": 0.4419,
+        "speed": 4,
+        "staff": 0,
+        "wasm_bytes": 11200000,
+        "frame_mean_ms": 281.8971428571428,
+        "frame_p99_ms": 633.2999999999993,
+        "frame_worst_ms": 833.2999999999993,
+        "browser": {
+          "Nodes": 46,
+          "LayoutCount": 0,
+          "RecalcStyleCount": 0,
+          "TaskDuration": 30.8722,
+          "JSHeapUsedSize": 10049832
+        },
+        "real_seconds": 30.695
+      }
+    ],
+    "errors": []
+  },
+  {
+    "scale": "medium",
+    "speed": 1,
+    "samples": [
+      {
+        "assets": 24,
+        "cash": 9999991.91253333,
+        "elapsed": 4,
+        "events": 64,
+        "fps": 1,
+        "guests": 32,
+        "memory": 0,
+        "nodes": 134,
+        "objects": 1786,
+        "page": "table",
+        "process_seconds": 1.7,
+        "speed": 1,
+        "staff": 14,
+        "wasm_bytes": 53500000,
+        "frame_mean_ms": 1060.462962962963,
+        "frame_p99_ms": 2366.5999999999985,
+        "frame_worst_ms": 2366.5999999999985,
+        "browser": {
+          "Nodes": 46,
+          "LayoutCount": 0,
+          "RecalcStyleCount": 0,
+          "TaskDuration": 30.343159,
+          "JSHeapUsedSize": 10490148
+        },
+        "real_seconds": 30.319
+      }
+    ],
+    "errors": []
+  },
+  {
+    "scale": "medium",
+    "speed": 4,
+    "samples": [
+      {
+        "assets": 24,
+        "cash": 9999792.64093332,
+        "elapsed": 37,
+        "events": 596,
+        "fps": 2,
+        "guests": 37,
+        "memory": 0,
+        "nodes": 134,
+        "objects": 1804,
+        "page": "table",
+        "process_seconds": 0.537,
+        "speed": 4,
+        "staff": 14,
+        "wasm_bytes": 10600000,
+        "frame_mean_ms": 468.59375000000136,
+        "frame_p99_ms": 966.6000000000004,
+        "frame_worst_ms": 966.6000000000004,
+        "browser": {
+          "Nodes": 46,
+          "LayoutCount": 0,
+          "RecalcStyleCount": 0,
+          "TaskDuration": 30.666395,
+          "JSHeapUsedSize": 9681736
+        },
+        "real_seconds": 30.612
+      }
+    ],
+    "errors": []
+  },
+  {
+    "scale": "large",
+    "speed": 4,
+    "samples": [
+      {
+        "assets": 80,
+        "cash": 9999787.75746667,
+        "elapsed": 21,
+        "events": 800,
+        "fps": 2,
+        "guests": 80,
+        "memory": 0,
+        "nodes": 134,
+        "objects": 1803,
+        "page": "table",
+        "process_seconds": 1.8111,
+        "speed": 4,
+        "staff": 28,
+        "wasm_bytes": 56800000,
+        "frame_mean_ms": 802.7222222222275,
+        "frame_p99_ms": 2866.4999999999964,
+        "frame_worst_ms": 2866.4999999999964,
+        "browser": {
+          "Nodes": 46,
+          "LayoutCount": 0,
+          "RecalcStyleCount": 0,
+          "TaskDuration": 33.443385,
+          "JSHeapUsedSize": 14036488
+        },
+        "real_seconds": 33.148
+      }
+    ],
+    "errors": []
+  }
+]

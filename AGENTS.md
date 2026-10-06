@@ -135,3 +135,10 @@ Final report must include:
 - Build/export: SUCCESS / NOT RUN / FAILED
 - Generated playable build updated: YES / NO
 - Manual gameplay checks
+
+## Performance architecture
+
+- Floor rendering must use presentation indexes rather than repeatedly filtering guests/staff per asset. Keep caches read-only and invalidate them on relevant state changes.
+- Retain UI nodes for value updates; change structure when content changes and run responsive layout on viewport or pane transitions.
+- Frequent diagnostics must remain lightweight; full simulation serialization belongs on a slower cadence or explicit testing request.
+- Performance changes must preserve simulation timing, accounting and RNG call order. Batch visual feedback independently of economic settlement and guest decisions.

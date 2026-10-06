@@ -1,0 +1,39 @@
+[
+  {
+    "scale": "medium",
+    "speed": 4,
+    "samples": [
+      {
+        "assets": 24,
+        "batches": 4,
+        "cash": 9999649.98399997,
+        "elapsed": 80,
+        "events": 1454,
+        "fps": 4,
+        "guests": 46,
+        "memory": 0,
+        "nodes": 140,
+        "objects": 1781,
+        "page": "table",
+        "process_seconds": 0.2216,
+        "redraws": 158,
+        "speed": 4,
+        "staff": 14,
+        "thought_visuals": 4,
+        "js_heap_estimate_bytes": 11900000,
+        "frame_mean_ms": 201.32550335570406,
+        "frame_p99_ms": 333.2999999999993,
+        "frame_worst_ms": 350.1000000000022,
+        "browser": {
+          "Nodes": 46,
+          "LayoutCount": 0,
+          "RecalcStyleCount": 0,
+          "TaskDuration": 30.230906,
+          "JSHeapUsedSize": 10995876
+        },
+        "real_seconds": 30.205
+      }
+    ],
+    "errors": []
+  }
+]
