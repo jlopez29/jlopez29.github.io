@@ -6,6 +6,9 @@ signal guest_thought(event: Dictionary)
 signal milestone_reached(event: Dictionary)
 
 const Games = preload("res://scripts/casino_games.gd")
+const Staffing = preload("res://scripts/staffing.gd")
+const Property = preload("res://scripts/floor_property.gd")
+const Bar = preload("res://scripts/drink_economy.gd")
 
 var cash := CasinoTuning.STARTING_CASH
 var wallet := CasinoTuning.VISITOR_CASH
@@ -14,8 +17,17 @@ var payouts := 0.0
 var payroll := 0.0
 var overhead := 0.0
 # Cash expenses recorded once; classifications never make an additional charge.
-var expense_totals := {"dealer_payroll": 0.0, "service_payroll": 0.0, "upkeep": 0.0, "repairs": 0.0, "comps": 0.0, "hiring": 0.0, "construction": 0.0, "sales": 0.0, "drink_products": 0.0, "drink_comps": 0.0}
-var payroll_by_state := {"working": 0.0, "idle": 0.0, "standby": 0.0, "unavailable": 0.0}
+var expense_totals := {"dealer_payroll": 0.0, "service_payroll": 0.0, "upkeep": 0.0, "repairs": 0.0, "comps": 0.0, "hiring": 0.0, "construction": 0.0, "sales": 0.0, "drink_products": 0.0, "drink_comps": 0.0, "property_upkeep": 0.0}
+var payroll_by_state := {"active": 0.0, "relief": 0.0, "break": 0.0, "off_duty": 0.0}
+var relief_targets := {"Dealer": 1, "Service": 0}
+var service_positions := 1
+var staff_shift_handover_at := -CasinoTuning.STAFF_SHIFT_HANDOVER_GAP
+var staffing_notice_signature := "" # Transient, rate-limited operational warnings.
+var staffing_notice_at := -CasinoTuning.STAFF_NOTICE_COOLDOWN
+var drink_access: Array = []
+var drink_menu: Array = []
+var drink_prices := {}
+var drink_stats := {}
 var bar_totals := {"sold": 0, "comped": 0, "revenue": 0.0, "product_cost": 0.0, "comp_cost": 0.0}
 var visitor_net := 0.0
 var reputation := 60.0
@@ -30,7 +42,7 @@ var blackjack_unlocked := false
 # Session-only developer access; ignored by release builds and never serialized.
 var debug_forced_unlocks: Array[String] = []
 var ever_opened := false
-var expanded := false
+var floor_chunks := {"left": 0, "right": 0, "bottom": 0}
 var vip_enabled := false
 var high_limit_enabled := false
 var minute := 1080
@@ -52,23 +64,23 @@ var milestone_initializing := true
 var financial_sequence := 0
 var thought_last := {} # Transient emission cooldowns, not saved guest history.
 var table_interest := {} # Bounded recent actual guest wagers, never an odds input.
-const BAR_PICKUP := Vector2(730, 90)
 const CAGE_PICKUP := Vector2(120, 90)
 var staff: Array = []
 var alerts: Array = []
 var incidents: Array = []
 var next_id := 1
 var joined := -1
-var player := Vector2(425, 510)
+var player := CasinoTuning.ENTRY + Vector2(0, 20)
 var rng := RandomNumberGenerator.new()
 var navigation_grid: AStarGrid2D # Transient; shared until geometry changes.
 
 func _init(mode: String = "normal", preferred_games: Array = ["slots"]) -> void:
 	rng.randomize()
+	Bar.initialize(self)
 	difficulty = mode if CasinoTuning.DIFFICULTIES.has(mode) else "normal"
 	var config: Dictionary = CasinoTuning.DIFFICULTIES[difficulty]
 	cash = float(config.cash)
-	expanded = bool(config.expanded)
+	floor_chunks = config.floor_chunks.duplicate()
 	vip_enabled = not bool(config.restricted)
 	high_limit_enabled = not bool(config.restricted)
 	starting_games = ["slots"]
@@ -87,7 +99,7 @@ func _init(mode: String = "normal", preferred_games: Array = ["slots"]) -> void:
 			var table := new_table(positions[i], kind == "holdem", kind)
 			tables.append(table)
 			for j in range(required_crew(table)):
-				staff.append({"name": CasinoTuning.NAMES[rng.randi_range(0, 11)], "role": "Dealer", "table": int(table.id), "energy": 100.0})
+				staff.append(Staffing.new_employee(self, "Dealer", int(table.id)))
 	refresh_progression()
 	for level in range(2, stars() + 1): earned_milestones.append("rating:%d" % level)
 	if tables.any(func(table): return table_kind(table) != "slots"): earned_milestones.append("first_table")
@@ -122,15 +134,52 @@ func stars() -> int:
 
 func feature_cost(feature: String) -> float:
 	if Games.COSTS.has(feature): return float(Games.COSTS[feature])
-	return float({"service": CasinoTuning.HIRING_COST, "expansion": CasinoTuning.EXPANSION_COST, "vip": CasinoTuning.VIP_COST, "high_limit": CasinoTuning.HIGH_LIMIT_COST}.get(feature, 0))
+	return float({"service": CasinoTuning.HIRING_COST, "vip": CasinoTuning.VIP_COST, "high_limit": CasinoTuning.HIGH_LIMIT_COST}.get(feature, 0))
 
 func feature_owned(feature: String) -> bool:
 	match feature:
 		"service": return staff.any(func(s): return s.role == "Service")
-		"expansion": return expanded
+		"expansion": return Property.count(floor_chunks) > 0
 		"vip": return vip_enabled
 		"high_limit": return high_limit_enabled
 	return tables.any(func(t): return table_kind(t) == feature)
+
+func guest_feature_relevant(feature: String) -> bool:
+	if feature_owned(feature) or unlocked(feature): return true
+	# Only foreshadow the next revealed opportunity. Blackjack's UI is revealed
+	# from day one, but guests should not expect it before access is earned.
+	if feature == "blackjack" or not blackjack_unlocked: return false
+	for milestone in CasinoTuning.MILESTONES:
+		if feature_owned(str(milestone.id)): continue
+		return str(milestone.id) == feature and revealed(feature)
+	return false
+
+func guest_current_interest(guest: Dictionary) -> String:
+	# Preserve latent preference; adapt current expectations to this property.
+	if guest_feature_relevant(str(guest.preference)): return str(guest.preference)
+	for kind in archetype(guest).games:
+		if feature_owned(str(kind)): return str(kind)
+	if guest.archetype in ["dice", "tables"]:
+		for table in tables:
+			if table_kind(table) != "slots": return table_kind(table)
+	for table in tables:
+		return table_kind(table)
+	return "slots"
+
+func guest_profile_name(guest: Dictionary) -> String:
+	if guest.archetype in ["dice", "tables"] and not guest_feature_relevant(str(guest.preference)):
+		return "Variety seeker"
+	return str(archetype(guest).name)
+
+func guest_arrival_thought(guest: Dictionary) -> String:
+	if guest_feature_relevant("service") and not bar_available() and rng.randf() < CasinoTuning.BAR_ANTICIPATION_CHANCE:
+		return "A bar for breaks would be nice."
+	var interest := guest_current_interest(guest)
+	var name: String = "hold'em" if interest == "holdem" else interest
+	if feature_owned(interest):
+		if interest == "slots" and guest.preference != "slots": return "Not much variety yet. I'll try the slots."
+		return "Let's try the slots." if interest == "slots" else "I'll try %s." % name
+	return "I'd love a %s table." % name
 
 func next_milestone_text() -> String:
 	if not restricted(): return "All games available. Add favorites through Build; keep cash for crews and payouts."
@@ -239,7 +288,7 @@ func blackjack_progress_text() -> String:
 
 func property_development() -> float:
 	var development := gaming_development()
-	if expanded: development += 4.0
+	if Property.count(floor_chunks) > 0: development += 4.0
 	if vip_enabled: development += 4.0
 	if high_limit_enabled: development += 4.0
 	if feature_owned("service"): development += 2.0
@@ -259,6 +308,7 @@ func award_milestone(id: String, title: String, body: String, importance: int = 
 
 func refresh_progression() -> void:
 	casino_rating = rating_for_activity(guest_handle, guests_served)
+	Bar.refresh_access(self)
 	for level in range(2, stars() + 1):
 		if award_milestone("rating:%d" % level, "Casino level %d" % level, CasinoTuning.STAR_NAMES[level - 1] + " - your property and guest business are growing."):
 			log_event("DEVELOPMENT - Casino rating increased to %d stars." % level)
@@ -286,7 +336,7 @@ func check_profit_milestone() -> void:
 			log_event("MILESTONE - First meaningful operating profit: $%.2f after recurring costs." % profit)
 
 func thirst_discomfort() -> float:
-	return CasinoTuning.THIRST_DISCOMFORT if unlocked("service") else CasinoTuning.PRE_SERVICE_THIRST_DISCOMFORT
+	return CasinoTuning.THIRST_DISCOMFORT
 
 func record_guest_round(guest: Dictionary, stake: float) -> void:
 	if stake <= 0: return
@@ -301,22 +351,50 @@ func guest_wager(table: Dictionary, guest: Dictionary) -> float:
 		if not eligible.is_empty(): desired = float(eligible.back())
 	return minf(desired, minf(maximum_wager(table), float(guest.wager_limit)))
 
+func floor_rect() -> Rect2:
+	return Property.rectangle(floor_chunks)
+
+func walk_area() -> Rect2:
+	return Property.walking(floor_chunks)
+
 func build_area() -> Rect2:
-	return CasinoTuning.FULL_BUILD_AREA if expanded else CasinoTuning.STARTER_BUILD_AREA
+	return Property.placement("blackjack", floor_chunks)
+
+func placement_area(kind: String) -> Rect2:
+	return Property.placement(kind, floor_chunks)
+
+func property_upkeep_rate() -> float:
+	return Property.upkeep(floor_chunks)
+
+func expansion_quote(direction: String) -> Dictionary:
+	return Property.quote(floor_chunks, direction)
+
+func purchase_expansion(direction: String) -> bool:
+	var quote := expansion_quote(direction)
+	if quote.is_empty() or not quote.allowed or not unlocked("expansion"): return false
+	if cash < float(quote.cost):
+		log_event("Expansion needs $%.0f in casino cash." % float(quote.cost))
+		return false
+	spend_nonpayroll(float(quote.cost), "construction")
+	floor_chunks = quote.chunks.duplicate()
+	emit_financial_event(-float(quote.cost), "construction", {}, -1, {"position": CasinoTuning.ENTRY, "source": "floor_expansion", "direction": direction, "added_area": float(quote.added_area)})
+	reroute()
+	refresh_progression()
+	award_milestone("expansion", "Floor expanded", "More space also adds property overhead. Income requires operating assets.", 2)
+	log_event("PROPERTY - Added %s floor space. Property upkeep is now $%.2f/game hour." % [direction, property_upkeep_rate()])
+	return true
 
 func purchase_upgrade(feature: String) -> bool:
-	if feature not in ["expansion", "vip", "high_limit"] or feature_owned(feature) or not unlocked(feature): return false
+	if feature not in ["vip", "high_limit"] or feature_owned(feature) or not unlocked(feature): return false
 	var cost := feature_cost(feature)
 	if cash < cost:
 		log_event("This upgrade needs $%d in casino cash." % cost)
 		return false
 	spend_nonpayroll(cost, "construction")
 	match feature:
-		"expansion": expanded = true
 		"vip": vip_enabled = true
 		"high_limit": high_limit_enabled = true
 	refresh_progression()
-	if feature == "expansion": award_milestone("expansion", "Floor expanded", "You purchased more buildable space. Capacity and income still require operating assets.", 2)
 	log_event("Purchased: %s." % feature.replace("_", " "))
 	return true
 
@@ -330,7 +408,7 @@ func change_minimum(id: int) -> bool:
 	return true
 
 func new_table(at: Vector2, rotated: bool, kind: String = "craps", profile_id: String = "starter") -> Dictionary:
-	var item := {"kind": kind, "slot_profile": profile_id if kind == "slots" else "", "round": {}, "roulette_bets": {}, "id": next_id, "x": at.x, "y": at.y, "rotated": rotated, "point": 0, "dice": [1, 1], "timer": 0.0, "wagers": 0.0, "payouts": 0.0, "broken": false, "rolls": 0, "shooter": -1, "shooter_seat": -1, "hand_rolls": 0, "owner_queued": false, "betting_hold": false, "owner_working": false, "history": [], "service_minutes": 0, "available_minutes": 0, "occupied_minutes": 0, "downtime_minutes": 0, "operating_expense": 0.0, "repair_expense": 0.0, "payroll_expense": 0.0, "visitor_gaming_win": 0.0, "repairs": 0, "breakdowns": 0, "minimum": float(CasinoTuning.SLOT_PROFILES[profile_id].minimum) if kind == "slots" else float(CasinoTuning.GAME_LIMITS[kind].minimum), "owner": CrapsRules.empty_bets(), "result": "Come-out roll. Place a Pass Line bet to start." if kind == "craps" else "Ready for the first guest."}
+	var item := {"kind": kind, "staff_priority": 1, "staff_enabled": true, "staff_rotation_until": -1, "slot_profile": profile_id if kind == "slots" else "", "round": {}, "roulette_bets": {}, "id": next_id, "x": at.x, "y": at.y, "rotated": rotated, "point": 0, "dice": [1, 1], "timer": 0.0, "wagers": 0.0, "payouts": 0.0, "broken": false, "rolls": 0, "shooter": -1, "shooter_seat": -1, "hand_rolls": 0, "owner_queued": false, "betting_hold": false, "owner_working": false, "history": [], "service_minutes": 0, "available_minutes": 0, "occupied_minutes": 0, "downtime_minutes": 0, "operating_expense": 0.0, "repair_expense": 0.0, "payroll_expense": 0.0, "visitor_gaming_win": 0.0, "repairs": 0, "breakdowns": 0, "minimum": float(CasinoTuning.SLOT_PROFILES[profile_id].minimum) if kind == "slots" else float(CasinoTuning.GAME_LIMITS[kind].minimum), "owner": CrapsRules.empty_bets(), "result": "Come-out roll. Place a Pass Line bet to start." if kind == "craps" else "Ready for the first guest."}
 	next_id += 1
 	return item
 
@@ -371,10 +449,14 @@ func get_table(id: int) -> Dictionary:
 	return {}
 
 func crew(id: int) -> Array:
-	return staff.filter(func(s): return s.role == "Dealer" and int(s.table) == id)
+	return staff.filter(func(s): return s.role == "Dealer" and s.duty == "Active" and int(s.table) == id)
 
 func seated(id: int) -> Array:
 	return guests.filter(func(g): return int(g.table) == id and g.state == "Playing")
+
+func reserved_guests(id: int, except_guest_id: int = -1) -> Array:
+	# Walking guests already own a position; presentation must show that reservation.
+	return guests.filter(func(g): return int(g.table) == id and int(g.id) != except_guest_id and int(g.seat) >= 0 and g.state in ["Walking", "Playing"])
 
 func table_kind(table: Dictionary) -> String:
 	return str(table.get("kind", ""))
@@ -397,11 +479,15 @@ func ready_for_play(table: Dictionary) -> bool:
 	return not table.is_empty() and not table.broken and crew(int(table.id)).size() >= required_crew(table)
 
 func operating(table: Dictionary) -> bool:
-	return opened and ready_for_play(table)
+	return opened and accepting_new_play(table)
 
 func table_status(table: Dictionary) -> String:
 	if table.broken:
 		return "Repair needed"
+	if required_crew(table) > 0:
+		if crew(int(table.id)).any(func(e): return e.rest_due != ""):
+			return "Finishing bets for staff rest"
+		if not table.staff_enabled: return "Staffing paused"
 	if crew(int(table.id)).size() < required_crew(table):
 		return "Needs %d dealers" % (required_crew(table) - crew(int(table.id)).size())
 	return "Open" if opened else "Doors closed | owner play available"
@@ -418,29 +504,51 @@ func hire(role: String, target: int) -> bool:
 		log_event("Hiring needs $%d for training." % CasinoTuning.HIRING_COST)
 		return false
 	spend_nonpayroll(CasinoTuning.HIRING_COST, "hiring")
-	var assignment := -1
-	if role == "Dealer":
-		if not get_table(target).is_empty() and crew(target).size() < required_crew(get_table(target)):
-			assignment = target
-		else:
-			for table in tables:
-				if crew(int(table.id)).size() < required_crew(table):
-					assignment = int(table.id)
-					break
-	staff.append({"name": CasinoTuning.NAMES[rng.randi_range(0, 11)], "role": role, "table": assignment, "energy": 100.0})
+	staff.append(Staffing.new_employee(self, role))
+	Staffing.rebalance(self, true)
 	refresh_progression()
-	log_event("%s hired. %s" % [role, "Assigned to table %d." % assignment if assignment > 0 else "Covering the floor / on standby."])
+	log_event("%s hired. Automatic coverage and relief rotation enabled." % role)
 	return true
 
-func assign_standby(id: int) -> void:
-	for employee in staff:
-		if employee.role == "Dealer" and int(employee.table) == -1 and crew(id).size() < required_crew(get_table(id)):
-			employee.table = id
-	log_event("Table %d has %d / %d dealers." % [id, crew(id).size(), required_crew(get_table(id))])
+func staffing_summary(role: String) -> Dictionary:
+	return Staffing.summary(self, role)
+
+func set_relief_target(role: String, amount: int) -> void:
+	if role not in relief_targets: return
+	relief_targets[role] = clampi(amount, 0, CasinoTuning.MAX_STAFF)
+	Staffing.rebalance(self, true)
+
+func set_service_positions(amount: int) -> void:
+	service_positions = clampi(amount, 1, CasinoTuning.MAX_STAFF)
+	Staffing.rebalance(self, true)
+
+func staff_rest(employee: Dictionary, off_duty: bool = false) -> void:
+	if employee not in staff: return
+	Staffing.request_rest(self, employee, "Off Duty" if off_duty else "Break")
+	Staffing.rebalance(self)
+
+func set_staff_priority(id: int, priority: int) -> void:
+	var table := get_table(id)
+	if table.is_empty() or required_crew(table) == 0: return
+	table.staff_priority = clampi(priority, 0, 2)
+	Staffing.rebalance(self)
+
+func set_table_staffed(id: int, enabled: bool) -> void:
+	var table := get_table(id)
+	if table.is_empty() or required_crew(table) == 0: return
+	table.staff_enabled = enabled
+	Staffing.rebalance(self)
+
+func accepting_new_play(table: Dictionary) -> bool:
+	return ready_for_play(table) and (required_crew(table) == 0 or (table.staff_enabled and not crew(int(table.id)).any(func(e): return e.rest_due != "")))
 
 func bounds(table: Dictionary) -> Rect2:
 	var size := furniture_size(table_kind(table), bool(table.rotated))
 	return Rect2(Vector2(table.x, table.y), size)
+
+func approach_position(table: Dictionary) -> Vector2:
+	var rect := bounds(table)
+	return Vector2(rect.get_center().x, rect.position.y - 22 if table_kind(table) == "slots" else rect.end.y + 24)
 
 func furniture_size(kind: String, rotated: bool) -> Vector2:
 	var dimensions := Vector2(60, 70) if kind == "slots" else (CasinoTuning.CRAPS_SIZE if kind == "craps" else CasinoTuning.TABLE_SIZE)
@@ -451,10 +559,10 @@ func can_place(at: Vector2, rotated: bool, ignore_id: int = -1, kind: String = "
 	if ignore_id >= 0: kind = table_kind(get_table(ignore_id))
 	var size := furniture_size(kind, rotated)
 	var rect := Rect2(at, size)
-	if not build_area().encloses(rect):
+	if not placement_area(kind).encloses(rect) or rect.intersects(CasinoTuning.ENTRANCE_CLEARANCE):
 		return false
 	for table in tables:
-		if int(table.id) != ignore_id and rect.grow(22).intersects(bounds(table)):
+		if int(table.id) != ignore_id and rect.grow(CasinoTuning.ASSET_AISLE_CLEARANCE).intersects(bounds(table)):
 			return false
 	return true
 
@@ -494,19 +602,22 @@ func sell(id: int) -> bool:
 		return false
 	for employee in crew(id):
 		employee.table = -1
+		employee.duty = "Relief"
 	table_interest.erase(int(table.id))
 	tables.erase(table)
+	Staffing.rebalance(self)
 	reroute()
 	incidents = incidents.filter(func(incident): return int(incident.table) != id)
 	var resale := (float(slot_profile(table).cost) if table_kind(table) == "slots" else float(Games.COSTS[table_kind(table)])) / 2
 	spend_nonpayroll(-resale, "sales")
 	emit_financial_event(resale, "sale", table, -1, {"asset_wagers": table.wagers, "asset_payouts": table.payouts, "asset_repair_expense": table.repair_expense, "asset_operating_expense": table.operating_expense, "asset_payroll_expense": table.payroll_expense, "asset_visitor_gaming_win": table.visitor_gaming_win, "asset_spins": table.rolls, "asset_available_minutes": table.available_minutes, "asset_occupied_minutes": table.occupied_minutes, "asset_downtime_minutes": table.downtime_minutes, "slot_profile": table.slot_profile})
 	refresh_progression()
-	log_event("Sold for $%d. Dealers are now on standby." % resale)
+	log_event("Sold for $%d. Dealers return to the relief / shift roster." % resale)
 	return true
 
 func set_open(value: bool) -> void:
 	opened = value
+	Staffing.rebalance(self)
 	if value: ever_opened = true
 	if not value:
 		if joined >= 0: leave_table()
@@ -563,14 +674,18 @@ func spawn_guest(vip: bool = false) -> void:
 	var budget: Dictionary = CasinoTuning.GUEST_BUDGETS[0]
 	for level in CasinoTuning.GUEST_BUDGETS:
 		if not restricted() or casino_rating >= float(level.rating): budget = level
+	if restricted() and not vip:
+		for offer in CasinoTuning.GUEST_UNLOCK_BUDGETS:
+			if float(offer.wager) > float(budget.wager) and slot_unlocked(str(offer.slot_profile)) and rng.randf() < float(offer.share):
+				budget = offer
 	var archetype_id := choose_archetype(vip)
 	var profile: Dictionary = CasinoTuning.GUEST_ARCHETYPES[archetype_id]
 	var bankroll := float(rng.randi_range(budget.bankroll.x, budget.bankroll.y)) if not vip else 5000.0
 	if not vip: bankroll = clampf(roundf(bankroll * float(profile.bankroll_scale)), budget.bankroll.x, budget.bankroll.y)
-	guests.append({"archetype": archetype_id, "id": next_id, "name": CasinoTuning.NAMES[rng.randi_range(0, 11)] + (" | VIP" if vip else ""), "x": 425.0, "y": 565.0, "tx": 425.0, "ty": 510.0, "table": -1, "seat": -1, "state": "Arriving", "wallet": bankroll, "start": bankroll, "rounds": 0, "last_wager_minute": -1, "drink_spending": 0.0, "wager_limit": 100.0 if vip else float(budget.wager), "satisfaction": 80.0, "thirst": 0.0, "age": 0, "session_left": 0.0, "activities": 0, "activity_since": elapsed, "decision_at": elapsed + rng.randi_range(1, 5), "wait_since": -1, "last_table": -1, "explored_without_game": false, "preference": profile.games[rng.randi_range(0, profile.games.size() - 1)], "patience": roundi(rng.randi_range(profile.patience.x, profile.patience.y) * float(CasinoTuning.TRAFFIC_RULES[difficulty].patience)), "demand_blocked": false, "demand_wait": 0, "demand_attempts": 0, "watch_left": 0, "watch_style": rng.randi_range(0, 2), "vip": vip, "bets": CrapsRules.empty_bets(), "thought": "Looking for an open game."})
+	guests.append({"archetype": archetype_id, "id": next_id, "name": CasinoTuning.NAMES[rng.randi_range(0, 11)] + (" | VIP" if vip else ""), "x": CasinoTuning.ENTRY.x, "y": CasinoTuning.ENTRY.y, "tx": CasinoTuning.ENTRY.x, "ty": CasinoTuning.ENTRY.y + 20, "table": -1, "seat": -1, "state": "Arriving", "wallet": bankroll, "start": bankroll, "rounds": 0, "last_wager_minute": -1, "bar_slot": -1, "drink_spending": 0.0, "drink_order": "", "drink_quote": 0.0, "drink_request_at": 0, "wager_limit": 100.0 if vip else float(budget.wager), "satisfaction": 80.0, "thirst": 0.0, "age": 0, "session_left": 0.0, "activities": 0, "activity_since": elapsed, "decision_at": elapsed + rng.randi_range(1, 5), "wait_since": -1, "last_table": -1, "explored_without_game": false, "preference": profile.games[rng.randi_range(0, profile.games.size() - 1)], "patience": roundi(rng.randi_range(profile.patience.x, profile.patience.y) * float(CasinoTuning.TRAFFIC_RULES[difficulty].patience)), "demand_blocked": false, "demand_wait": 0, "demand_attempts": 0, "watch_left": 0, "watch_style": rng.randi_range(0, 2), "vip": vip, "bets": CrapsRules.empty_bets(), "thought": "Looking for an open game."})
 	traffic_totals.arrivals += 1
 	if vip: award_milestone("first_vip", "First VIP arrival", "A real VIP guest has entered. Higher wagers also mean greater payout exposure.", 2, "positive", {"guest_id": next_id})
-	think(guests[-1], "I came here for %s." % str(Games.NAMES[guests[-1].preference]).replace("Ultimate Texas Hold’em", "hold'em").to_lower())
+	think(guests[-1], guest_arrival_thought(guests[-1]))
 	next_id += 1
 
 func traffic_snapshot() -> Dictionary:
@@ -582,7 +697,7 @@ func traffic_snapshot() -> Dictionary:
 		if not operating(table): continue
 		var seats := guest_capacity(table)
 		positions += seats
-		occupied += mini(seats, guests.filter(func(g): return int(g.table) == int(table.id) and int(g.seat) >= 0 and g.state not in ["To cage", "Cashing out", "Leaving"]).size())
+		occupied += mini(seats, reserved_guests(int(table.id)).size())
 		appeal += seats * (float(slot_profile(table).appeal) if table_kind(table) == "slots" else 1.2)
 		kinds[table_kind(table)] = true
 	var peak := minute >= 1080 and minute < 1380
@@ -648,26 +763,25 @@ func wait_for_game(guest: Dictionary) -> void:
 	if float(guest.demand_wait) >= guest.patience * CasinoTuning.TRAFFIC_WAIT_LIMIT_FRACTION:
 		leave(guest, "No room tonight. I'll come back later.", "capacity")
 		return
-	# Reuse physical exploring/drink service, then retry; never reset the wait budget.
-	if guest.thirst >= CasinoTuning.DRINK_THIRST_TRIGGER and feature_owned("service") and guest.wallet >= float(CasinoTuning.DRINK_PROFILES.basic.price) and rng.randf() < 0.4:
-		start_guest_exploration(guest, true)
-	elif guest.state == "Waiting" and int(guest.demand_attempts) % 3 == 0:
+	# Waiting at the bar never resets the cumulative unmet-demand budget.
+	if rng.randf() < CasinoTuning.BAR_WAIT_CHANCE and start_guest_bar(guest): return
+	if guest.state == "Waiting" and int(guest.demand_attempts) % 3 == 0:
 		start_guest_exploration(guest)
 	else:
 		guest.table = -1
 		guest.seat = -1
 		guest.state = "Waiting"
 		guest.decision_at = elapsed + rng.randi_range(CasinoTuning.GUEST_DECISION_GAP.x, CasinoTuning.GUEST_DECISION_GAP.y)
-		think(guest, "All the games are taken. I'll wait a little.", 2)
+		think(guest, "The games in my budget are taken. I'll wait.", 2)
 
 func observation_spot(table: Dictionary, id: int) -> Vector2:
 	var rect := bounds(table)
 	var offset := float(id % 3 - 1) * 32
 	var spots := [Vector2(rect.get_center().x + offset, rect.end.y + 60), Vector2(rect.get_center().x + offset, rect.position.y - 60), Vector2(rect.end.x + 55, rect.get_center().y + offset), Vector2(rect.position.x - 55, rect.get_center().y + offset)]
 	for at in spots:
-		if Rect2(30, 100, 790, 450).has_point(at) and not tables.any(func(t): return bounds(t).grow(16).has_point(at)):
+		if walk_area().has_point(at) and not tables.any(func(t): return bounds(t).grow(16).has_point(at)):
 			return at
-	return Vector2(-1, -1)
+	return Vector2(INF, INF)
 
 func watching_step(guest: Dictionary) -> void:
 	var table := get_table(int(guest.table))
@@ -675,22 +789,28 @@ func watching_step(guest: Dictionary) -> void:
 		if opened: start_guest_exploration(guest)
 		else: leave(guest, "The casino is closing.")
 		return
-	var reserved := guests.filter(func(other): return other != guest and int(other.table) == int(table.id) and int(other.seat) >= 0).size()
-	if guest.preference == table_kind(table) and affordable_game(table, guest) and reserved < guest_capacity(table) and elapsed - int(guest.activity_since) >= 2:
+	var reserved := reserved_guests(int(table.id), int(guest.id)).size()
+	# Watching follows real players; do not linger at a deserted game.
+	if seated(int(table.id)).is_empty():
+		if affordable_game(table, guest): choose_table(guest, false)
+		else: start_guest_exploration(guest)
+		return
+	if guest_current_interest(guest) == table_kind(table) and affordable_game(table, guest) and reserved < guest_capacity(table) and elapsed - int(guest.activity_since) >= 2:
 		think(guest, "A seat opened. I'll play.", 2)
 		choose_table(guest, false)
 		return
 	guest.watch_left = maxi(0, int(guest.watch_left) - 1)
 	var hot := table_hot(table)
-	var reset: bool = not table.history.is_empty() and bool(table.history[0].seven_out)
-	think(guest, "Watching the table before deciding.")
+	var dice_game := table_kind(table) == "craps"
+	var reset: bool = dice_game and not table.history.is_empty() and bool(table.history[0].seven_out)
+	think(guest, "Watching the slot player before deciding." if table_kind(table) == "slots" else "Watching the table before deciding.")
 	if hot: think(guest, "This table is getting hot.", 2)
 	elif reset: think(guest, "Seven-out. Watching the new shooter.")
 	if int(guest.watch_left) > 0: return
 	# This is guest psychology only; history never changes the dice probabilities.
 	var chance := 0.70
 	if int(guest.watch_style) == 1: chance = 0.90 if hot else (0.30 if reset else 0.55)
-	elif int(guest.watch_style) == 2: chance = 0.85 if reset or int(table.point) == 0 else 0.45
+	elif int(guest.watch_style) == 2 and dice_game: chance = 0.85 if reset or int(table.point) == 0 else 0.45
 	if rng.randf() < chance:
 		choose_table(guest, false)
 	else:
@@ -701,9 +821,9 @@ func affordable_game(table: Dictionary, guest: Dictionary) -> bool:
 	var wager := guest_wager(table, guest)
 	return wager >= float(table.minimum) and guest.wallet >= wager * (6 if table_kind(table) == "holdem" else 1)
 
-func game_choice_score(table: Dictionary, guest: Dictionary, reserved: int) -> float:
+func game_choice_score(table: Dictionary, guest: Dictionary, reserved: int, interest: String) -> float:
 	var profile := archetype(guest)
-	var value := 100.0 + (float(profile.preference_bonus) if guest.preference == table_kind(table) else 0.0)
+	var value := 100.0 + (float(profile.preference_bonus) if interest == table_kind(table) else 0.0)
 	value -= Vector2(guest.x, guest.y).distance_to(bounds(table).get_center()) * 0.08
 	value += reserved * 2.0
 	if table_kind(table) == "slots":
@@ -721,15 +841,32 @@ func release_guest_seat(guest: Dictionary) -> void:
 	if int(guest.table) > 0: guest.last_table = int(guest.table)
 	guest.table = -1
 	guest.seat = -1
+	guest.bar_slot = -1
 	guest.wait_since = -1
 	guest.activity_since = elapsed
 
-func start_guest_exploration(guest: Dictionary, drink: bool = false) -> void:
+func start_guest_bar(guest: Dictionary) -> bool:
+	if not bar_available(): return false
+	for slot in range(CasinoTuning.BAR_GUEST_OFFSETS.size()):
+		if guests.any(func(other): return other != guest and int(other.bar_slot) == slot and other.state in ["To bar", "At bar"]): continue
+		var target := bar_guest_position(slot)
+		if tables.any(func(table): return bounds(table).grow(16).has_point(target)): continue
+		release_guest_seat(guest)
+		guest.bar_slot = slot
+		guest.state = "To bar"
+		guest.tx = target.x
+		guest.ty = target.y
+		route(guest)
+		think(guest, "I'll wait at the bar." if guest.demand_blocked else "I'll take a break at the bar.", 2)
+		return true
+	return false
+
+func start_guest_exploration(guest: Dictionary) -> void:
 	release_guest_seat(guest)
-	guest.state = "Seeking drink" if drink else "Exploring"
+	guest.state = "Exploring"
 	guest.decision_at = elapsed + rng.randi_range(CasinoTuning.GUEST_EXPLORE_MINUTES.x, CasinoTuning.GUEST_EXPLORE_MINUTES.y)
 	# A purposeful short walk through reachable aisles; no indefinite wandering.
-	var area := CasinoTuning.STARTER_BUILD_AREA if not expanded else Rect2(45, 110, 740, 400)
+	var area := walk_area().grow(-20)
 	var target := Vector2(guest.x, guest.y)
 	for attempt in range(12):
 		var candidate := Vector2(rng.randf_range(area.position.x, area.end.x), rng.randf_range(area.position.y, area.end.y))
@@ -739,11 +876,11 @@ func start_guest_exploration(guest: Dictionary, drink: bool = false) -> void:
 	guest.tx = target.x
 	guest.ty = target.y
 	route(guest)
-	think(guest, "I'll find a drink." if drink else "I'll look around.", 2)
+	think(guest, "I'll look around.", 2)
 
 func guest_exit_reason(guest: Dictionary) -> String:
 	if not opened: return "The casino is closing."
-	if guest.satisfaction < 25: return "I need a drink. I'm leaving." if guest.thirst > thirst_discomfort() else "Not my night. I'm leaving."
+	if guest.satisfaction < 25: return "I need a drink. I'm leaving." if bar_available() and guest.thirst > thirst_discomfort() else "Not my night. I'm leaving."
 	if not tables.any(func(table): return affordable_game(table, guest)): return "No affordable games for me."
 	return ""
 
@@ -767,9 +904,7 @@ func finish_guest_session(guest: Dictionary) -> void:
 	if rng.randf() < clampf(chance, 0.02, 0.85):
 		leave(guest, "Time to cash out." if guest.rounds > 0 else "I'm done for tonight.")
 		return
-	if guest.thirst >= CasinoTuning.DRINK_THIRST_TRIGGER and feature_owned("service") and guest.wallet >= float(CasinoTuning.DRINK_PROFILES.basic.price):
-		start_guest_exploration(guest, true)
-		return
+	if (guest.thirst >= CasinoTuning.DRINK_THIRST_TRIGGER or rng.randf() < CasinoTuning.BAR_BREAK_CHANCE) and start_guest_bar(guest): return
 	# Reconsider even if the guest elects to return to a familiar game.
 	release_guest_seat(guest)
 	if rng.randf() < float(CasinoTuning.GUEST_VISITS[str(guest.archetype)].explore): start_guest_exploration(guest)
@@ -806,23 +941,36 @@ func guest_lifecycle_step(guest: Dictionary) -> void:
 		if elapsed - int(guest.activity_since) > guest.patience:
 			leave(guest, "Couldn't find a comfortable route.")
 		elif Vector2(guest.x, guest.y).distance_to(Vector2(guest.tx, guest.ty)) < 3: choose_table(guest)
-	elif guest.state == "Seeking drink" and elapsed - int(guest.activity_since) > guest.patience:
-		leave(guest, "Couldn't reach drink service.")
-	elif guest.state == "Getting drink" and (guest.thirst < CasinoTuning.DRINK_THIRST_TRIGGER or elapsed >= int(guest.decision_at)):
-		think(guest, "Back to the games." if guest.thirst < CasinoTuning.DRINK_THIRST_TRIGGER else "I'll try something else.", 2)
-		choose_table(guest)
+	elif guest.state in ["To bar", "At bar"]:
+		if not bar_available():
+			start_guest_exploration(guest)
+		elif guest.state == "To bar" and elapsed - int(guest.activity_since) > guest.patience:
+			start_guest_exploration(guest)
+		elif guest.state == "At bar":
+			if elapsed >= int(guest.decision_at):
+				think(guest, "Back to the games.", 2)
+				choose_table(guest)
+			else:
+				think(guest, "Watching the floor from the bar.")
 	elif guest.state == "Waiting" and elapsed >= int(guest.decision_at):
 		guest.decision_at = elapsed + rng.randi_range(CasinoTuning.GUEST_DECISION_GAP.x, CasinoTuning.GUEST_DECISION_GAP.y)
 		choose_table(guest)
 
 func choose_table(guest: Dictionary, allow_watch: bool = true) -> void:
+	guest.bar_slot = -1
 	var best: Dictionary = {}
 	var score := -INF
+	var interest := guest_current_interest(guest)
+	var reservations := {}
+	# Compute once per decision instead of scanning the crowd for every asset.
+	for other in guests:
+		if int(other.id) != int(guest.id) and int(other.seat) >= 0 and other.state in ["Walking", "Playing"]:
+			reservations[int(other.table)] = int(reservations.get(int(other.table), 0)) + 1
 	for table in tables:
 		# Include guests still walking to their reserved seats.
-		var reserved := guests.filter(func(g): return int(g.table) == int(table.id) and int(g.seat) >= 0 and g != guest).size()
+		var reserved := int(reservations.get(int(table.id), 0))
 		if not affordable_game(table, guest) or (reserved >= guest_capacity(table) and not allow_watch): continue
-		var value := game_choice_score(table, guest, reserved)
+		var value := game_choice_score(table, guest, reserved, interest)
 		if reserved >= guest_capacity(table): value -= 10000.0
 		if value > score:
 			score = value
@@ -835,10 +983,10 @@ func choose_table(guest: Dictionary, allow_watch: bool = true) -> void:
 		# A bounded observation activity can be worthwhile without a table bankroll.
 		if allow_watch and not guest.explored_without_game:
 			for table in tables:
-				if not operating(table) or table_kind(table) == "slots" or seated(int(table.id)).is_empty(): continue
+				if not operating(table) or seated(int(table.id)).is_empty(): continue
 				var watchers := guests.filter(func(other): return int(other.table) == int(table.id) and other.state in ["Browsing", "Watching"]).size()
 				var spot := observation_spot(table, int(guest.id))
-				if watchers >= CasinoTuning.OBSERVERS_PER_TABLE or spot.x < 0: continue
+				if watchers >= CasinoTuning.OBSERVERS_PER_TABLE or not spot.is_finite(): continue
 				guest.explored_without_game = true
 				guest.table = int(table.id)
 				guest.seat = -1
@@ -857,12 +1005,12 @@ func choose_table(guest: Dictionary, allow_watch: bool = true) -> void:
 			leave(guest, "Couldn't find an affordable open game.", "affordability")
 		return
 	var observers := guests.filter(func(g): return int(g.table) == int(best.id) and g.state in ["Browsing", "Watching"]).size()
-	var seats := guests.filter(func(g): return int(g.table) == int(best.id) and int(g.seat) >= 0 and g != guest).size()
+	var seats := reserved_guests(int(best.id), int(guest.id)).size()
 	var spot := observation_spot(best, int(guest.id))
 	var watch_chance := float(archetype(guest).watch_chance)
-	if guest.preference == table_kind(best) and table_kind(best) != "craps": watch_chance *= 0.15
-	var intentional_watch: bool = seats >= guest_capacity(best) or (not seated(int(best.id)).is_empty() and rng.randf() < watch_chance)
-	if allow_watch and table_kind(best) != "slots" and observers < CasinoTuning.OBSERVERS_PER_TABLE and spot.x >= 0 and intentional_watch:
+	if guest_current_interest(guest) == table_kind(best) and table_kind(best) != "craps": watch_chance *= 0.15
+	var intentional_watch: bool = not seated(int(best.id)).is_empty() and (seats >= guest_capacity(best) or rng.randf() < watch_chance)
+	if allow_watch and observers < CasinoTuning.OBSERVERS_PER_TABLE and spot.is_finite() and intentional_watch:
 		if seats >= guest_capacity(best): mark_unmet_demand(guest)
 		guest.table = int(best.id)
 		guest.seat = -1
@@ -872,7 +1020,7 @@ func choose_table(guest: Dictionary, allow_watch: bool = true) -> void:
 		guest.watch_left = rng.randi_range(4, 10) if seats < guest_capacity(best) else rng.randi_range(CasinoTuning.OBSERVE_MINUTES.x, CasinoTuning.OBSERVE_MINUTES.y)
 		guest.tx = spot.x
 		guest.ty = spot.y
-		think(guest, "Watching %s before buying in." % Games.NAMES[table_kind(best)])
+		think(guest, "I'll watch this slot player while I wait." if table_kind(best) == "slots" else "Watching %s before buying in." % Games.NAMES[table_kind(best)])
 		route(guest)
 		return
 	if seats >= guest_capacity(best):
@@ -898,8 +1046,9 @@ func choose_table(guest: Dictionary, allow_watch: bool = true) -> void:
 	if table_hot(best):
 		think(guest, "This table is drawing a crowd.", 2)
 	elif table_kind(best) == "slots" and guest.archetype in ["slots", "vip"]:
-		think(guest, "I like this machine." if int(slot_profile(best).prestige) >= 3 else "I'd prefer a better machine." if guest.vip else "I wish they had better slots.", 2)
-	elif guest.preference != table_kind(best):
+		var better_available: bool = tables.any(func(table): return table_kind(table) == "slots" and int(slot_profile(table).prestige) > int(slot_profile(best).prestige))
+		think(guest, "That other machine looks better." if better_available else "I like this machine.", 2)
+	elif guest_current_interest(guest) != table_kind(best):
 		think(guest, "I'll try %s instead." % ("slots" if table_kind(best) == "slots" else "hold'em" if table_kind(best) == "holdem" else table_kind(best)))
 	else:
 		think(guest, "Found my preferred game.")
@@ -911,15 +1060,17 @@ func leave(guest: Dictionary, reason: String, departure: String = "visit") -> vo
 	if int(guest.rounds) > 0:
 		guests_served += 1
 		refresh_progression()
+	Bar.cancel_order(self, guest)
 	guest.state = "To cage" if int(guest.rounds) > 0 else "Leaving"
 	guest.table = -1
 	guest.seat = -1
+	guest.bar_slot = -1
 	guest.tx = CAGE_PICKUP.x if int(guest.rounds) > 0 else CasinoTuning.ENTRY.x
 	guest.ty = CAGE_PICKUP.y if int(guest.rounds) > 0 else CasinoTuning.ENTRY.y
 	think(guest, reason, 3)
 	route(guest)
 	if not opened: departure = "closed"
-	elif guest.thirst > thirst_discomfort() and guest.satisfaction < 25: departure = "service"
+	elif bar_available() and guest.thirst > thirst_discomfort() and guest.satisfaction < 25: departure = "service"
 	traffic_totals.departures[departure] += 1
 	var severe: bool = departure in ["capacity", "affordability"] and guest.demand_blocked and guest.demand_wait >= guest.patience and guest.demand_attempts >= 3
 	if severe:
@@ -939,26 +1090,36 @@ func leave(guest: Dictionary, reason: String, departure: String = "visit") -> vo
 func floor_navigation() -> AStarGrid2D:
 	if navigation_grid != null: return navigation_grid
 	navigation_grid = AStarGrid2D.new()
-	navigation_grid.region = Rect2i(2, 9, 81, 50)
-	navigation_grid.cell_size = Vector2(10, 10)
+	navigation_grid.region = Property.nav_region(floor_chunks)
+	navigation_grid.cell_size = Vector2.ONE * CasinoTuning.FLOOR_NAV_CELL
 	navigation_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
+	navigation_grid.default_compute_heuristic = AStarGrid2D.HEURISTIC_MANHATTAN
+	navigation_grid.default_estimate_heuristic = AStarGrid2D.HEURISTIC_MANHATTAN
+	navigation_grid.jumping_enabled = true
 	navigation_grid.update()
+	# Mark only each asset's bounded footprint, not the whole property per asset.
 	for table in tables:
 		var rect := bounds(table).grow(9)
-		for x in range(2, 83):
-			for y in range(9, 59):
-				if rect.has_point(Vector2(x * 10, y * 10)):
+		var cell: float = CasinoTuning.FLOOR_NAV_CELL
+		var first := Vector2i(ceili(rect.position.x / cell), ceili(rect.position.y / cell))
+		var last := Vector2i(floori(rect.end.x / cell), floori(rect.end.y / cell))
+		for x in range(first.x, last.x + 1):
+			for y in range(first.y, last.y + 1):
+				if navigation_grid.is_in_boundsv(Vector2i(x, y)):
 					navigation_grid.set_point_solid(Vector2i(x, y))
 	return navigation_grid
 
 func route(guest: Dictionary) -> void:
 	var grid := floor_navigation()
-	var origin := Vector2i(roundi(guest.x / 10), roundi(guest.y / 10))
-	var destination := Vector2i(roundi(guest.tx / 10), roundi(guest.ty / 10))
+	var origin := Vector2i(roundi(guest.x / CasinoTuning.FLOOR_NAV_CELL), roundi(guest.y / CasinoTuning.FLOOR_NAV_CELL))
+	var destination := Vector2i(roundi(guest.tx / CasinoTuning.FLOOR_NAV_CELL), roundi(guest.ty / CasinoTuning.FLOOR_NAV_CELL))
+	origin = origin.clamp(grid.region.position, grid.region.end - Vector2i.ONE)
+	destination = destination.clamp(grid.region.position, grid.region.end - Vector2i.ONE)
 	var path: Array = []
 	if grid.is_in_boundsv(origin) and grid.is_in_boundsv(destination):
 		for at in grid.get_point_path(origin, destination):
 			path.append([at.x, at.y])
+	if not path.is_empty(): path.append([guest.tx, guest.ty])
 	guest.path = path
 
 func reroute() -> void:
@@ -966,13 +1127,21 @@ func reroute() -> void:
 	for employee in staff:
 		if employee.role == "Service" and employee.has("service_state"): route(employee)
 	for guest in guests:
-		if guest.state in ["Arriving", "Walking", "Browsing", "Exploring", "Seeking drink", "To cage", "Leaving"]:
+		if guest.state in ["To bar", "At bar"]:
+			var target := bar_guest_position(int(guest.bar_slot))
+			if Vector2(guest.tx, guest.ty).distance_to(target) > 1:
+				guest.tx = target.x
+				guest.ty = target.y
+				guest.state = "To bar"
+				guest.activity_since = elapsed
+		if guest.state in ["Arriving", "Walking", "Browsing", "Exploring", "To bar", "To cage", "Leaving"]:
 			route(guest)
 
 func move_entity(entity: Dictionary, delta: float) -> Vector2:
 	# Consume distance across waypoints, not one waypoint per frame/substep.
 	# This avoids losing travel time at 0.1-second developer substeps.
 	var at := Vector2(entity.x, entity.y)
+	if entity.path.is_empty(): return at
 	var target := Vector2(entity.tx, entity.ty)
 	var distance := maxf(0, delta) * CasinoTuning.ENTITY_WALK_SPEED
 	while distance > 0:
@@ -1012,7 +1181,7 @@ func move_guests(delta: float) -> void:
 				think(guest, "Cashed out. Heading home.")
 				route(guest)
 			continue
-		if guest.state not in ["Arriving", "Walking", "Browsing", "Exploring", "Seeking drink", "To cage", "Leaving"]:
+		if guest.state not in ["Arriving", "Walking", "Browsing", "Exploring", "To bar", "To cage", "Leaving"]:
 			continue
 		if guest.state == "Exploring" and Vector2(guest.x, guest.y).distance_to(Vector2(guest.tx, guest.ty)) < 3: continue
 		# Hold at the exit until the next economic tick removes this guest.
@@ -1033,41 +1202,66 @@ func move_guests(delta: float) -> void:
 				think(guest, "Ready to play %s!" % Games.NAMES[table_kind(get_table(int(guest.table)))])
 			elif guest.state == "Browsing":
 				guest.state = "Watching"
-				think(guest, "Watching the table before deciding.")
-			elif guest.state == "Seeking drink":
-				guest.state = "Getting drink"
+				think(guest, "Watching the slot player before deciding." if table_kind(get_table(int(guest.table))) == "slots" else "Watching the table before deciding.")
+			elif guest.state == "To bar":
+				guest.state = "At bar"
+				guest.activity_since = elapsed
 				guest.decision_at = elapsed + rng.randi_range(CasinoTuning.GUEST_DRINK_BREAK_MINUTES.x, CasinoTuning.GUEST_DRINK_BREAK_MINUTES.y)
+				think(guest, "A drink while I wait would be nice." if guest.thirst >= CasinoTuning.DRINK_THIRST_TRIGGER else "Taking a break and watching the floor.", 2)
 			elif guest.state == "Arriving":
 				guest.state = "Waiting"
 				guest.decision_at = elapsed + rng.randi_range(1, 5)
 
+func bar_bounds() -> Rect2:
+	return CasinoTuning.BAR_COUNTER
+
+func bar_available() -> bool:
+	# The counter opens with service access; hiring controls actual delivery.
+	return unlocked("service") or feature_owned("service")
+
+func bar_guest_position(slot: int) -> Vector2:
+	return bar_bounds().position + CasinoTuning.BAR_GUEST_OFFSETS[clampi(slot, 0, CasinoTuning.BAR_GUEST_OFFSETS.size() - 1)]
+
+func bar_pickup() -> Vector2:
+	return bar_bounds().position + CasinoTuning.BAR_PICKUP_OFFSET
+
 func service_position(employee: Dictionary) -> void:
 	if employee.has("service_state"): return
-	employee.merge({"x": BAR_PICKUP.x, "y": BAR_PICKUP.y, "tx": BAR_PICKUP.x, "ty": BAR_PICKUP.y, "service_state": "At bar", "service_wait": CasinoTuning.DRINK_PREP_SECONDS, "service_target": -1}, true)
+	var pickup := bar_pickup()
+	employee.merge({"x": pickup.x, "y": pickup.y, "tx": pickup.x, "ty": pickup.y, "service_state": "At bar", "service_wait": 0.0, "service_target": -1, "service_product": ""}, true)
 
 func send_to_bar(employee: Dictionary) -> void:
 	employee.service_state = "To bar"
 	employee.service_target = -1
-	employee.tx = BAR_PICKUP.x
-	employee.ty = BAR_PICKUP.y
+	var pickup := bar_pickup()
+	employee.tx = pickup.x
+	employee.ty = pickup.y
 	route(employee)
 
 func gambling_comp_eligible(guest: Dictionary, profile: Dictionary) -> bool:
 	# A seat or a wallet is not gambling. Only a successfully funded real wager counts.
 	return bool(CasinoTuning.COMP_POLICY.basic_gambling_comps) and bool(profile.comp_eligible) and guest.state == "Playing" and int(guest.last_wager_minute) >= 0 and elapsed - int(guest.last_wager_minute) <= int(CasinoTuning.COMP_POLICY.recent_wager_minutes)
 
+func set_drink_menu(id: String, enabled: bool) -> void:
+	Bar.set_menu(self, id, enabled)
+
+func set_drink_price(id: String, price: float) -> void:
+	Bar.set_price(self, id, price)
+
 func wants_drink(guest: Dictionary) -> bool:
-	if not opened or guest.state not in ["Playing", "Watching", "Waiting", "Getting drink"] or float(guest.thirst) < CasinoTuning.DRINK_THIRST_TRIGGER: return false
-	var profile: Dictionary = CasinoTuning.DRINK_PROFILES.basic
-	var price := 0.0 if gambling_comp_eligible(guest, profile) else float(profile.price)
-	return float(guest.wallet) >= price and cash + price >= float(profile.cost)
+	if not Bar.eligible_state(self, guest) or str(guest.drink_order) not in drink_menu: return false
+	var id: String = str(guest.drink_order)
+	var price := Bar.price_for(self, guest, id, float(guest.drink_quote))
+	return float(guest.wallet) >= price and cash + price >= float(CasinoTuning.DRINK_PROFILES[id].cost)
 
 func deliver_drink(guest: Dictionary, employee: Dictionary) -> void:
-	# Recheck current state/eligibility/funds at delivery, not when the route started.
+	if employee.duty != "Active" or str(employee.service_product) != str(guest.drink_order): return
+	# Recheck eligibility/funds at delivery. Retain the quoted paid price.
 	if not wants_drink(guest): return
-	var profile: Dictionary = CasinoTuning.DRINK_PROFILES.basic
+	var id: String = str(guest.drink_order)
+	var profile: Dictionary = CasinoTuning.DRINK_PROFILES[id]
 	var comped := gambling_comp_eligible(guest, profile)
-	var price := 0.0 if comped else float(profile.price)
+	var price := Bar.price_for(self, guest, id, float(guest.drink_quote))
 	var cost := float(profile.cost)
 	guest.wallet -= price
 	guest.drink_spending += price
@@ -1080,13 +1274,15 @@ func deliver_drink(guest: Dictionary, employee: Dictionary) -> void:
 		bar_totals.sold += 1
 		bar_totals.product_cost += cost
 	spend_nonpayroll(cost, "drink_comps" if comped else "drink_products")
+	Bar.fulfill(self, guest, id, price, comped)
 	guest.thirst = 0.0
-	# This incident means absent drink service; an actual delivery resolves it.
 	incidents = incidents.filter(func(item): return item.type != "service")
-	guest.satisfaction = minf(100, float(guest.satisfaction) + CasinoTuning.DRINK_SATISFACTION_GAIN)
-	think(guest, "A complimentary drink for playing. Thanks!" if comped else "My drink arrived - $%.2f. Thanks!" % price)
+	guest.satisfaction = minf(100, float(guest.satisfaction) + CasinoTuning.DRINK_SATISFACTION_GAIN + float(profile.prestige) * CasinoTuning.DRINK_PRESTIGE_SATISFACTION)
+	if guest.state == "At bar":
+		guest.decision_at = elapsed + rng.randi_range(CasinoTuning.BAR_SOCIAL_MINUTES.x, CasinoTuning.BAR_SOCIAL_MINUTES.y)
+	think(guest, "%s, on the house. Thanks!" % profile.name if comped else "%s arrived - $%.2f. Thanks!" % [profile.name, price])
 	var asset := get_table(int(guest.table))
-	emit_financial_event(price - cost, "comp" if comped else "bar", asset, int(guest.id), {"position": Vector2(guest.x, guest.y), "drink_profile": "basic", "comped": comped, "price": price, "product_cost": cost, "staff_name": str(employee.name), "source": "drink"})
+	emit_financial_event(price - cost, "comp" if comped else "bar", asset, int(guest.id), {"position": Vector2(guest.x, guest.y), "drink_profile": id, "comped": comped, "price": price, "product_cost": cost, "staff_name": str(employee.name), "source": "drink"})
 
 func bar_margin() -> float:
 	return float(bar_totals.revenue) - float(bar_totals.product_cost) - float(bar_totals.comp_cost)
@@ -1096,24 +1292,31 @@ func bar_contribution() -> float:
 
 func move_service(delta: float) -> void:
 	for employee in staff:
-		if employee.role != "Service": continue
+		if employee.role != "Service" or employee.duty != "Active": continue
 		service_position(employee)
+		var pickup := bar_pickup()
+		if (employee.service_state == "To bar" and Vector2(employee.tx, employee.ty) != pickup) or (employee.service_state in ["At bar", "Preparing"] and Vector2(employee.x, employee.y).distance_to(pickup) > 2):
+			send_to_bar(employee)
 		if employee.service_state == "At bar":
-			employee.service_wait = maxf(0, float(employee.service_wait) - delta)
-			if employee.service_wait > 0: continue
 			var candidates := guests.filter(func(g): return wants_drink(g) and not staff.any(func(other): return int(other.get("service_target", -1)) == int(g.id)))
 			candidates.sort_custom(func(a, b): return a.thirst > b.thirst)
 			if candidates.is_empty(): continue
 			var guest: Dictionary = candidates[0]
-			employee.service_state = "Delivering"
+			employee.service_state = "Preparing"
 			employee.service_target = int(guest.id)
-			employee.tx = float(guest.x)
-			employee.ty = float(guest.y)
-			route(employee)
-		if employee.service_state == "Delivering":
-			var target := guests.filter(func(g): return int(g.id) == int(employee.service_target) and g.state in ["Playing", "Watching", "Waiting", "Getting drink"])
+			employee.service_product = str(guest.drink_order)
+			employee.service_wait = float(CasinoTuning.DRINK_PROFILES[str(guest.drink_order)].prep_minutes)
+		if employee.service_state in ["Preparing", "Delivering"]:
+			var target := guests.filter(func(g): return int(g.id) == int(employee.service_target) and wants_drink(g) and str(g.drink_order) == str(employee.service_product))
 			if target.is_empty():
 				send_to_bar(employee)
+			elif employee.service_state == "Preparing":
+				employee.service_wait = maxf(0, float(employee.service_wait) - delta)
+				if employee.service_wait > 0: continue
+				employee.service_state = "Delivering"
+				employee.tx = target[0].x
+				employee.ty = target[0].y
+				route(employee)
 			elif Vector2(target[0].x, target[0].y).distance_to(Vector2(employee.tx, employee.ty)) > 12:
 				employee.tx = target[0].x
 				employee.ty = target[0].y
@@ -1125,7 +1328,7 @@ func move_service(delta: float) -> void:
 			employee.erase("path")
 			if employee.service_state == "To bar":
 				employee.service_state = "At bar"
-				employee.service_wait = CasinoTuning.DRINK_PREP_SECONDS
+				employee.service_product = ""
 			else:
 				for guest in guests:
 					if int(guest.id) == int(employee.service_target): deliver_drink(guest, employee)
@@ -1137,20 +1340,23 @@ func step() -> void:
 	if minute >= 1440:
 		minute = 0
 		day += 1
-	var service_count := staff.filter(func(s): return s.role == "Service").size()
+	var service_count := staff.filter(func(s): return s.role == "Service" and s.duty == "Active").size()
 	var wages := 0.0
 	for employee in staff:
+		if employee.duty == "Off Duty": continue
 		var wage := (CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE) / 60.0
 		wages += wage
 		expense_totals["dealer_payroll" if employee.role == "Dealer" else "service_payroll"] += wage
 		payroll_by_state[payroll_state(employee)] += wage
+		if employee.role == "Service" and employee.duty == "Active" and str(employee.get("service_product", "")) in drink_stats:
+			drink_stats[str(employee.service_product)].service_payroll += wage
 		if employee.role == "Dealer":
 			var assigned := get_table(int(employee.table))
 			if not assigned.is_empty(): assigned.payroll_expense += wage
-		var active: bool = not guests.is_empty() if employee.role == "Service" else opened and int(employee.table) > 0
-		employee.energy = clampf(employee.energy + (-0.13 if active else 0.5), 15, 100)
 	payroll += wages
 	cash -= wages
+	Staffing.tick(self)
+	service_count = staff.filter(func(s): return s.role == "Service" and s.duty == "Active").size()
 	var costs := 0.0
 	for table in tables:
 		var asset_cost := (float(slot_profile(table).overhead) if table_kind(table) == "slots" else CasinoTuning.TABLE_OVERHEAD) / 60.0
@@ -1161,14 +1367,16 @@ func step() -> void:
 			table.available_minutes += 1
 			if not seated(int(table.id)).is_empty() or joined == int(table.id): table.occupied_minutes += 1
 	spend_nonpayroll(costs, "upkeep")
+	spend_nonpayroll(property_upkeep_rate() / 60.0, "property_upkeep")
 	arrival_step()
 	for guest in guests:
 		guest.age += 1
-		guest.thirst = minf(100, guest.thirst + CasinoTuning.THIRST_PER_MINUTE)
-		if guest.thirst > thirst_discomfort():
-			guest.satisfaction = maxf(0, guest.satisfaction - CasinoTuning.THIRST_SATISFACTION_LOSS * float(archetype(guest).service_expectation) * (1.0 if unlocked("service") else CasinoTuning.PRE_SERVICE_THIRST_LOSS_SCALE))
+		if bar_available(): guest.thirst = minf(100, guest.thirst + CasinoTuning.THIRST_PER_MINUTE)
+		if bar_available() and guest.thirst > thirst_discomfort():
+			guest.satisfaction = maxf(0, guest.satisfaction - CasinoTuning.THIRST_SATISFACTION_LOSS * float(archetype(guest).service_expectation))
 			think(guest, "I expected better drink service." if guest.vip else "I could use a drink.", 2)
 		guest_lifecycle_step(guest)
+		Bar.request(self, guest)
 	guests = guests.filter(func(g): return not (g.state == "Leaving" and Vector2(g.x, g.y).distance_to(CasinoTuning.ENTRY) < 3))
 	for table in tables:
 		# Closed tables finish contracts and allow owner play; guests place no new bets.
@@ -1181,7 +1389,7 @@ func step() -> void:
 			table.timer += 1.0
 			if table.timer >= (int(slot_profile(table).round_minutes) if table_kind(table) == "slots" else int(CasinoTuning.TABLE_GAME_ROUND_MINUTES[table_kind(table)])):
 				table.timer = 0.0
-				if opened: npc_games(table)
+				if operating(table): npc_games(table)
 			continue
 		ensure_shooter(table)
 		if joined == int(table.id) and (int(table.shooter) == 0 or table.betting_hold):
@@ -1222,7 +1430,7 @@ func step() -> void:
 					for guest in seated(int(table.id)):
 						start_guest_exploration(guest)
 						think(guest, "This machine needs repair. Maybe another game.", 3)
-	if opened and unlocked("service") and not guests.is_empty() and elapsed % 70 == 0 and service_count == 0 and incidents.size() < 3 and not incidents.any(func(item): return item.type == "service"):
+	if opened and bar_available() and guests.any(func(guest): return guest.state not in ["To cage", "Cashing out", "Leaving"] and guest.thirst > thirst_discomfort()) and elapsed % 70 == 0 and service_count == 0 and incidents.size() < 3 and not incidents.any(func(item): return item.type == "service"):
 		incidents.append({"type": "service", "table": -1, "title": "Drink service complaint", "detail": "No service staff. A $60 comp buys goodwill; hire service for lasting relief."})
 		log_event("Guests are asking for drinks. Hire service staff or offer a comp.")
 
@@ -1263,7 +1471,7 @@ func bet_amount(table: Dictionary, kind: String, chip: float = 0.0) -> float:
 
 func bet_error(id: int, kind: String, chip: float = 0.0) -> String:
 	var table := get_table(id)
-	if not ready_for_play(table) or joined != id:
+	if not accepting_new_play(table) or joined != id:
 		return "Join a staffed, repaired table to bet. Doors can stay closed."
 	if not CrapsRules.empty_bets().has(kind): return "Unknown bet."
 	var amount := bet_amount(table, kind, chip)
@@ -1364,12 +1572,15 @@ func shooter_name(table: Dictionary) -> String:
 	return "CPU shooter"
 
 func join_table(id: int) -> bool:
+	Staffing.rebalance(self, true)
 	var table := get_table(id)
-	if not ready_for_play(table): return false
+	if not accepting_new_play(table): return false
 	if joined >= 0:
 		leave_table()
 		if joined >= 0: return false
-	if table_kind(table) == "slots" and not seated(id).is_empty(): return false
+	if table_kind(table) == "slots" and not reserved_guests(id).is_empty():
+		log_event("That machine is occupied or reserved for an arriving guest.", false)
+		return false
 	joined = id
 	if table_kind(table) != "craps":
 		log_event("Joined %s." % Games.NAMES[table_kind(table)], false)
@@ -1439,7 +1650,7 @@ func roll(id: int, forced: Array = []) -> void:
 	var rolled_by := shooter_name(table)
 	var old_point := int(table.point)
 	for guest in seated(id):
-		if opened and old_point == 0 and guest.bets.pass == 0 and guest.wallet >= table.minimum:
+		if operating(table) and old_point == 0 and guest.bets.pass == 0 and guest.wallet >= table.minimum:
 			var stake := guest_wager(table, guest)
 			take_bet(table, guest, "pass", minf(stake, guest.wallet), false)
 	var dice := [rng.randi_range(1, 6), rng.randi_range(1, 6)] if forced.is_empty() else forced
@@ -1511,7 +1722,7 @@ func resolve_incident(index: int, pay: bool) -> void:
 				table.repairs += 1
 				emit_financial_event(-cost, "repair", table)
 		else:
-			emit_financial_event(-cost, "comp", {}, -1, {"source": "complaint", "position": BAR_PICKUP})
+			emit_financial_event(-cost, "comp", {}, -1, {"source": "complaint", "position": bar_pickup()})
 			reputation = minf(100, reputation + 2)
 			for guest in guests:
 				guest.satisfaction = minf(100, guest.satisfaction + 8)
@@ -1538,20 +1749,26 @@ func spend_nonpayroll(amount: float, category: String) -> void:
 	expense_totals[category] += amount
 
 func payroll_state(employee: Dictionary) -> String:
-	if employee.role == "Service":
-		return "working" if opened and not guests.is_empty() else "idle" if opened else "unavailable"
-	var table := get_table(int(employee.table))
-	if table.is_empty(): return "standby"
-	if not operating(table): return "unavailable"
-	return "working" if not seated(int(table.id)).is_empty() or joined == int(table.id) else "idle"
+	return {"Active": "active", "Relief": "relief", "Break": "break", "Off Duty": "off_duty"}[employee.duty]
 
 func payroll_rate() -> float:
 	var amount := 0.0
-	for employee in staff: amount += CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE
+	for employee in staff:
+		if employee.duty != "Off Duty": amount += CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE
+	return amount
+
+func planned_payroll_rate() -> float:
+	var amount := 0.0
+	for role in ["Dealer", "Service"]:
+		var employees: Array = staff.filter(func(e): return e.role == role)
+		var on_shift := employees.filter(func(e): return e.duty != "Off Duty").size()
+		var needed := Staffing.required(self, role)
+		var planned := mini(employees.size(), needed + int(relief_targets[role])) if needed > 0 else 0
+		amount += maxi(on_shift, planned) * (CasinoTuning.DEALER_WAGE if role == "Dealer" else CasinoTuning.SERVICE_WAGE)
 	return amount
 
 func recurring_costs() -> float:
-	return payroll + float(expense_totals.upkeep) + float(expense_totals.repairs) + float(expense_totals.comps) + float(expense_totals.drink_products) + float(expense_totals.drink_comps)
+	return payroll + float(expense_totals.property_upkeep) + float(expense_totals.upkeep) + float(expense_totals.repairs) + float(expense_totals.comps) + float(expense_totals.drink_products) + float(expense_totals.drink_comps)
 
 func net_capital_spending() -> float:
 	return float(expense_totals.construction) + float(expense_totals.sales)
@@ -1603,7 +1820,7 @@ func reserve_report(add_kind: String = "", profile_id: String = "starter") -> Di
 	var total := 0.0
 	var largest := 0.0
 	var largest_name := "No gaming assets"
-	var upkeep := 0.0
+	var upkeep := property_upkeep_rate()
 	var repairs := 0.0
 	for table in tables:
 		var kind := table_kind(table)
@@ -1621,7 +1838,7 @@ func reserve_report(add_kind: String = "", profile_id: String = "starter") -> Di
 	if add_kind != "":
 		purchase = purchase_cost(add_kind, profile_id)
 		var crew_needed := required_crew({"kind": add_kind})
-		var standby := staff.filter(func(employee): return employee.role == "Dealer" and int(employee.table) == -1).size()
+		var standby := staff.filter(func(employee): return employee.role == "Dealer" and employee.duty == "Relief" and employee.energy >= CasinoTuning.STAFF_RETURN_ENERGY).size()
 		var hires := maxi(0, crew_needed - standby)
 		onboarding = hires * CasinoTuning.HIRING_COST
 		extra_payroll = hires * CasinoTuning.DEALER_WAGE
@@ -1632,7 +1849,7 @@ func reserve_report(add_kind: String = "", profile_id: String = "starter") -> Di
 			largest = buffer
 			largest_name = "Proposed " + (str(CasinoTuning.slot_profile(profile_id).name) if add_kind == "slots" else str(Games.NAMES[add_kind]))
 	var payouts_buffer := largest + (total - largest) * CasinoTuning.RESERVE_ADDITIONAL_ASSET_WEIGHT
-	var payroll_buffer := (payroll_rate() + extra_payroll) * CasinoTuning.RESERVE_OPERATING_HOURS
+	var payroll_buffer := (planned_payroll_rate() + extra_payroll) * CasinoTuning.RESERVE_OPERATING_HOURS
 	var upkeep_buffer := upkeep * CasinoTuning.RESERVE_OPERATING_HOURS
 	var required := payouts_buffer + payroll_buffer + upkeep_buffer + repairs
 	var pending := live_stakes()
@@ -1674,12 +1891,17 @@ func satisfaction() -> float:
 	return total / guests.size()
 
 func snapshot() -> Dictionary:
-	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "expanded": expanded, "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_totals": bar_totals.duplicate(), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "wallet": wallet, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
+	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "wallet": wallet, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
 
 func restore(data: Dictionary) -> bool:
 	if not valid_number(data.get("version")) or data.version != CasinoTuning.SAVE_VERSION:
 		return false
 	data = data.duplicate(true)
+	if not valid_number(data.get("elapsed")) or not valid_number(data.get("staff_shift_handover_at")) or data.staff_shift_handover_at > data.elapsed or data.staff_shift_handover_at < -CasinoTuning.STAFF_SHIFT_HANDOVER_GAP: return false
+	if not data.get("relief_targets") is Dictionary: return false
+	for role in relief_targets:
+		if not valid_number(data.relief_targets.get(role)) or data.relief_targets[role] != int(data.relief_targets[role]) or int(data.relief_targets[role]) not in range(CasinoTuning.MAX_STAFF + 1): return false
+	if not valid_number(data.get("service_positions")) or data.service_positions != int(data.service_positions) or int(data.service_positions) not in range(1, CasinoTuning.MAX_STAFF + 1): return false
 	if not data.get("earned_milestones") is Array or data.earned_milestones.size() > 64: return false
 	var unique_milestones := {}
 	for id in data.earned_milestones:
@@ -1704,8 +1926,9 @@ func restore(data: Dictionary) -> bool:
 		for key in expected:
 			if not data[field].has(key) or not valid_number(data[field][key]): return false
 			if key != "sales" and float(data[field][key]) < 0: return false
+	if not Bar.valid_snapshot(self, data): return false
 	# Validate the current schema before applying any state.
-	for key in ["difficulty", "starting_games", "casino_rating", "guest_rounds", "guest_revenue", "guest_handle", "guests_served", "blackjack_unlocked", "ever_opened", "expanded", "vip_enabled", "high_limit_enabled", "arrival_in", "cash", "wallet", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation", "minute", "day", "elapsed", "opened", "tables", "guests", "staff", "alerts", "incidents", "next_id", "joined", "player", "rng_state"]:
+	for key in ["difficulty", "starting_games", "casino_rating", "guest_rounds", "guest_revenue", "guest_handle", "guests_served", "blackjack_unlocked", "ever_opened", "floor_chunks", "vip_enabled", "high_limit_enabled", "arrival_in", "cash", "wallet", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation", "minute", "day", "elapsed", "opened", "tables", "guests", "staff", "alerts", "incidents", "next_id", "joined", "player", "rng_state"]:
 		if not data.has(key): return false
 	if not data.difficulty is String or not CasinoTuning.DIFFICULTIES.has(data.difficulty): return false
 	if not data.starting_games is Array or data.starting_games.size() > Games.NAMES.size(): return false
@@ -1714,7 +1937,8 @@ func restore(data: Dictionary) -> bool:
 	for key in ["casino_rating", "guest_rounds", "guest_revenue", "guest_handle", "guests_served"]:
 		if not valid_number(data[key]) or float(data[key]) < 0: return false
 	if float(data.casino_rating) > 100: return false
-	for key in ["blackjack_unlocked", "ever_opened", "expanded", "vip_enabled", "high_limit_enabled"]:
+	if not Property.valid(data.get("floor_chunks")): return false
+	for key in ["blackjack_unlocked", "ever_opened", "vip_enabled", "high_limit_enabled"]:
 		if not data[key] is bool: return false
 	if not valid_number(data.arrival_in) or float(data.arrival_in) < 0: return false
 	for key in ["tables", "guests", "staff", "alerts", "incidents", "player"]:
@@ -1731,10 +1955,13 @@ func restore(data: Dictionary) -> bool:
 		return false
 	if not valid_number(data.player[0]) or not valid_number(data.player[1]):
 		return false
+	if not Property.walking(data.floor_chunks).has_point(Vector2(data.player[0], data.player[1])): return false
 	var ids: Array = []
 	for table in data.tables:
 		if not table is Dictionary:
 			return false
+		if not table.get("staff_enabled") is bool or not valid_number(table.get("staff_priority")) or table.staff_priority != int(table.staff_priority) or int(table.staff_priority) not in [0, 1, 2]: return false
+		if not valid_number(table.get("staff_rotation_until")) or table.staff_rotation_until < -1: return false
 		for key in ["kind", "slot_profile", "round", "roulette_bets"]:
 			if not table.has(key): return false
 		if not table.kind is String or not Games.NAMES.has(table.kind): return false
@@ -1771,20 +1998,25 @@ func restore(data: Dictionary) -> bool:
 			if not valid_number(die) or int(die) < 1 or int(die) > 6:
 				return false
 		var limits: Array = slot_profile(table).denominations if table.kind == "slots" else CasinoTuning.GAME_LIMITS[table.kind].limits
-		if float(table.minimum) not in limits or not Rect2(65, 100, 720, 400).encloses(bounds(table)):
+		if float(table.minimum) not in limits or not Property.placement(str(table.kind), data.floor_chunks).encloses(bounds(table)) or bounds(table).intersects(CasinoTuning.ENTRANCE_CLEARANCE):
 			return false
 	if int(data.joined) != -1 and int(data.joined) not in ids:
 		return false
+	var reserved_bar_slots := {}
 	for guest in data.guests:
 		if not guest is Dictionary:
 			return false
-		for key in ["id", "name", "x", "y", "tx", "ty", "table", "seat", "state", "wallet", "start", "rounds", "last_wager_minute", "drink_spending", "wager_limit", "satisfaction", "thirst", "age", "patience", "vip", "bets", "thought", "archetype", "session_left", "activities", "activity_since", "decision_at", "wait_since", "last_table", "explored_without_game", "preference", "watch_left", "watch_style", "demand_blocked", "demand_wait", "demand_attempts"]:
+		for key in ["id", "name", "x", "y", "tx", "ty", "table", "seat", "state", "wallet", "start", "rounds", "last_wager_minute", "bar_slot", "drink_spending", "drink_order", "drink_quote", "drink_request_at", "wager_limit", "satisfaction", "thirst", "age", "patience", "vip", "bets", "thought", "archetype", "session_left", "activities", "activity_since", "decision_at", "wait_since", "last_table", "explored_without_game", "preference", "watch_left", "watch_style", "demand_blocked", "demand_wait", "demand_attempts"]:
 			if not guest.has(key):
 				return false
-		for key in ["id", "x", "y", "tx", "ty", "table", "seat", "wallet", "start", "rounds", "last_wager_minute", "drink_spending", "wager_limit", "satisfaction", "thirst", "age", "patience", "session_left", "activities", "activity_since", "decision_at", "wait_since", "last_table", "demand_wait", "demand_attempts"]:
+		for key in ["id", "x", "y", "tx", "ty", "table", "seat", "wallet", "start", "rounds", "last_wager_minute", "bar_slot", "drink_spending", "drink_quote", "drink_request_at", "wager_limit", "satisfaction", "thirst", "age", "patience", "session_left", "activities", "activity_since", "decision_at", "wait_since", "last_table", "demand_wait", "demand_attempts"]:
 			if not valid_number(guest[key]):
 				return false
 		if int(guest.last_wager_minute) < -1 or float(guest.last_wager_minute) > float(data.elapsed) or float(guest.drink_spending) < 0: return false
+		if not guest.drink_order is String or (guest.drink_order != "" and guest.drink_order not in data.drink_menu) or guest.drink_quote < 0 or guest.drink_request_at < 0: return false
+		if guest.drink_order != "":
+			var product: Dictionary = CasinoTuning.DRINK_PROFILES[str(guest.drink_order)]
+			if guest.drink_quote < product.price_min or guest.drink_quote > product.price_max: return false
 		if not guest.demand_blocked is bool or guest.demand_wait < 0 or guest.demand_attempts < 0: return false
 		if not guest.explored_without_game is bool or guest.session_left < 0 or guest.activities < 0 or guest.activity_since < 0 or guest.activity_since > data.elapsed or guest.decision_at < 0 or guest.wait_since < -1 or guest.wait_since > data.elapsed: return false
 		if not guest.archetype is String or not CasinoTuning.GUEST_ARCHETYPES.has(guest.archetype): return false
@@ -1799,9 +2031,14 @@ func restore(data: Dictionary) -> bool:
 			var assigned: Dictionary = data.tables.filter(func(table): return int(table.id) == int(guest.table))[0]
 			var seats := 1 if table_kind(assigned) == "slots" else CasinoTuning.TABLE_CAPACITY - 1
 			if int(guest.seat) not in range(seats): return false
-		if guest.state not in ["Arriving", "Waiting", "Walking", "Playing", "Browsing", "Watching", "Exploring", "Seeking drink", "Getting drink", "To cage", "Cashing out", "Leaving"] or not guest.name is String or not guest.thought is String:
+		if guest.state not in ["Arriving", "Waiting", "Walking", "Playing", "Browsing", "Watching", "Exploring", "To bar", "At bar", "To cage", "Cashing out", "Leaving"] or not guest.name is String or not guest.thought is String:
 			return false
 		if guest.state in ["Browsing", "Watching"] and (int(guest.table) < 1 or int(guest.seat) != -1): return false
+		if guest.bar_slot != int(guest.bar_slot) or int(guest.bar_slot) < -1 or int(guest.bar_slot) >= CasinoTuning.BAR_GUEST_OFFSETS.size(): return false
+		if guest.state in ["To bar", "At bar"]:
+			if int(guest.bar_slot) < 0 or int(guest.table) != -1 or int(guest.seat) != -1 or reserved_bar_slots.has(int(guest.bar_slot)): return false
+			reserved_bar_slots[int(guest.bar_slot)] = true
+		elif int(guest.bar_slot) != -1: return false
 		for key in ["watch_left", "watch_style", "cage_wait"]:
 			if not valid_number(guest.get(key, 0)) or float(guest.get(key, 0)) < 0: return false
 		guest.watch_left = int(guest.watch_left)
@@ -1812,17 +2049,35 @@ func restore(data: Dictionary) -> bool:
 			for waypoint in guest.path:
 				if not waypoint is Array or waypoint.size() != 2 or not valid_number(waypoint[0]) or not valid_number(waypoint[1]):
 					return false
+	var employee_ids := {}
 	for employee in data.staff:
 		if not employee is Dictionary:
 			return false
-		for key in ["name", "role", "table", "energy"]:
+		for key in ["id", "name", "role", "table", "energy", "duty", "state_since", "shift_end", "available_at", "rest_due", "service_product"]:
 			if not employee.has(key):
 				return false
 		if not employee.name is String or employee.role not in ["Dealer", "Service"] or not valid_number(employee.table) or not valid_number(employee.energy):
 			return false
+		if not valid_number(employee.id) or employee.id != int(employee.id) or employee.id < 1 or employee.id >= data.next_id or employee_ids.has(int(employee.id)) or int(employee.id) in ids: return false
+		employee_ids[int(employee.id)] = true
+		if employee.duty not in ["Active", "Relief", "Break", "Off Duty"] or employee.rest_due not in ["", "Break", "Off Duty"] or employee.energy < 0 or employee.energy > 100: return false
+		if not employee.service_product is String or (employee.service_product != "" and not CasinoTuning.DRINK_PROFILES.has(employee.service_product)): return false
+		for key in ["state_since", "shift_end", "available_at"]:
+			if not valid_number(employee[key]) or employee[key] < 0: return false
+		if employee.state_since > data.elapsed: return false
+		if employee.duty != "Active" and (int(employee.table) != -1 or employee.rest_due != ""): return false
+		if employee.role == "Service" and (int(employee.table) != -1 or employee.rest_due != ""): return false
+		if employee.role == "Dealer" and employee.duty == "Active":
+			var assigned: Array = data.tables.filter(func(t): return int(t.id) == int(employee.table))
+			if assigned.is_empty() or required_crew(assigned[0]) == 0: return false
 		for key in ["x", "y", "tx", "ty", "service_target", "service_wait"]:
 			if employee.has(key) and not valid_number(employee[key]): return false
-		if employee.has("service_state") and employee.service_state not in ["At bar", "To bar", "Delivering"]: return false
+		if employee.has("service_state") and employee.service_state not in ["At bar", "To bar", "Preparing", "Delivering"]: return false
+		if employee.has("service_state"):
+			for key in ["x", "y", "tx", "ty", "service_target", "service_wait"]:
+				if not employee.has(key): return false
+			if employee.role != "Service" or float(employee.service_wait) < 0: return false
+			if employee.service_state in ["Preparing", "Delivering"] and employee.service_product == "": return false
 		employee.erase("path")
 		if int(employee.table) != -1 and int(employee.table) not in ids:
 			return false
@@ -1849,8 +2104,17 @@ func restore(data: Dictionary) -> bool:
 	traffic_bad_visits = int(data.traffic_bad_visits)
 	traffic_reputation_at = int(data.traffic_reputation_at)
 	bar_totals = data.bar_totals.duplicate()
+	drink_access = data.drink_access.duplicate()
+	drink_menu = data.drink_menu.duplicate()
+	drink_prices = data.drink_prices.duplicate()
+	drink_stats = data.drink_stats.duplicate(true)
 	expense_totals = data.expense_totals.duplicate()
 	payroll_by_state = data.payroll_by_state.duplicate()
+	relief_targets = data.relief_targets.duplicate()
+	service_positions = int(data.service_positions)
+	staff_shift_handover_at = int(data.staff_shift_handover_at)
+	staffing_notice_signature = ""
+	staffing_notice_at = int(data.elapsed) - CasinoTuning.STAFF_NOTICE_COOLDOWN
 	slot_access = data.slot_access.duplicate()
 	difficulty = str(data.difficulty)
 	starting_games = data.starting_games.duplicate()
@@ -1859,7 +2123,8 @@ func restore(data: Dictionary) -> bool:
 	guest_revenue = float(data.guest_revenue)
 	guest_handle = float(data.guest_handle)
 	guests_served = int(data.guests_served)
-	for key in ["blackjack_unlocked", "ever_opened", "expanded", "vip_enabled", "high_limit_enabled"]: set(key, bool(data[key]))
+	floor_chunks = {"left": int(data.floor_chunks.left), "right": int(data.floor_chunks.right), "bottom": int(data.floor_chunks.bottom)}
+	for key in ["blackjack_unlocked", "ever_opened", "vip_enabled", "high_limit_enabled"]: set(key, bool(data[key]))
 	thought_last.clear()
 	table_interest.clear()
 	cashout_effects.clear()
@@ -1935,6 +2200,7 @@ func settle_game(table: Dictionary) -> void:
 func start_game(id: int, bet: float, trips: float = 0) -> bool:
 	var table := get_table(id)
 	if joined != id or not ready_for_play(table) or game_pending(table): return false
+	if not accepting_new_play(table) and table.get("roulette_bets", {}).is_empty(): return false
 	var kind := table_kind(table)
 	if kind == "craps" or not is_finite(bet) or not is_finite(trips) or bet < table.minimum or bet > maximum_wager(table) or trips < 0 or trips > maximum_wager(table): return false
 	var cost := bet * 2 + trips if kind == "holdem" else bet
@@ -1948,7 +2214,7 @@ func start_game(id: int, bet: float, trips: float = 0) -> bool:
 			return false
 		if not game_debit(table, cost): return false
 	var participants: Array = []
-	if opened and kind in ["blackjack", "holdem"]:
+	if operating(table) and kind in ["blackjack", "holdem"]:
 		for guest in seated(id):
 			var stake := guest_wager(table, guest)
 			if stake >= float(table.minimum) and guest.wallet >= stake * (3 if kind == "holdem" else 1): participants.append({"id": guest.id, "name": guest.name, "bet": stake})
@@ -1963,7 +2229,7 @@ func start_game(id: int, bet: float, trips: float = 0) -> bool:
 	for npc in table.round.get("npcs", []):
 		for guest in guests:
 			if int(guest.id) == int(npc.id): game_debit(table, float(npc.staked), guest)
-	if kind == "roulette" and opened: shared_roulette(table, int(table.round.number))
+	if kind == "roulette" and operating(table): shared_roulette(table, int(table.round.number))
 	table.round.staked = cost
 	settle_game(table)
 	return true
@@ -1982,7 +2248,7 @@ func game_action(id: int, action: String) -> bool:
 
 func roulette_bet(id: int, name: String, amount: float) -> bool:
 	var table := get_table(id)
-	if table.is_empty() or table_kind(table) != "roulette" or joined != id or not ready_for_play(table) or not Games.roulette_bets().has(name) or not is_finite(amount) or amount < table.minimum: return false
+	if table.is_empty() or table_kind(table) != "roulette" or joined != id or not accepting_new_play(table) or not Games.roulette_bets().has(name) or not is_finite(amount) or amount < table.minimum: return false
 	var on_layout := amount
 	for stake in table.roulette_bets.values(): on_layout += float(stake)
 	if on_layout > maximum_wager(table) or not game_debit(table, amount): return false

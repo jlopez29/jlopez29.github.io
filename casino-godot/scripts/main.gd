@@ -79,7 +79,12 @@ var responsive_state := "desktop"
 var finance_section := ""
 var finance_advanced := false
 var finance_compare_group := ""
+var bar_menu_tab := "active"
+var bar_menu_product := ""
+var bar_finance_products := false
+var bar_finance_product := ""
 var traffic_details := false
+var staff_details_role := ""
 var table_scroll: ScrollContainer
 var table_options := false
 var chip_value := 25.0
@@ -137,7 +142,9 @@ func _ready() -> void:
 		else: speed = 0
 		if speed > 0: previous_speed = speed
 		refresh())
-	if OS.is_debug_build(): mobile_dev = add_button(self, "DEV", toggle_dev_panel)
+	if OS.is_debug_build():
+		mobile_dev = add_button(self, "DEV", toggle_dev_panel)
+		mobile_dev.tooltip_text = "Developer tools | F10 | Start or load a casino first"
 	mode_hint = label_at(Vector2.ZERO, "", 13, MUTED)
 	mode_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side_panel = panel_at(Vector2.ZERO, Vector2.ZERO)
@@ -282,8 +289,8 @@ func layout_ui() -> void:
 	mobile_speed.position = Vector2(w - 138, 4)
 	mobile_speed.size = Vector2(60, 44)
 	if is_instance_valid(mobile_dev):
-		mobile_dev.visible = mobile
-		mobile_dev.position = Vector2(w - 204, 4)
+		mobile_dev.visible = true
+		mobile_dev.position = Vector2(w - 204, 4) if mobile else Vector2(w - 330, 16)
 		mobile_dev.size = Vector2(60, 44)
 	brand.visible = not mobile
 
@@ -295,7 +302,7 @@ func layout_ui() -> void:
 	hud_summary.add_theme_font_size_override("font_size", 14 if mobile else 13)
 	hud_summary.size = Vector2(w * 0.55 if mobile else 340, 22)
 	status.position = Vector2(w * 0.55, 48) if mobile else Vector2(620, 24)
-	status.size = Vector2(w * 0.45 - 8 if mobile else maxf(120, w - 905), 24 if mobile else 40)
+	status.size = Vector2(w * 0.45 - 8 if mobile else maxf(120, w - (975 if OS.is_debug_build() else 905)), 24 if mobile else 40)
 	status.autowrap_mode = TextServer.AUTOWRAP_OFF if mobile else TextServer.AUTOWRAP_WORD_SMART
 	status.add_theme_font_size_override("font_size", 14 if mobile else 12)
 	mode_hint.visible = not mobile
@@ -378,7 +385,7 @@ func apply_visibility() -> void:
 	felt.visible = not mobile and sim.joined >= 0
 	floor_view.visible = (not mobile and sim.joined < 0) or (mobile and mobile_pane == "floor")
 	floor_actions.visible = floor_view.visible
-	floor_fit.visible = mobile and not visitor and not building
+	floor_fit.visible = not visitor and not building
 	floor_fit.text = "Fit" if floor_view.close_view else "Closer"
 	rotate_button.visible = building
 	floor_join_button.text = "Join" if visitor and can_join() else "Inspect" if mobile else "Inspect table"
@@ -671,6 +678,8 @@ func refresh() -> void:
 		render_staff()
 	elif page == "finance":
 		render_finance()
+	elif page == "bar":
+		render_bar_menu()
 	elif page == "incidents":
 		render_incidents()
 	elif page == "guest":
@@ -785,15 +794,28 @@ func render_development() -> void:
 	render_progression(inspector)
 	add_gap(inspector, 12)
 	add_label(inspector, "FLOOR EXPANSION", 12, MUTED)
-	if sim.expanded:
-		add_label(inspector, "Expanded floor", 17, TEAL)
-	elif sim.unlocked("expansion"):
-		add_label(inspector, "More room to grow", 19, GOLD)
-		add_label(inspector, "Adds usable casino floor space. Purchase when your reserve can support the next stage.", 13, MUTED)
-		button_tone(add_button(inspector, "Purchase expansion - " + money(CasinoTuning.EXPANSION_COST), func(): sim.purchase_upgrade("expansion"); refresh(), sim.cash < CasinoTuning.EXPANSION_COST), "primary")
-	else:
-		add_label(inspector, "Available at Casino Rating 35", 14, MUTED)
-		add_label(inspector, "Earn Blackjack access first. Expansion adds space; it is a separate purchase.", 12, MUTED)
+	render_expansion()
+
+func render_expansion() -> void:
+	var room := sim.floor_rect()
+	finance_short_metric(inspector, "Floor size", "%.0f x %.0f" % [room.size.x, room.size.y])
+	finance_short_metric(inspector, "Property overhead", "%s/hr" % FinancialText.cash(sim.property_upkeep_rate()))
+	add_label(inspector, "Full-edge columns add %.0f width; rows add %.0f depth. Assets stay in place. Empty space still costs upkeep, including while closed." % [CasinoTuning.FLOOR_CHUNK_WIDTH, CasinoTuning.FLOOR_CHUNK_HEIGHT], 13, MUTED)
+	if not sim.unlocked("expansion"):
+		add_label(inspector, "Directional purchases open at Rating 35.", 14, MUTED)
+		return
+	for direction in ["left", "right", "bottom"]:
+		var quote := sim.expansion_quote(direction)
+		add_gap(inspector, 8)
+		add_label(inspector, direction.capitalize() + (" row" if direction == "bottom" else " column"), 17, GOLD)
+		if not quote.allowed:
+			add_label(inspector, "Practical navigation / property size limit reached in this direction.", 13, MUTED)
+			continue
+		finance_short_metric(inspector, "Added area (floor units squared)", "%.0f" % float(quote.added_area))
+		finance_short_metric(inspector, "Capital purchase", FinancialText.cash(float(quote.cost), 0))
+		finance_short_metric(inspector, "Added property overhead", "%s/hr" % FinancialText.cash(float(quote.upkeep_added)))
+		finance_short_metric(inspector, "Resulting property overhead", "%s/hr" % FinancialText.cash(sim.property_upkeep_rate() + float(quote.upkeep_added)))
+		add_button(inspector, "Purchase " + direction, func(): sim.purchase_expansion(direction); refresh(), sim.cash < float(quote.cost))
 
 func activity_presentation(message: String) -> Dictionary:
 	var category := "CASINO"
@@ -865,12 +887,12 @@ func render_build() -> void:
 			add_button(inspector, "%s | $%d" % [milestone.name, sim.feature_cost(feature)], func(): build_kind = feature; toggle_build(), sim.cash < sim.feature_cost(feature))
 			add_button(inspector, "Hide purchase plan" if expanded_table_plan == feature else "Table + crew + reserve", func(): expanded_table_plan = "" if expanded_table_plan == feature else feature; refresh())
 			if expanded_table_plan == feature: render_purchase_readiness(inspector, feature)
+		elif feature == "expansion":
+			add_button(inspector, "Directional floor expansion >", func(): open_page("development"))
 		elif feature == "service":
 			add_button(inspector, "Drink service | Staff & coverage", func(): open_page("staff"))
 		else:
 			add_button(inspector, "%s | %s" % [milestone.name, "Purchased" if sim.feature_owned(feature) else "$%d" % sim.feature_cost(feature)], func(): sim.purchase_upgrade(feature); refresh(), sim.feature_owned(feature) or sim.cash < sim.feature_cost(feature))
-	if not sim.expanded:
-		add_label(inspector, "The shaded wing opens after you purchase Floor expansion.", 12, MUTED)
 	if sim.unlocked("craps"):
 		add_label(inspector, "Craps: $%d + two dealers ($%d each), $%d/hr crew wages and $%d/hr operations. Keep cash for payout swings." % [Games.COSTS.craps, CasinoTuning.HIRING_COST, 2 * CasinoTuning.DEALER_WAGE, CasinoTuning.TABLE_OVERHEAD], 12, MUTED)
 
@@ -916,7 +938,11 @@ func render_table() -> void:
 	win_label.tooltip_text = "All participants; excludes pending stakes. Settled gaming win before expenses: " + FinancialText.cash(gaming_win)
 	add_label(inspector, "Before operating expenses", 12, MUTED)
 	add_gap(inspector, 8)
-	if guests.is_empty(): add_label(inspector, "Occupied by you" if sim.joined == selected else "Waiting for guests" if sim.ready_for_play(table) and sim.opened else "Not accepting play", 15, TEXT)
+	if guests.is_empty():
+		var reservations := sim.reserved_guests(selected)
+		if sim.joined == selected: add_label(inspector, "Occupied by you", 15, TEXT)
+		elif not reservations.is_empty(): add_label(inspector, "Reserved - guest on the way\n" + ", ".join(reservations.map(func(guest): return str(guest.name))), 15, TEXT)
+		else: add_label(inspector, "Waiting for guests" if sim.ready_for_play(table) and sim.opened else "Not accepting play", 15, TEXT)
 	else: add_label(inspector, "Playing now
 " + ", ".join(guests.map(func(guest): return str(guest.name).replace(" · ", " - "))), 15, TEXT)
 	if kind != "slots": add_label(inspector, "Dealers %d of %d" % [sim.crew(selected).size(), sim.required_crew(table)], 14, MUTED)
@@ -952,7 +978,10 @@ Suggested reserve %s" % [money(profile.top_return * profile.maximum), money(prof
 	if sim.table_kind(table) == "craps": add_label(inspector, "POINT: %s" % ("OFF / COME-OUT" if int(table.point) == 0 else str(int(table.point))), 12, GOLD)
 	add_gap(inspector, 10)
 	if kind != "slots": add_button(inspector, "Hire dealer | $%d" % CasinoTuning.HIRING_COST, func(): sim.hire("Dealer", selected); refresh(), sim.crew(selected).size() >= sim.required_crew(table) or not sim.unlocked("blackjack"))
-	if kind != "slots": add_button(inspector, "Assign standby dealers", func(): sim.assign_standby(selected); refresh())
+	if kind != "slots":
+		add_button(inspector, "Staffing priority: " + ["Low", "Normal", "High"][int(table.staff_priority)], func(): sim.set_staff_priority(selected, (int(table.staff_priority) + 1) % 3); refresh())
+		add_button(inspector, "Pause table staffing" if table.staff_enabled else "Resume table staffing", func(): sim.set_table_staffed(selected, not bool(table.staff_enabled)); refresh())
+		add_label(inspector, "Priority protects coverage when short staffed. Committed bets finish before a table pauses.", 12, MUTED)
 	if table.broken:
 		add_button(inspector, "Repair | $%d" % sim.repair_cost(table), func():
 			for i in range(sim.incidents.size()):
@@ -962,7 +991,7 @@ Suggested reserve %s" % [money(profile.top_return * profile.maximum), money(prof
 			refresh())
 	if visitor:
 		var distance := sim.player.distance_to(sim.bounds(table).get_center())
-		add_button(inspector, "Join " + Games.NAMES[sim.table_kind(table)], join_table, not sim.ready_for_play(table) or distance > 165 or (sim.table_kind(table) == "slots" and not sim.seated(selected).is_empty()))
+		add_button(inspector, "Join " + Games.NAMES[sim.table_kind(table)], join_table, not sim.ready_for_play(table) or distance > 165 or (sim.table_kind(table) == "slots" and not sim.reserved_guests(selected).is_empty()))
 		add_label(inspector, "Approach the rail to join." if distance > 165 else "You're close enough to take a seat.", 12, MUTED)
 		if distance > 165:
 			add_button(inspector, "Walk to this table", func(): floor_view.walk_to_table(selected); mobile_pane = "floor"; refresh())
@@ -979,29 +1008,62 @@ Suggested reserve %s" % [money(profile.top_return * profile.maximum), money(prof
 func render_staff() -> void:
 	add_label(inspector, "STAFF & COVERAGE", 11, GOLD)
 	add_label(inspector, "%d employees" % sim.staff.size(), 24)
-	var commitment := add_label(inspector, "Payroll commitment " + FinancialText.cash(sim.payroll_rate(), 0) + "/hr", 14, GOLD)
-	commitment.tooltip_text = "Working, idle, standby and closed-time employees are paid. Craps needs two dealers; other tables need one; slots need none."
-	var dealer := add_button(inspector, "Hire dealer | $%d" % CasinoTuning.HIRING_COST if sim.unlocked("blackjack") else "Dealers locked | Unlock blackjack", func(): sim.hire("Dealer", selected); refresh(), not sim.unlocked("blackjack"))
-	dealer.tooltip_text = "Assign to a staffed game. $%d per game hour, including standby time." % CasinoTuning.DEALER_WAGE
-	var service := add_button(inspector, "Hire service | $%d" % CasinoTuning.HIRING_COST if sim.unlocked("service") else "Drink service locked | Increase Casino Rating", func(): sim.hire("Service", -1); refresh(), not sim.unlocked("service"))
-	service.tooltip_text = "Walks the floor delivering paid drinks and recent-gambler basic comps. $%d per game hour. See Finance > Bar for performance." % CasinoTuning.SERVICE_WAGE
-	add_gap(inspector, 4)
+	finance_short_metric(inspector, "Current paid shift", FinancialText.cash(sim.payroll_rate(), 0) + "/hr")
+	add_label(inspector, "Active, relief and breaks are paid. Off duty is unpaid. Shifts last 8 hours, followed by at least 6 hours off; closing does not reset fatigue or shifts.", 13, MUTED)
+	if sim.unlocked("blackjack") or sim.staff.any(func(e): return e.role == "Dealer"):
+		render_staff_role("Dealer", "Dealers")
+	else:
+		add_label(inspector, "Your slots operate without dealers.", 14, MUTED)
+	if sim.guest_feature_relevant("service"):
+		render_staff_role("Service", "Drink service")
+
+func render_staff_role(role: String, title: String) -> void:
+	var coverage: Dictionary = sim.staffing_summary(role)
+	add_gap(inspector, 12)
+	add_label(inspector, "%s - %d employed" % [title, int(coverage.employed)], 20, GOLD)
+	add_label(inspector, str(coverage.coverage), 14, TEAL if coverage.coverage == "GOOD" else GOLD)
+	finance_short_metric(inspector, "Active / required positions", "%d / %d" % [int(coverage.active), int(coverage.required)])
+	finance_short_metric(inspector, "Relief available", str(coverage.relief))
+	if int(coverage["break"]) > 0: finance_short_metric(inspector, "On break", str(coverage["break"]))
+	if int(coverage.off_duty) > 0:
+		finance_short_metric(inspector, "Off duty / ready for next shift", "%d / %d" % [int(coverage.off_duty), int(coverage.ready_next_shift)])
+	if int(coverage.required) > 0:
+		add_label(inspector, "Plan for %d active + %d relief on shift. For continuous shifts, aim for about %d employed; actual needs depend on breaks and utilization." % [int(coverage.required), int(coverage.relief_recommended), int(coverage.continuous_recommended)], 13, MUTED)
+	var controls := row(inspector)
+	add_button(controls, "-", func(): sim.set_relief_target(role, int(sim.relief_targets[role]) - 1); refresh(), int(sim.relief_targets[role]) == 0)
+	add_label(controls, "Relief target: %d" % int(sim.relief_targets[role]), 14, TEXT)
+	add_button(controls, "+", func(): sim.set_relief_target(role, int(sim.relief_targets[role]) + 1); refresh(), int(sim.relief_targets[role]) >= CasinoTuning.MAX_STAFF)
+	if role == "Service" and sim.bar_available():
+		add_button(inspector, "Manage drink menu >", func(): open_page("bar"))
+		var positions := row(inspector)
+		add_button(positions, "-", func(): sim.set_service_positions(sim.service_positions - 1); refresh(), sim.service_positions <= 1)
+		add_label(positions, "Floor positions: %d" % sim.service_positions, 14, TEXT)
+		add_button(positions, "+", func(): sim.set_service_positions(sim.service_positions + 1); refresh(), sim.service_positions >= CasinoTuning.MAX_STAFF)
+	var accessible: bool = sim.unlocked("blackjack" if role == "Dealer" else "service")
+	var hire := add_button(inspector, "Hire %s | $%d" % [role.to_lower(), CasinoTuning.HIRING_COST] if accessible else "Service access approaching", func(): sim.hire(role, -1); refresh(), not accessible)
+	hire.tooltip_text = "$%d per game hour on shift. Extra roster employees rest unpaid until coverage is needed. Relief targets use hired staff; they do not create employees." % (CasinoTuning.DEALER_WAGE if role == "Dealer" else CasinoTuning.SERVICE_WAGE)
+	if int(coverage.employed) == 0: return
+	add_button(inspector, "Hide employee details" if staff_details_role == role else "Employee details >", func(): staff_details_role = "" if staff_details_role == role else role; refresh())
+	if staff_details_role != role: return
 	for employee in sim.staff:
-		add_label(inspector, "%s | %s" % [employee.name, employee.role], 15)
-		var assignment := "Table %d" % int(employee.table) if int(employee.table) > 0 else "Standby | recovering"
-		if employee.role == "Service":
-			assignment = "%s | whole floor" % employee.get("service_state", "At bar") if not sim.guests.is_empty() else "At cocktail bar | recovering"
-		add_label(inspector, "%s | %.0f%% energy | $%d/hr" % [assignment, employee.energy, CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE], 12, MUTED)
-		if employee.role == "Dealer" and employee.energy < 85:
-			add_button(inspector, "Relieve %s" % employee.name, func():
-				var standby := sim.staff.filter(func(s): return s.role == "Dealer" and int(s.table) == -1 and s.energy > employee.energy)
-				if standby.is_empty():
-					sim.log_event("Hire a standby dealer to relieve this employee.")
-				else:
-					standby[0].table = employee.table
-					employee.table = -1
-					sim.log_event("Fresh dealer assigned; %s is recovering on standby." % employee.name)
-				refresh())
+		if employee.role != role: continue
+		add_gap(inspector, 8)
+		add_label(inspector, str(employee.name) + " - " + str(employee.duty), 16, TEXT)
+		finance_short_metric(inspector, "Energy", "%.0f%%" % float(employee.energy))
+		if employee.rest_due != "":
+			add_label(inspector, "Finishing committed bets, then " + str(employee.rest_due).to_lower(), 13, GOLD)
+		elif employee.duty == "Off Duty":
+			add_label(inspector, "Ready for the next shift" if sim.Staffing.can_start(sim, employee) else "%d minutes of rest remaining" % maxi(0, int(employee.available_at) - sim.elapsed), 13, MUTED)
+		elif employee.duty == "Break":
+			add_label(inspector, "Minimum %d more minutes; returns at %.0f%% energy" % [maxi(0, CasinoTuning.STAFF_BREAK_MINUTES - (sim.elapsed - int(employee.state_since))), CasinoTuning.STAFF_RETURN_ENERGY], 13, MUTED)
+		else:
+			add_label(inspector, ("Table #%d. " % int(employee.table) if int(employee.table) > 0 else "Whole floor. " if employee.duty == "Active" else "Ready to cover. ") + "%d minutes left in shift" % maxi(0, int(employee.shift_end) - sim.elapsed), 13, MUTED)
+		if employee.duty in ["Active", "Relief"]:
+			add_button(inspector, "Send on break", func(): sim.staff_rest(employee); refresh(), employee.rest_due != "")
+		if employee.duty != "Off Duty":
+			add_button(inspector, "End shift", func(): sim.staff_rest(employee, true); refresh(), employee.rest_due == "Off Duty")
+		else:
+			add_label(inspector, "Rested shifts start automatically when coverage is needed.", 12, MUTED)
 
 func finance_color(amount: float) -> Color:
 	return TEAL if amount > 0.005 else Color("ff9486") if amount < -0.005 else MUTED
@@ -1106,16 +1168,92 @@ func render_finance_gaming(parent: Node) -> void:
 	finance_row(parent, "Total guest gaming win", sim.guest_gaming_profit(), false)
 	add_button(parent, "Build / improve games", func(): open_page("build"))
 
+func show_bar_product(id: String) -> void:
+	bar_menu_product = id
+	bar_menu_tab = "active" if id in sim.drink_menu else "available"
+	open_page("bar")
+
+func render_bar_menu() -> void:
+	add_label(inspector, "DRINK MENU", 12, GOLD)
+	if not sim.bar_available():
+		add_label(inspector, "Drink products become available with service access.", 15, MUTED)
+		return
+	add_label(inspector, sim.Bar.identity(sim), 22, TEXT)
+	finance_short_metric(inspector, "On menu / unlocked", "%d / %d" % [sim.drink_menu.size(), sim.drink_access.size()])
+	add_label(inspector, "Unlocks offer choices. Add products yourself; service staff prepare and physically deliver every drink.", 13, MUTED)
+	if sim.drink_menu.is_empty(): add_label(inspector, "Add your first product from Add drinks to start serving.", 15, GOLD)
+	var tabs := row(inspector)
+	add_button(tabs, "Active menu", func(): bar_menu_tab = "active"; bar_menu_product = ""; refresh(), bar_menu_tab == "active")
+	add_button(tabs, "Add drinks", func(): bar_menu_tab = "available"; bar_menu_product = ""; refresh(), bar_menu_tab == "available")
+	var choices: Array = sim.drink_menu if bar_menu_tab == "active" else sim.drink_access.filter(func(id): return id not in sim.drink_menu)
+	if choices.is_empty(): add_label(inspector, "No products here yet.", 14, MUTED)
+	for id in choices:
+		var profile: Dictionary = CasinoTuning.DRINK_PROFILES[id]
+		add_button(inspector, str(profile.name) + (" -" if bar_menu_product == id else " >"), func(): bar_menu_product = "" if bar_menu_product == id else id; refresh())
+		finance_short_metric(inspector, "Paid price", FinancialText.cash(float(sim.drink_prices[id]), 0))
+		if bar_menu_product != id: continue
+		finance_short_metric(inspector, "Product cost", FinancialText.cash(float(profile.cost)))
+		finance_short_metric(inspector, "Paid unit margin before labor", FinancialText.cash(float(sim.drink_prices[id]) - float(profile.cost)))
+		add_label(inspector, "Prep: %.0f game minutes. Prestige: %d." % [float(profile.prep_minutes), int(profile.prestige)], 13, MUTED)
+		var tastes: Array = profile.preferences.keys()
+		tastes.sort_custom(func(x, y): return float(profile.preferences[x]) > float(profile.preferences[y]))
+		add_label(inspector, "Strongest appeal: %s / %s guests. Preferences vary by guest." % [str(tastes[0]).capitalize(), str(tastes[1]).capitalize()], 13, MUTED)
+		add_label(inspector, "Basic comp eligible during recent active wagering; each comp costs the product cost." if profile.comp_eligible else "Paid product, including for active gamblers.", 13, TEAL)
+		var prices := row(inspector)
+		add_button(prices, "-", func(): sim.set_drink_price(str(id), float(sim.drink_prices[id]) - CasinoTuning.DRINK_PRICE_STEP); refresh(), float(sim.drink_prices[id]) <= float(profile.price_min))
+		finance_value(prices, FinancialText.cash(float(sim.drink_prices[id]), 0), 18, GOLD)
+		add_button(prices, "+", func(): sim.set_drink_price(str(id), float(sim.drink_prices[id]) + CasinoTuning.DRINK_PRICE_STEP); refresh(), float(sim.drink_prices[id]) >= float(profile.price_max))
+		add_label(inspector, "Allowed price: %s to %s. Existing orders keep their quoted paid price." % [FinancialText.cash(float(profile.price_min), 0), FinancialText.cash(float(profile.price_max), 0)], 12, MUTED)
+		var active: bool = id in sim.drink_menu
+		add_button(inspector, "Drop from menu" if active else "Add to menu", func(): sim.set_drink_menu(str(id), not active); refresh())
+		add_button(inspector, "View product performance", func(): bar_finance_product = str(id); open_page("finance"); finance_section = "bar"; bar_finance_products = true; refresh())
+	for id in CasinoTuning.DRINK_PROFILES:
+		if id in sim.drink_access: continue
+		var profile: Dictionary = CasinoTuning.DRINK_PROFILES[id]
+		add_gap(inspector, 8)
+		add_label(inspector, "Next option: " + str(profile.name), 16, GOLD)
+		finance_short_metric(inspector, "Rating needed", "%.0f / %.0f" % [sim.casino_rating, float(profile.rating)])
+		finance_short_metric(inspector, "Drinks delivered", "%d / %d" % [int(sim.bar_totals.sold) + int(sim.bar_totals.comped), int(profile.served)])
+		if profile.vip: add_label(inspector, "Also requires existing VIP access.", 13, MUTED)
+		break
+	add_gap(inspector, 8)
+	add_button(inspector, "Service staff", func(): open_page("staff"))
+	add_button(inspector, "Bar finances", func(): open_page("finance"); finance_section = "bar"; refresh())
+
 func render_finance_bar(parent: Node) -> void:
 	var bar: Dictionary = sim.bar_totals
+	add_label(parent, sim.Bar.identity(sim), 16, TEXT)
+	add_label(parent, "Basic products are comped only during active play with real wagers in the last %d game minutes. Waiting, watching and bar breaks pay; premium products stay paid." % int(CasinoTuning.COMP_POLICY.recent_wager_minutes), 13, MUTED)
 	add_label(parent, "%d sold / %d comped" % [int(bar.sold), int(bar.comped)], 15, TEXT)
 	finance_row(parent, "Sales", float(bar.revenue))
 	finance_row(parent, "Product cost", -float(bar.product_cost))
 	finance_row(parent, "Drink comps", -float(bar.comp_cost))
-	finance_row(parent, "Margin before labor", sim.bar_margin(), false)
+	finance_row(parent, "Gross contribution", sim.bar_margin(), false)
 	finance_row(parent, "Service payroll", -float(sim.expense_totals.service_payroll))
 	finance_row(parent, "Net after service labor", sim.bar_contribution(), false)
-	# This is the current aggregate drink detail, not invented per-recipe statistics.
+	add_button(parent, "Manage drink menu >", func(): open_page("bar"))
+	add_button(parent, "Product performance -" if bar_finance_products else "Product performance >", func(): bar_finance_products = not bar_finance_products; refresh())
+	if bar_finance_products:
+		add_label(parent, "Lifetime signals count choice attempts, including repeat visits and substitutes. Queued orders may still be awaiting service.", 12, MUTED)
+		finance_row(parent, "Shared / idle service payroll", -sim.Bar.shared_payroll(sim))
+		for id in CasinoTuning.DRINK_PROFILES:
+			var stats: Dictionary = sim.drink_stats[id]
+			if id not in sim.drink_menu and int(stats.requests) + int(stats.orders) + int(stats.price_declines) == 0 and float(stats.service_payroll) == 0: continue
+			add_button(parent, str(CasinoTuning.DRINK_PROFILES[id].name) + (" -" if bar_finance_product == id else " >"), func(): bar_finance_product = "" if bar_finance_product == id else id; refresh())
+			if bar_finance_product != id: continue
+			finance_short_metric(parent, "Sold / comped", "%d / %d" % [int(stats.sold), int(stats.comped)])
+			finance_row(parent, "Revenue", float(stats.revenue))
+			finance_row(parent, "Paid product cost", -float(stats.product_cost))
+			finance_row(parent, "Comp product cost", -float(stats.comp_cost))
+			finance_row(parent, "Gross contribution", sim.Bar.contribution(sim, str(id)))
+			finance_row(parent, "Order service payroll", -float(stats.service_payroll))
+			finance_row(parent, "Net contribution", sim.Bar.contribution(sim, str(id), true), false)
+			finance_short_metric(parent, "First-choice requests", str(stats.requests))
+			finance_short_metric(parent, "Requests while off menu", str(stats.menu_misses))
+			finance_short_metric(parent, "Price / affordability refusals", str(stats.price_declines))
+			finance_short_metric(parent, "Orders queued / not served", "%d / %d" % [int(stats.orders), int(stats.unserved)])
+			add_label(parent, "Order payroll covers actual preparation, delivery and return time. Shared staff costs are separate.", 12, MUTED)
+			add_button(parent, "Adjust this product >", func(): show_bar_product(str(id)))
 	add_button(parent, "Manage service staff", func(): open_page("staff"))
 
 func render_finance_payroll(parent: Node) -> void:
@@ -1130,6 +1268,8 @@ func render_finance_payroll(parent: Node) -> void:
 func render_finance_operations(parent: Node) -> void:
 	var costs: Dictionary = sim.expense_totals
 	finance_row(parent, "Equipment upkeep", -float(costs.upkeep))
+	if float(costs.property_upkeep) > 0: finance_row(parent, "Property upkeep", -float(costs.property_upkeep))
+	if sim.property_upkeep_rate() > 0: add_button(parent, "Manage property footprint >", func(): open_page("development"))
 	finance_row(parent, "Repairs", -float(costs.repairs))
 	finance_row(parent, "Complaint comps", -float(costs.comps))
 	if sim.incidents.is_empty():
@@ -1158,7 +1298,7 @@ func render_finance_advanced(parent: Node) -> void:
 	if sim.payroll > 0:
 		add_label(parent, "Payroll allocation", 12, GOLD)
 		var states: Dictionary = sim.payroll_by_state
-		for state in [{"key": "working", "name": "Working"}, {"key": "idle", "name": "Assigned idle"}, {"key": "standby", "name": "Standby"}, {"key": "unavailable", "name": "Closed / unavailable"}]:
+		for state in [{"key": "active", "name": "Active (incl. assigned idle)"}, {"key": "relief", "name": "Relief"}, {"key": "break", "name": "Break"}]:
 			finance_row(parent, state.name, -float(states[state.key]))
 	if speed > 4: add_label(parent, "DEV: leave manual games during long-run comparisons.", 12, GOLD)
 
@@ -1229,7 +1369,7 @@ func render_finance() -> void:
 	finance_metric(metrics, "Operating profit", sim.operating_profit())
 	var costs_line := finance_line(inspector)
 	var cost_label := add_label(costs_line, "Recurring costs", 13, MUTED)
-	cost_label.tooltip_text = "Payroll, upkeep, repairs, complaint comps and all drink product costs."
+	cost_label.tooltip_text = "Payroll, equipment/property upkeep, repairs, complaint comps and all drink product costs."
 	var costs_value := finance_value(costs_line, FinancialText.house_result(-sim.recurring_costs()), 14, MUTED)
 	costs_value.size_flags_horizontal = SIZE_FILL
 	costs_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -1244,14 +1384,14 @@ func render_finance() -> void:
 		if asset_detail != null: render_finance_assets(asset_detail)
 	var detail := finance_card("gaming", "Gaming", sim.guest_gaming_profit())
 	if detail != null: render_finance_gaming(detail)
-	var bar_relevant: bool = sim.staff.any(func(employee): return employee.role == "Service") or int(sim.bar_totals.sold) + int(sim.bar_totals.comped) > 0 or float(sim.expense_totals.service_payroll) > 0
+	var bar_relevant: bool = sim.bar_available() or sim.staff.any(func(employee): return employee.role == "Service") or int(sim.bar_totals.sold) + int(sim.bar_totals.comped) > 0 or float(sim.expense_totals.service_payroll) > 0
 	if bar_relevant:
 		detail = finance_card("bar", "Bar before labor", sim.bar_margin())
 		if detail != null: render_finance_bar(detail)
 	if not sim.staff.is_empty() or sim.payroll > 0:
 		detail = finance_card("payroll", "Payroll", -sim.payroll)
 		if detail != null: render_finance_payroll(detail)
-	var other_costs := float(sim.expense_totals.upkeep) + float(sim.expense_totals.repairs) + float(sim.expense_totals.comps)
+	var other_costs := float(sim.expense_totals.property_upkeep) + float(sim.expense_totals.upkeep) + float(sim.expense_totals.repairs) + float(sim.expense_totals.comps)
 	if not sim.tables.is_empty() or other_costs > 0:
 		detail = finance_card("operations", "Operations", -other_costs)
 		if detail != null: render_finance_operations(detail)
@@ -1287,11 +1427,15 @@ func render_guest() -> void:
 		return
 	var guest: Dictionary = found[0]
 	add_label(inspector, guest.name, 25, GOLD if guest.vip else TEXT)
-	add_label(inspector, str(sim.archetype(guest).name) + " / " + str(guest.state), 14, TEAL)
-	add_label(inspector, "Wallet %s\nGaming net %s\nDrinks paid %s\nSatisfaction %.0f%%\nThirst %.0f%%\nPreferred game: %s" % [money(guest.wallet), money(guest.wallet + CrapsRules.exposure(guest.bets) + guest.drink_spending - guest.start), money(guest.drink_spending), guest.satisfaction, guest.thirst, Games.NAMES[guest.get("preference", "craps")]], 16)
+	add_label(inspector, sim.guest_profile_name(guest) + " / " + str(guest.state), 14, TEAL)
+	var summary := "Wallet %s\nGaming net %s\nSatisfaction %.0f%%\nCurrent interest: %s" % [money(guest.wallet), money(guest.wallet + CrapsRules.exposure(guest.bets) + guest.drink_spending - guest.start), guest.satisfaction, str(Games.NAMES[sim.guest_current_interest(guest)]).replace("’", "'")]
+	if sim.bar_available() or float(guest.drink_spending) > 0:
+		summary += "\nDrinks paid %s\nThirst %.0f%%" % [money(guest.drink_spending), guest.thirst]
+		if guest.drink_order != "": summary += "\nOrdered: " + str(CasinoTuning.DRINK_PROFILES[str(guest.drink_order)].name)
+	add_label(inspector, summary, 16)
 	add_gap(inspector, 8)
 	add_label(inspector, '"%s"' % guest.thought, 18, GOLD)
-	add_label(inspector, "Watch your guests for clues about staffing, limits, and service.", 13, MUTED)
+	add_label(inspector, "Watch your guests for clues about staffing, limits, and service." if sim.bar_available() else "Watch your guests for clues about available games and busy seats.", 13, MUTED)
 
 func row(parent: Node, columns: int = 0) -> Container:
 	var container: Container = GridContainer.new() if columns > 0 else HBoxContainer.new()
@@ -1514,9 +1658,8 @@ func join_table() -> void:
 	mobile_pane = "table"
 	page = "table"
 	inspector_scroll.scroll_vertical = 0
-	var rect := sim.bounds(table)
-	sim.player = Vector2(rect.get_center().x, rect.end.y + 24)
-	floor_view.move_target = Vector2(-1, -1)
+	sim.player = sim.approach_position(table)
+	floor_view.move_target = Vector2(INF, INF)
 	refresh()
 
 func leave_table() -> void:

@@ -1,4 +1,4 @@
-# V0.3 balance and playtest targets
+# V0.4 balance and playtest targets
 
 Authoritative values live in `scripts/tuning.gd`. This is compressed prototype
 balancing, not a financial forecast. Real guest wagers and outcomes generate
@@ -63,25 +63,94 @@ stop earning; finance separates repair expense from purchase price.
 
 Normal bankroll/wager caps by Rating: $40-$140/$5 initially, $100-$300/$10 at 16,
 $250-$700/$25 at 28, $400-$1,500/$50 at 55. VIP bankroll is $5,000 with a $100
-wager cap. Machine/game maxima and affordability still apply. UTH affordability
+wager cap. Once Standard Reel is unlocked, 25% of new non-VIP Normal arrivals
+receive an $80-$200 bankroll and a $10 wager cap until the Rating-16 band takes
+over. The remaining 75% keep the initial $40-$140/$5 budget. This introduces real
+$10 demand without requiring every guest to afford it or forcing machine usage.
+Existing guests keep their original budgets; unlocks do not refill wallets.
+Machine/game maxima and affordability still apply. UTH affordability
 reserves six base wagers; funded doubles, raises and other contracts use real funds.
 
 Tables cost blackjack $1,800, roulette $2,500, craps $6,000, UTH $8,000.
-Dealer onboarding is $150; wages $20/hr/dealer and $16/hr/service, including idle,
-standby and closed time. Table upkeep is $12/hr. Craps requires two dealers;
+Dealer onboarding is $150; wages $20/hr/dealer and $16/hr/service for Active,
+Relief and Break time, including assigned idle and closed on-shift time. Off Duty
+is unpaid. Table upkeep is $12/hr. Craps requires two dealers;
 other tables one; slots none. Tables have seven public positions plus the owner
 rail; slots one position. Public tables resolve per occupied hand/spin every two
 game minutes; craps retains its shared roll/contract cadence. Operating sample,
 utilization, guest strategy and wage commitments determine viability.
 
-Basic drinks cost guests $5 and the house $1. Recent real wagers (within 12 game
-minutes) plus active play qualify for basic comps: $1 house cost, no fake sale.
-Waiting/watching/drinking guests pay on physical delivery. Paid product margin
-is $4 before service payroll; free drinks support retention but require gaming
-income. Without service access, thirst discomfort starts at 40 and loss is 25%
-of the developed-casino rate; after access it starts at 25 with normal pressure.
+Staff fatigue is 0.20 energy/game minute while Active on an open floor. Automatic
+relief swaps begin at 30 energy, using Relief workers with at least 85 energy.
+Without cover, workers continue until 15, then take a mandatory break. Breaks
+last at least 45 minutes and recover 1 energy/minute; workers return only at 85.
+Relief recovers 0.04/minute; assigned closed-time idle recovers only 0.02/minute.
+Paid shifts last at most 480 minutes, followed by at least 360 minutes Off Duty
+recovering 0.20/minute. Closing never resets energy, shift deadlines or rest gates.
+Rested off-duty roster employees stagger handovers in the final 90 minutes of a
+shift, at most once per 20 minutes. Extra employees beyond the coverage/relief
+target wait unpaid for later shifts. This is a rolling-shift abstraction, not a
+calendar. Continuous operation needs both break cover and a rested shift roster.
+
+Coverage allocates complete crews by High/Normal/Low priority, retaining existing
+assignments within a priority. Committed games retain their real crew until bets
+settle; a mandatory rest or paused table accepts no new play. Deferred handover
+time remains paid. Routine rotations do not enter House Activity; shortages and
+exhausted relief generate bounded notices. Relief/break wages are shared dealer
+costs; assigned Active wages remain attributable to individual tables. Service
+uses the same lifecycle, with a separate target for active floor positions.
+
+The drink catalog keeps the original soda at $5 / $1 cost. Water is $3 / $0.60,
+coffee $4 / $1, lager $7 / $2, highball $10 / $3, old fashioned $16 / $5 and
+reserve nightcap $26 / $9. Default paid unit margins are $2.40-$17 before labor.
+All prices have bounded $1 steps; every minimum price exceeds product cost.
+Service wages remain $16/game hour. Preparation takes 1-6 game minutes per
+product plus real walking/return time; low-price products trade smaller margins
+for broader appeal and shorter prep. No payroll or gaming edge was reduced to
+make drinks profitable. Low utilization, excessive comps or overstaffing can lose.
+
+Recent real wagers (within 12 game minutes) plus active play qualify soda, water
+and coffee for basic comps at their actual product cost, with no sale revenue.
+Lager/cocktails/premium products always remain paid. Waiting/watching/bar-break
+guests pay on physical delivery. No costs/revenue/units are booked at order time.
+Access does not add products: both Normal and Easy start with an empty menu.
+Normal basics require service access/Rating 20; later options require Rating
+24/32/45/65 and 20/60/150/300 actual deliveries; reserve also needs existing VIP
+access. Easy exposes every product as an option, still requiring explicit addition.
+
+Choice weights combine product demand, archetype preference, prestige taste and
+paid-price elasticity (1.5). Every archetype can choose every available product.
+Above reference price, willingness also falls; wallet affordability is enforced.
+Guests first choose from unlocked options, can reveal an off-menu request and
+then choose a menu substitute. Only unlocked demand is voiced. Retries are
+bounded to once per 12 game minutes. Signals count attempts, not unique guests
+or a guaranteed lost sale. Prestige adds at most 3 satisfaction per delivery to
+the existing 6-point recovery; menu identity follows composition without fake
+passive attraction income. These are initial balance assumptions for manual play.
+
+Product gross contribution subtracts paid/comp ingredients. Product net further
+subtracts real preparation/delivery/return payroll attributed to that product;
+idle/relief/break payroll stays shared. Sum of product net minus shared service
+payroll reconciles to bar net. Accounting/price quotes/menu/queues persist in
+schema 15; disposable older development saves are not migrated.
+
+Slot players can attract bounded spectators like table players; observers
+do not reserve a gambling position or qualify for comps, and move on when play
+ends. Watching never changes payouts or odds.
+Before service access, thirst does not accumulate or reduce satisfaction. After
+access it grows normally, with discomfort at 25. Waiting guests and session
+breaks can reserve one of five bar spots, walk there, buy a drink through existing
+physical service staff and linger for 4-8 game minutes after delivery. Visits
+without a delivery last 8-16 minutes; bar waiting preserves the demand budget.
+Bar breaks release gambling seats and never qualify as active play for comps.
 Only one missing-service complaint stays open, and actual drink delivery resolves
 that complaint. Hiring does not itself fabricate a completed service.
+
+Latent guest preferences stay intact. Visible interests, arrival thoughts and
+inspectors use owned/available games or the next revealed progression opportunity;
+Blackjack demand begins at earned access. Service is foreshadowed only when it
+is the next revealed opportunity, with complaints/penalties beginning at access.
+Machine-quality comments compare machines actually on the floor.
 
 ## Demand and reserve pressure
 
@@ -110,7 +179,7 @@ standby dealers and incremental costs. Estimates are advisory, not worst-case
 solvency guarantees; actual wins can exceed them. Outcomes are never capped.
 
 Runtime/current-save safety bounds agree: 20 assets, 16 employees, 40 guests.
-Current disposable schema is 12; no migrations or historical compatibility.
+Current disposable schema is 14; no migrations or historical compatibility.
 
 ## Feedback and manual acceptance
 
@@ -146,3 +215,29 @@ Manual acceptance checklist:
 Final integration used source/economic review and export compilation, with no
 automated tests, spin suites or measured first-hour/FPS claims. Runtime balance,
 strategy dominance and subjective first-hour satisfaction require manual playtesting.
+
+## Modular expansion capital and carrying cost
+
+Normal starts at 535 x 610; Easy starts with one additional right column. Rating
+35 still gates Normal purchases. A side column is 320 x current depth; a bottom
+row is current width x 240. Quotes include the full added strip, not just a corner.
+Price = round up to $50 of $3,000 * added_area / 195,200 *
+(1 + 0.20 * existing_chunk_count + 0.35 * extra_area / starter_area).
+The first Normal side is $3,000; bottom is $2,000. A second side after the first
+is $4,250. Simultaneous width/depth growth makes later strips larger and pricier.
+Easy's starting column counts as existing area/chunks for subsequent quotes.
+
+Extra property costs $0.35/game hour per 10,000 floor units squared, even closed
+or empty: first side +$6.832/hour, first bottom +$4.494/hour. The starter's base
+property cost remains included in its existing economy; no new starter tax.
+Reference audit: a full $5 used reel expects $11.975/hour after its $1 upkeep;
+a service worker costs $16/hour and tables $12/hour plus $20/hour per dealer.
+Thus a side expansion carries roughly 57% of a fully utilized used reel's expected
+contribution, before staffing/repairs. Empty expansion can hurt profitability;
+space adds no passive income, attraction or capacity until assets operate.
+Initial carrying costs require manual playtesting; house edges are unchanged.
+
+Construction is capital spending; property upkeep has a separate recurring ledger,
+flows into operating profit/cash and Finance Operations, and enters reserve advice.
+The first purchased expansion retains the prior bounded development credit;
+repeated empty land purchases do not farm Rating. Schema 16 saves are current-only.

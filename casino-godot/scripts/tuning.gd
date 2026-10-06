@@ -3,8 +3,8 @@ extends RefCounted
 
 const STARTING_CASH := 2500.0 # Normal is the primary balance target.
 const DIFFICULTIES := {
-	"normal": {"name": "Normal", "cash": STARTING_CASH, "restricted": true, "expanded": false},
-	"easy": {"name": "Easy / Sandbox-lite", "cash": 30000.0, "restricted": false, "expanded": true},
+	"normal": {"name": "Normal", "cash": STARTING_CASH, "restricted": true, "floor_chunks": {"left": 0, "right": 0, "bottom": 0}},
+	"easy": {"name": "Easy / Sandbox-lite", "cash": 30000.0, "restricted": false, "floor_chunks": {"left": 0, "right": 1, "bottom": 0}},
 }
 # Approved fixed payout distributions, not a player-controlled RTP slider.
 # All awards are total returns including stake. Metrics are derived from the math.
@@ -135,30 +135,67 @@ const GUEST_BUDGETS := [
 	{"rating": 28.0, "bankroll": Vector2i(250, 700), "wager": 25.0},
 	{"rating": 55.0, "bankroll": Vector2i(400, 1500), "wager": 50.0},
 ]
+# Unlocks introduce a minority of higher-budget arrivals before the next Rating band.
+# Existing visits retain their real bankroll and wager cap.
+const GUEST_UNLOCK_BUDGETS := [
+	{"slot_profile": "standard", "share": 0.25, "bankroll": Vector2i(80, 200), "wager": 10.0},
+]
 const REVEAL_DISTANCE := 6.0
 const STAR_THRESHOLDS := [0.0, 16.0, 28.0, 75.0, 100.0]
 const STAR_NAMES := ["Local Joint", "Neighborhood Casino", "Casino", "Destination Casino", "Major Casino"]
 const OPENING_REVENUE := 100.0 # Guest wagers, not guaranteed profit.
-const STARTER_BUILD_AREA := Rect2(65, 100, 440, 400)
-const FULL_BUILD_AREA := Rect2(65, 100, 720, 400)
+# World geometry: grow edges without translating the original property/assets.
+const STARTER_PROPERTY := Rect2(0, 0, 535, 610)
+const FLOOR_CHUNK_WIDTH := 320.0
+const FLOOR_CHUNK_HEIGHT := 240.0
+const FLOOR_MAX_DIRECTION_CHUNKS := 32
+const FLOOR_MAX_NAV_CELLS := 131072
+const FLOOR_NAV_CELL := 10.0
+const EXPANSION_REFERENCE_AREA := 195200.0 # One initial side column.
+const EXPANSION_PURCHASE_GROWTH := 0.20
+const EXPANSION_AREA_GROWTH := 0.35
+const EXPANSION_PRICE_STEP := 50.0
+const PROPERTY_UPKEEP_PER_10000 := 0.35 # Per game hour, even while closed.
+const FLOOR_SLOT_INSETS := Vector4(22, 100, 22, 30)
+const FLOOR_TABLE_INSETS := Vector4(65, 100, 30, 110)
+const FLOOR_WALK_INSETS := Vector4(22, 78, 22, 25)
+const ENTRANCE_CLEARANCE := Rect2(215, 82, 105, 50)
+const ASSET_AISLE_CLEARANCE := 22.0
 const TABLE_GAME_ROUND_MINUTES := {"blackjack": 2, "roulette": 2, "holdem": 2} # Game minutes per occupied NPC hand/spin.
 const VISITOR_CASH := 1000.0
-const MAX_GUESTS := 40
-const MAX_ASSETS := 20 # Runtime placement and current-save bounds must agree.
-const MAX_STAFF := 16
+const MAX_GUESTS := 80
+const MAX_ASSETS := 128 # Runtime placement and current-save bounds must agree.
+const MAX_STAFF := 64
 const DEBUG_SNAPSHOT_SECONDS := 0.25
 # Hospitality is settled on physical delivery; prices and policy are independent.
-const DRINK_PROFILES := {"basic": {"name": "Basic drink", "price": 5.0, "cost": 1.0, "comp_eligible": true}}
+const BAR_COUNTER := Rect2(350, 18, 150, 39)
+const BAR_PICKUP_OFFSET := Vector2(80, 72) # Reachable aisle point below the counter.
+const BAR_GUEST_OFFSETS := [Vector2(20, 72), Vector2(50, 72), Vector2(80, 72), Vector2(110, 72), Vector2(140, 72)]
+const BAR_WAIT_CHANCE := 0.4
+const BAR_BREAK_CHANCE := 0.3
+const BAR_ANTICIPATION_CHANCE := 0.2
+const BAR_SOCIAL_MINUTES := Vector2i(4, 8)
+# Product access is independent of the active menu. Margins exclude actual labor.
+const DRINK_PROFILES := {
+	"basic": {"name": "House Soda", "price": 5.0, "price_min": 3.0, "price_max": 7.0, "cost": 1.0, "demand": 1.4, "prestige": 0, "prep_minutes": 2.0, "comp_eligible": true, "rating": 20.0, "served": 0, "vip": false, "preferences": {"casual": 1.4, "regular": 1.0, "slots": 1.3, "dice": 1.0, "tables": 0.8, "vip": 0.4}},
+	"water": {"name": "Sparkling Water", "price": 3.0, "price_min": 2.0, "price_max": 5.0, "cost": 0.6, "demand": 1.1, "prestige": 0, "prep_minutes": 1.0, "comp_eligible": true, "rating": 20.0, "served": 0, "vip": false, "preferences": {"casual": 1.0, "regular": 0.8, "slots": 0.9, "dice": 0.6, "tables": 1.2, "vip": 0.9}},
+	"coffee": {"name": "Floor Coffee", "price": 4.0, "price_min": 3.0, "price_max": 6.0, "cost": 1.0, "demand": 0.9, "prestige": 0, "prep_minutes": 3.0, "comp_eligible": true, "rating": 20.0, "served": 0, "vip": false, "preferences": {"casual": 0.8, "regular": 1.5, "slots": 1.4, "dice": 0.9, "tables": 1.0, "vip": 0.5}},
+	"lager": {"name": "House Lager", "price": 7.0, "price_min": 5.0, "price_max": 10.0, "cost": 2.0, "demand": 0.9, "prestige": 1, "prep_minutes": 2.0, "comp_eligible": false, "rating": 24.0, "served": 20, "vip": false, "preferences": {"casual": 1.0, "regular": 1.3, "slots": 0.8, "dice": 1.6, "tables": 1.0, "vip": 0.7}},
+	"cocktail": {"name": "Neon Highball", "price": 10.0, "price_min": 8.0, "price_max": 14.0, "cost": 3.0, "demand": 0.7, "prestige": 2, "prep_minutes": 4.0, "comp_eligible": false, "rating": 32.0, "served": 60, "vip": false, "preferences": {"casual": 1.2, "regular": 0.7, "slots": 0.5, "dice": 1.0, "tables": 1.4, "vip": 1.2}},
+	"premium": {"name": "House Old Fashioned", "price": 16.0, "price_min": 13.0, "price_max": 21.0, "cost": 5.0, "demand": 0.45, "prestige": 4, "prep_minutes": 5.0, "comp_eligible": false, "rating": 45.0, "served": 150, "vip": false, "preferences": {"casual": 0.4, "regular": 0.6, "slots": 0.3, "dice": 0.8, "tables": 1.3, "vip": 1.8}},
+	"reserve": {"name": "Reserve Nightcap", "price": 26.0, "price_min": 22.0, "price_max": 34.0, "cost": 9.0, "demand": 0.25, "prestige": 6, "prep_minutes": 6.0, "comp_eligible": false, "rating": 65.0, "served": 300, "vip": true, "preferences": {"casual": 0.15, "regular": 0.3, "slots": 0.2, "dice": 0.5, "tables": 0.8, "vip": 2.2}},
+}
+const DRINK_PRICE_STEP := 1.0
+const DRINK_PRICE_ELASTICITY := 1.5
+const DRINK_ORDER_RETRY_MINUTES := 12
+const DRINK_PRESTIGE_SATISFACTION := 0.5
+const DRINK_PRESTIGE_TASTES := {"casual": 0.03, "regular": 0.04, "slots": 0.01, "dice": 0.04, "tables": 0.07, "vip": 0.12}
 const COMP_POLICY := {"recent_wager_minutes": 12, "basic_gambling_comps": true}
 const DRINK_THIRST_TRIGGER := 12.0
 const THIRST_PER_MINUTE := 0.5
 const THIRST_DISCOMFORT := 25.0
 const THIRST_SATISFACTION_LOSS := 0.6
-# A locked service system should not punish the opening like a neglected bar.
-const PRE_SERVICE_THIRST_DISCOMFORT := 40.0
-const PRE_SERVICE_THIRST_LOSS_SCALE := 0.25
 const DRINK_SATISFACTION_GAIN := 6.0
-const DRINK_PREP_SECONDS := 2.0 # Simulated movement seconds, as with the existing service route.
 const ENTITY_WALK_SPEED := 64.0 # World units per simulated second, independent of update size.
 # Traffic scales with real positions. These are arrival opportunities, not targets.
 const ARRIVAL_MINUTES := Vector2i(18, 32)
@@ -183,19 +220,35 @@ const TABLE_CAPACITY := 8
 const CREW_REQUIRED := 2 # Abstract crew for this prototype, not a full real-world crew.
 const DEALER_WAGE := 20.0 # Per game hour; compressed prototype economy.
 const SERVICE_WAGE := 16.0
+const STAFF_FATIGUE_PER_MINUTE := 0.20
+const STAFF_BREAK_ENERGY := 30.0
+const STAFF_EXHAUSTED_ENERGY := 15.0
+const STAFF_RETURN_ENERGY := 85.0
+const STAFF_BREAK_MINUTES := 45
+const STAFF_BREAK_RECOVERY := 1.0
+const STAFF_IDLE_RECOVERY := 0.02
+const STAFF_RELIEF_RECOVERY := 0.04
+const STAFF_SHIFT_MINUTES := 480
+const STAFF_OFF_DUTY_MINUTES := 360
+const STAFF_OFF_DUTY_RECOVERY := 0.20
+const STAFF_SHIFT_HANDOVER_MINUTES := 90
+const STAFF_SHIFT_HANDOVER_GAP := 20
+const STAFF_RELIEF_RECOMMENDATION := 0.25
+const STAFF_NOTICE_COOLDOWN := 60
+const STAFF_ROTATION_NOTICE_MINUTES := 3
 const TABLE_OVERHEAD := 12.0
 const TABLE_REPAIR_COST := 120.0
 const ROLL_SECONDS := 0.3 # NPC dice cadence in game minutes; pass bets resolve over several rolls.
 const NPC_ROLL_FATIGUE := 0.002 # Up to 0.17 extra game minutes at minimum crew energy.
 const VISITOR_ROLL_FATIGUE := 0.04 # Preserve the existing manually played rail cadence.
-const SAVE_VERSION := 12 # One current schema; pre-alpha saves are disposable.
+const SAVE_VERSION := 16 # One current schema; pre-alpha saves are disposable.
 const SAVE_PATH := "user://neon-house.json"
 const VISITOR_ROLL_SECONDS := 15.0
 const REPAIR_GRACE_MINUTES := 4320 # Three days of operation before any wear check.
 const REPAIR_CHECK_MINUTES := 1440 # Check once per operating day.
 const REPAIR_CHANCE := 0.08 # Game balance, not a real-world failure estimate.
 const FLOOR_SIZE := Vector2(850, 610)
-const ENTRY := Vector2(425, 565)
+const ENTRY := Vector2(267, 90)
 const TABLE_SIZE := Vector2(190, 100)
 const CRAPS_SIZE := Vector2(230, 130)
 const NAMES := ["Alex", "Morgan", "Sam", "Jordan", "Riley", "Casey", "Taylor", "Drew", "Jesse", "Avery", "Blake", "Kai"]

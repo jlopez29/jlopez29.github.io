@@ -24,6 +24,7 @@ Paths below are relative to `casino-godot/scripts/`:
 | `craps.gd` | Craps rules and settlement; keep core resolution deterministic where practical. |
 | `main.gd` | UI/controller; keep core simulation/business rules out of it. |
 | `floor.gd` | Floor rendering, navigation, movement, and placement. |
+| `floor_property.gd` | Shared chunk geometry, directional purchase quotes, property upkeep, build/walk bounds and property validation. |
 | `game_view.gd` | Casino-game presentation. |
 | `game_art.gd` | Game visual presentation/art helpers. |
 
@@ -49,6 +50,8 @@ Development saves are disposable. Do not maintain backward compatibility: no mig
 Keep current-version save/load working when practical. While working in relevant persistence code, safely remove clearly obsolete compatibility helpers, branches, conversions, and fields maintained solely for historical saves. Do not search the repository for legacy cleanup. Preserve defensive handling for corrupt files, invalid data, missing current-version values, and runtime errors.
 
 ## Economy and game design
+
+Unlocked drink products are options, not automatic menu entries. Players explicitly add/drop products; bar menu and pricing decisions must have observable guest demand and margin consequences.
 
 Financial visual feedback must represent real simulation transactions and actual casino financial changes; never display fake profit for excitement. Keep casino treasury, guest bankroll, and owner/visitor gambling wallet distinct. Prevent owner-wallet exploits that manufacture casino money.
 
@@ -86,11 +89,17 @@ Routine individual gambling settlements belong in floating/toast money feedback,
 
 ## Guest thoughts / floor communication
 
+Guest-facing demand must respect progression and current casino context. NPCs may have latent preferences for future content, but should not normally complain about or explicitly request systems the player cannot meaningfully provide yet. Reveal demand progressively as systems become relevant. Player-facing complaints should be understandable and actionable.
+
 Communicate actionable demand, preferences, service needs, satisfaction, frustration and reasons for behavior through concise, temporary world-space bubbles. Rate-limit repeats and keep thoughts visually distinct from financial feedback. Walking offers qualitative insight while management remains usable independently. Hot-table attention must arise from real activity and never change probabilities or fabricate outcomes.
 
 ## Living guest behavior
 
 Visits may include gambling, browsing, waiting, watching, switching games and seeking service before departure. Finishing a session should offer another decision, not automatically end the visit. Departure should reflect bankroll, satisfaction, entertainment, patience and stay tendency rather than a single age cutoff. Reconsider periodically without constant bouncing. Let retention and turnover produce population organically; never force a target headcount. Keep aggregate arrival and capacity pressure separate from individual guest decisions.
+
+## Staffing
+
+Staff fatigue should create staffing-capacity decisions rather than repetitive micromanagement. Employees may be Active, Relief, on Break or Off Duty. Adequate relief staffing should automatically rotate tired workers while preserving table coverage. Closing the casino must not function as a short-term universal energy recharge exploit. Staffing depth trades higher payroll for operational continuity.
 
 ## Developer testing tools
 

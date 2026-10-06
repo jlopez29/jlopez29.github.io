@@ -31,7 +31,8 @@ var moving_id := -1
 var rotated := false
 var selected := 1
 var preview := Vector2(-100, -100)
-var move_target := Vector2(-1, -1)
+var move_target := Vector2(INF, INF)
+var view_scale := 1.0
 var walk_path: Array = []
 var zoom := 1.0
 var camera := Vector2.ZERO
@@ -75,7 +76,7 @@ func screen_at(world: Vector2) -> Vector2:
 	return world * zoom + camera
 
 func blocked(at: Vector2) -> bool:
-	if not Rect2(22, 92, 806, 493).has_point(at):
+	if not sim.walk_area().has_point(at):
 		return true
 	for table in sim.tables:
 		if sim.bounds(table).grow(12).has_point(at):
@@ -89,16 +90,17 @@ func _process(delta: float) -> void:
 	update_thoughts(delta)
 	for effect in floating_results: effect.age += delta
 	floating_results = floating_results.filter(func(effect): return float(effect.age) < float(effect.lifetime))
-	var floor_width := 850.0 if sim.expanded or visitor_mode else 535.0
-	var fit := minf(size.x / floor_width, size.y / 610.0)
-	var target_zoom := fit * (1.32 if visitor_mode else 1.0)
-	if compact_labels and ((close_view and not visitor_mode) or (landscape_view and visitor_mode)): target_zoom = maxf(fit, size.x / floor_width)
+	var room := sim.floor_rect()
+	var fit := minf(size.x / room.size.x, size.y / room.size.y)
+	var focus_zoom := minf(size.x / CasinoTuning.STARTER_PROPERTY.size.x, size.y / CasinoTuning.STARTER_PROPERTY.size.y)
+	var target_zoom := focus_zoom * view_scale if close_view or visitor_mode else fit
 	zoom = lerpf(zoom, target_zoom, minf(1, delta * 8))
-	var desired := size / 2 - sim.player * zoom if visitor_mode else (size - Vector2(floor_width, 610) * zoom) / 2
-	if compact_labels and close_view and not visitor_mode: desired = size / 2 - pan_center * zoom
+	pan_center = pan_center.clamp(room.position, room.end)
+	var focus := sim.player if visitor_mode else pan_center if close_view else room.get_center()
+	var desired := size / 2 - focus * zoom
 	for axis in [0, 1]:
-		var extent: float = Vector2(floor_width, 610)[axis] * zoom
-		desired[axis] = clampf(desired[axis], size[axis] - extent, 0) if extent > size[axis] else (size[axis] - extent) / 2
+		var extent: float = room.size[axis] * zoom
+		desired[axis] = clampf(desired[axis], size[axis] - room.end[axis] * zoom, -room.position[axis] * zoom) if extent > size[axis] else (size[axis] - extent) / 2 - room.position[axis] * zoom
 	camera = camera.lerp(desired, minf(1, delta * 8))
 	if visitor_mode and sim.joined < 0:
 		var dir := Vector2.ZERO
@@ -106,14 +108,14 @@ func _process(delta: float) -> void:
 			dir.x = float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT)) - float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT))
 			dir.y = float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)) - float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP))
 		if dir.length() > 0:
-			move_target = Vector2(-1, -1)
+			move_target = Vector2(INF, INF)
 			walk_path.clear()
-		elif move_target.x >= 0:
+		elif move_target.is_finite():
 			var target := Vector2(walk_path[0][0], walk_path[0][1]) if not walk_path.is_empty() else move_target
 			dir = target - sim.player
 			if dir.length() < 4:
 				if not walk_path.is_empty(): walk_path.pop_front()
-				elif sim.player.distance_to(move_target) < 5: move_target = Vector2(-1, -1)
+				elif sim.player.distance_to(move_target) < 5: move_target = Vector2(INF, INF)
 			dir = dir.normalized() * minf(1.0, dir.length() / maxf(0.001, delta * 150))
 
 		var motion := dir.limit_length(1.0) * delta * 150
@@ -125,8 +127,14 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		pan_center = world_at(event.position)
+		close_view = true
+		view_scale = clampf(view_scale * (1.2 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.2), 0.25, 4.0)
+		accept_event()
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if compact_labels and not building and not visitor_mode:
+		if not building and not visitor_mode:
 			if event.pressed:
 				pointer_down = true
 				dragging = false
@@ -140,7 +148,7 @@ func _gui_input(event: InputEvent) -> void:
 		if event.position.distance_to(pointer_start) > 8: dragging = true
 		if dragging:
 			pan_center -= event.relative / maxf(zoom, 0.01)
-			pan_center = pan_center.clamp(Vector2.ZERO, Vector2(850 if sim.expanded else 535, 610))
+			pan_center = pan_center.clamp(sim.floor_rect().position, sim.floor_rect().end)
 			accept_event()
 
 func select_at(screen: Vector2) -> void:
@@ -185,39 +193,44 @@ func _draw() -> void:
 		return
 	draw_rect(Rect2(Vector2.ZERO, size), Color("111c29"))
 	draw_set_transform(camera, 0, Vector2(zoom, zoom))
-	var room_width := 850 if sim.expanded else 535
-	draw_rect(Rect2(0, 0, room_width, 610), Color("172432"))
-	for x in range(0, room_width - 20, 40):
-		for y in range(100, 610, 40):
-			draw_rect(Rect2(x + 2, y + 2, 36, 36), Color("1b2a39") if (x + y) % 80 == 0 else Color("192736"))
-	# Brass border, lit back wall, bar and lounge: all procedural, no asset dependency.
-	draw_rect(Rect2(12, 82, room_width - 24, 510), Color("9a8053"), false, 2)
-	draw_rect(Rect2(14, 12, room_width - 28, 62), Color("101b26"))
-	draw_line(Vector2(24, 75), Vector2(room_width - 24, 75), GOLD, 2)
-	text_at(Vector2(330 if sim.expanded else 245, 47), "NEON HOUSE", GOLD, 19)
-	if sim.expanded: text_at(Vector2(360, 65), "GOOD COMPANY", Color("9bafc2"), 11)
+	var room := sim.floor_rect()
+	draw_rect(room, Color("172432"))
+	# Cull procedural tiling to the viewport; overview uses a larger tile stride.
+	var visible := Rect2(world_at(Vector2.ZERO), size / zoom).intersection(room)
+	var tile := maxf(40, ceilf(20 / maxf(zoom, 0.001) / 40) * 40)
+	for x in range(int(floorf(visible.position.x / tile) * tile), int(visible.end.x), int(tile)):
+		for y in range(maxi(100, int(floorf(visible.position.y / tile) * tile)), int(visible.end.y), int(tile)):
+			draw_rect(Rect2(x + 2, y + 2, tile - 4, tile - 4).intersection(room), Color("1b2a39") if (int(x / tile) + int(y / tile)) % 2 == 0 else Color("192736"))
+	draw_rect(Rect2(room.position + Vector2(12, 82), room.size - Vector2(24, 100)), Color("9a8053"), false, 2)
+	draw_rect(Rect2(room.position + Vector2(14, 12), Vector2(room.size.x - 28, 62)), Color("101b26"))
+	draw_line(Vector2(room.position.x + 24, 75), Vector2(room.end.x - 24, 75), GOLD, 2)
+	text_at(Vector2(205, 35), "NEON HOUSE", GOLD, 14)
 	# Back-of-house furniture lives outside the editable floor rectangle.
 	draw_rect(Rect2(35, 19, 160, 38), Color("344055"))
 	text_at(Vector2(65, 43), "THE CAGE", GOLD, 12)
 	for x in [65, 100, 135, 170]:
 		draw_circle(Vector2(x, 65), 5, Color("536379"))
-	if sim.expanded:
-		draw_rect(Rect2(650, 18, 150, 39), Color("384353"))
-		text_at(Vector2(685, 43), "COCKTAILS" if sim.unlocked("service") else "SERVICE LOCKED", GOLD, 12)
-		for x in [670, 700, 730, 760, 790]:
-			draw_circle(Vector2(x, 67), 6, Color("985b60"))
-	for at in [Vector2(26, 105), Vector2(room_width - 26, 105), Vector2(26, 580), Vector2(room_width - 26, 580)]:
+	if sim.guest_feature_relevant("service"):
+		var bar := sim.bar_bounds()
+		draw_rect(bar, Color("384353"))
+		text_at(bar.position + Vector2(15, 25), "COCKTAILS" if sim.bar_available() else "BAR COMING SOON", GOLD, 12)
+		for offset in CasinoTuning.BAR_GUEST_OFFSETS:
+			draw_circle(bar.position + Vector2(offset.x, 49), 6, Color("985b60"))
+			if sim.bar_available(): draw_circle(bar.position + offset, 10, Color(0.6, 0.4, 0.45, 0.15))
+	for at in [room.position + Vector2(26, 105), Vector2(room.end.x - 26, 105), Vector2(room.position.x + 26, room.end.y - 30), room.end - Vector2(26, 30)]:
 		draw_circle(at, 18, Color(0.9, 0.73, 0.43, 0.06))
 		draw_circle(at, 8, Color("ac8c4f"))
 		draw_circle(at, 5, Color("ead398"))
-	draw_rect(Rect2(338, 546, 174, 44), Color("283b4d"))
-	text_at(Vector2(362, 574), "ENTRANCE", GOLD, 16)
+	draw_rect(CasinoTuning.ENTRANCE_CLEARANCE, Color("283b4d"))
+	text_at(CasinoTuning.ENTRY + Vector2(-42, 12), "ENTRANCE", GOLD, 12)
 	for table in sim.tables:
 		draw_table(table)
+		if not compact_labels and sim.elapsed < int(table.staff_rotation_until):
+			text_at(sim.bounds(table).position + Vector2(0, -27), "DEALER ROTATION", TEAL, 9)
 	if building:
 		var valid: bool = sim.can_place(preview, rotated, moving_id, build_kind) and (moving_id >= 0 or (sim.unlocked(build_kind) and (build_kind != "slots" or sim.slot_unlocked(build_slot_profile)) and sim.cash >= sim.purchase_cost(build_kind, build_slot_profile)))
 		var rect := Rect2(preview, sim.furniture_size(build_kind, rotated))
-		draw_rect(rect.grow(22), Color(0.3, 0.8, 0.6, 0.07) if valid else Color(1, 0.3, 0.3, 0.08))
+		draw_rect(rect.grow(CasinoTuning.ASSET_AISLE_CLEARANCE), Color(0.3, 0.8, 0.6, 0.07) if valid else Color(1, 0.3, 0.3, 0.08))
 		draw_rect(rect, Color(0.3, 0.85, 0.6, 0.3) if valid else Color(1, 0.3, 0.3, 0.3))
 		draw_rect(rect, TEAL if valid else Color("f08484"), false, 2)
 		text_at(preview + Vector2(8, 26), "$%d | %s" % [sim.purchase_cost(build_kind, build_slot_profile), CasinoTuning.SLOT_PROFILES[build_slot_profile].short_name if build_kind == "slots" else CasinoGames.NAMES[build_kind]], INK, 13)
@@ -235,12 +248,14 @@ func _draw() -> void:
 			text_at(at + Vector2(-11, -14), "DICE", GOLD, 8)
 		if not compact_labels and guest.state in ["Browsing", "Watching"]:
 			text_at(at + Vector2(-14, -23), "WATCH", Color("83c9c1"), 8)
+		if not compact_labels and guest.state in ["To bar", "At bar"]:
+			text_at(at + Vector2(-14, -23), "BAR", Color("83c9c1"), 8)
 		if not compact_labels and guest.state in ["To cage", "Cashing out"]:
 			text_at(at + Vector2(-15, -15), "CASH OUT", GOLD, 8)
 		if guest.vip:
 			text_at(at + Vector2(-8, -13), "VIP", GOLD, 8)
 	for employee in sim.staff:
-		if employee.role != "Service": continue
+		if employee.role != "Service" or employee.duty != "Active": continue
 		var at := Vector2(float(employee.get("x", 730)), float(employee.get("y", 90)))
 		draw_circle(at + Vector2(0, 3), 10, Color(0, 0, 0, 0.3))
 		draw_circle(at, 8, Color("66d5c3"))
@@ -251,18 +266,19 @@ func _draw() -> void:
 			draw_rect(Rect2(at + Vector2(10, -5), Vector2(4, 6)), GOLD)
 	for i in range(0 if compact_labels else sim.cashout_effects.size()):
 		var effect: Dictionary = sim.cashout_effects[i]
-		var at := Vector2(42, 113 + i * 36)
+		var at := Vector2(22, 113 + i * 24)
 		var color := TEAL if effect.net >= 0 else Color("f08484")
-		draw_rect(Rect2(at - Vector2(5, 17), Vector2(220, 34)), Color("101b26"))
-		text_at(at, "SESSION %s$%d | %s" % ["+" if effect.net >= 0 else "-", absf(effect.net), effect.name], color, 13)
-		text_at(at + Vector2(0, 13), "Cashed out $%d" % effect.cash, INK, 10)
+		var message := "%s$%d | %s" % ["+" if effect.net >= 0 else "-", absf(effect.net), effect.name]
+		var width := font.get_string_size(message, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+		draw_rect(Rect2(at - Vector2(5, 15), Vector2(width + 10, 22)), Color("101b26"))
+		text_at(at, message, color, 13)
 	if visitor_mode:
 		draw_circle(sim.player, 16 + sin(pulse * 4) * 1.5, Color(0.89, 0.74, 0.44, 0.17))
 		draw_circle(sim.player, 11, GOLD)
 		draw_circle(sim.player, 8, Color("192936"))
 		draw_circle(sim.player + Vector2(0, -2), 4, Color("f1d4bb"))
 		text_at(sim.player + Vector2(-14, -21), "YOU", GOLD, 11)
-		if move_target.x >= 0:
+		if move_target.is_finite():
 			draw_arc(move_target, 8, 0, TAU, 20, GOLD, 1)
 	draw_set_transform(Vector2.ZERO)
 	if compact_labels: draw_asset_badges()
@@ -339,13 +355,16 @@ func walk_to(at: Vector2) -> void:
 	move_target = at
 	var request := {"x": sim.player.x, "y": sim.player.y, "tx": at.x, "ty": at.y}
 	sim.route(request)
+	if request.path.is_empty():
+		move_target = Vector2(INF, INF)
+		walk_path.clear()
+		return
 	walk_path = request.path
 
 func walk_to_table(id: int) -> void:
 	var table := sim.get_table(id)
 	if table.is_empty(): return
-	var rect := sim.bounds(table)
-	walk_to(Vector2(rect.get_center().x, rect.end.y + 24))
+	walk_to(sim.approach_position(table))
 
 func draw_other_game(table: Dictionary) -> void:
 	var rect := sim.bounds(table)
@@ -379,8 +398,9 @@ func draw_other_game(table: Dictionary) -> void:
 		var status := sim.table_status(table)
 		if status.begins_with("Doors closed"): status = "Closed"
 		elif status == "Repair needed": status = "Repair"
+		if status == "Open" and sim.seated(int(table.id)).is_empty() and not sim.reserved_guests(int(table.id)).is_empty(): status = "Reserved"
 		# Long closed-door explanations overlapped adjacent tiny slot cabinets.
-		var caption := "Owner" if sim.joined == int(table.id) else "%s | %d/%d" % [status, sim.seated(int(table.id)).size(), sim.guest_capacity(table)]
+		var caption := "Owner" if sim.joined == int(table.id) else "%s | %d/%d" % [status, sim.reserved_guests(int(table.id)).size(), sim.guest_capacity(table)]
 		text_at(rect.position + Vector2(0, rect.size.y + 17), caption, TEAL, 10)
 	for i in range(sim.crew(int(table.id)).size()):
 		draw_circle(rect.position + Vector2(rect.size.x + 15, 25 + i * 30), 8, INK)
