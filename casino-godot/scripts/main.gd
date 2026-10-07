@@ -6,7 +6,7 @@ const MilestoneNotice = preload("res://scripts/milestone_notice.gd")
 const BuildInfo = preload("res://scripts/build_info.gd")
 const Games = preload("res://scripts/casino_games.gd")
 const GameView = preload("res://scripts/game_view.gd")
-const FeltScript = preload("res://scripts/craps_layout.gd")
+const FeltScript = preload("res://presentation/play/craps_surface.gd")
 const PitBoss = preload("res://scripts/pit_boss_theme.gd")
 const GOLD := Color("d4af37")
 const TEAL := Color("22c55e")
@@ -30,8 +30,10 @@ var sim := CasinoSimulation.new()
 var floor_view: Control
 var selected := 1
 var selected_guest := -1
+var play_context := {}
 var visitor := false
 var building := false
+var desktop_build_category := "slots"
 var build_kind := "slots"
 var build_slot_profile := "starter"
 var game_view: Control
@@ -182,6 +184,7 @@ func normalize_interaction_ui() -> void:
 	if requires_floor_targeting():
 		visitor = false
 		mobile_pane = "floor"
+		context_expanded = false
 
 func transition_pane(value: String) -> void:
 	# Explicit navigation away ends placement; Floor preserves its preview.
@@ -203,16 +206,17 @@ func apply_visibility() -> void:
 	normalize_interaction_ui()
 	var at_table := sim.joined >= 0 or not sim.owner_play.is_empty()
 	var is_craps := at_table and sim.owner_play.is_empty() and sim.table_kind(sim.get_table(sim.joined)) == "craps"
-	game_view.visible = at_table and not is_craps
-	table_scroll.visible = is_craps
+	if at_table and play_context.is_empty(): remember_management_context()
+	game_view.visible = at_table
+	table_scroll.visible = false
 	felt.visible = is_craps
-	play_return.visible = at_table
+	play_return.visible = false
 	floor_view.visible = not at_table
 	nav_rail.visible = not mobile and not at_table
 	bottom_nav.visible = mobile and not at_table and not requires_floor_targeting()
 	side_panel.visible = not at_table and mobile_pane == "manage"
 	events_panel.visible = not at_table and mobile_pane == "log"
-	inspector_panel.visible = (is_craps and table_options) or (not at_table and inspector_open and mobile_pane == "table")
+	inspector_panel.visible = not at_table and inspector_open and mobile_pane == "table"
 	floor_actions.visible = not at_table and mobile_pane == "floor"
 	floor_fit.visible = not visitor and not building
 	floor_fit.text = "Fit" if floor_view.close_view else "Closer"
@@ -235,6 +239,8 @@ func apply_visibility() -> void:
 	inspector_expand.visible = page in ["table", "guest"]
 	inspector_expand.text = "Summary" if context_expanded else "Details"
 	alert_button.text = "%d" % (sim.incidents.size() + sim.optional_events.active.size()) if mobile else "Alerts %d" % (sim.incidents.size() + sim.optional_events.active.size())
+	presentation_shell.update_desktop_state(self)
+	if not mobile: floor_view.inspector_occlusion = inspector_panel.get_rect() if inspector_panel.visible and page in ["table", "guest"] and sim.joined < 0 else Rect2()
 
 func close_context() -> void:
 	inspector_open = false
@@ -493,14 +499,11 @@ func animate_treasury(delta: float) -> void:
 	render_treasury()
 
 func render_treasury() -> void:
-	stats.text = ("Cash " if mobile else "") + FinancialText.cash(displayed_cash, 0)
-	if mobile and absf(displayed_cash) >= 10000:
-		var divisor := 1000000.0 if absf(displayed_cash) >= 1000000 else 1000.0
-		stats.text = "%s$%.1f%s" % ["-" if displayed_cash < 0 else "", absf(displayed_cash) / divisor, "M" if divisor == 1000000 else "K"]
-	hud_summary.text = "Wallet " + compact_money(sim.owner_bankroll) if mobile else compact_money(sim.owner_bankroll)
-	guest_metric.text = "%d" % sim.guests.size()
+	stats.text = preload("res://presentation/mobile_management.gd").short_money(displayed_cash) if mobile else compact_money(displayed_cash) if absf(displayed_cash) >= 1000000 else FinancialText.cash(displayed_cash, 0)
+	hud_summary.text = preload("res://presentation/mobile_management.gd").short_money(sim.owner_bankroll) if mobile else compact_money(sim.owner_bankroll)
+	guest_metric.tooltip_text = "Guests on the floor / ready gaming seats. Visits and waiting are managed by the existing simulation."
+	guest_metric.text = "%d" % sim.guests.size() if mobile else "%d / %d" % [sim.guests.size(), presentation_shell.capacity]
 	reputation_metric.text = "%.0f%%" % sim.reputation
-	staff_metric.text = "%d active" % sim.staff.filter(func(employee): return employee.duty == "Active").size()
 	hud_summary.tooltip_text = "Personal gambling wallet, separate from casino cash: " + money(sim.owner_bankroll)
 	if sim.joined >= 0 or not sim.owner_play.is_empty():
 		stats.text = "Casino Cash " + compact_money(displayed_cash)
@@ -526,7 +529,7 @@ func refresh(structural: bool = true) -> void:
 	event_cards.refresh(sim)
 	objective_cards.refresh(sim)
 	var optional_count := sim.optional_events.active.size() + sim.optional_objectives.active.size()
-	event_nav.text = "Log (%d)" % optional_count if optional_count > 0 else "Log"
+	event_nav.text = "More"
 	var event_category := "" if sim.optional_events.active.is_empty() else str(sim.optional_events.DEFINITIONS[sim.optional_events.active[0].type].category)
 	event_nav.tooltip_text = "Optional goals, events and House Activity" if event_category.is_empty() else event_category + " event available in Log"
 	event_nav.add_theme_color_override("font_color", Color("ff9486") if event_category == "EMERGENCY" else GOLD if event_category == "MANAGEMENT" else TEAL if event_category == "OPPORTUNITY" else TEXT)
@@ -563,7 +566,7 @@ func refresh(structural: bool = true) -> void:
 	floor_view.selected = selected
 	floor_view.selected_guest = selected_guest
 	mode_hint.text = "Click to place | R to rotate | Esc to cancel" if building else ("Tap to walk | tap a table to approach | E or Join to play" if visitor else "Select a table or guest to inspect | build and staff to expand")
-	var layout_key := [page, mobile_pane, visitor, building, moving, sim.joined, modal, inspector_open, context_expanded, table_options, not sim.optional_events.active.is_empty(), not sim.owner_play.is_empty()]
+	var layout_key := [page, mobile_pane, visitor, building, moving, sim.joined, modal, inspector_open, context_expanded, table_options, not sim.optional_events.active.is_empty(), not sim.owner_play.is_empty(), not sim.staff.is_empty()]
 	if layout_key != layout_identity:
 		layout_identity = layout_key
 		layout_ui()
@@ -575,15 +578,19 @@ func refresh(structural: bool = true) -> void:
 	felt.queue_redraw()
 	add_label(feed, "HOUSE ACTIVITY", 12, MUTED)
 	if sim.house_activity.is_empty(): add_label(feed, "Your next important casino event will appear here.", 13, MUTED)
-	for i in range(mini(6 if mobile else 2, sim.house_activity.size())):
+	for i in range(mini(6 if mobile else 8, sim.house_activity.size())):
 		render_activity_row(feed, str(sim.house_activity[i]), i == 0)
 	var scroll: ScrollContainer = inspector.get_parent()
 	var scroll_position := scroll.scroll_vertical
 	var identity := [page, selected, selected_guest, sim.joined, asset_details, finance_section, responsive_state, context_expanded]
-	if identity != inspector_identity:
+	var inspector_changed := identity != inspector_identity
+	if inspector_changed:
 		inspector_identity = identity
 		clear(inspector)
 	render_cursors[inspector] = 0
+	if sim.joined >= 0 or not sim.owner_play.is_empty():
+		finish_render()
+		return
 	if sim.joined >= 0 and page == "table":
 		if sim.table_kind(sim.get_table(sim.joined)) == "craps": render_craps()
 	elif page == "development":
@@ -605,6 +612,7 @@ func refresh(structural: bool = true) -> void:
 	else:
 		render_table()
 	finish_render()
+	if inspector_changed: call_deferred("layout_ui")
 	scroll.set_deferred("scroll_vertical", scroll_position)
 
 func next_unlock() -> Dictionary:
@@ -781,6 +789,12 @@ func activity_presentation(message: String) -> Dictionary:
 
 func render_activity_row(parent: Node, message: String, latest: bool) -> void:
 	var event := activity_presentation(message)
+	if not mobile:
+		var card: PanelContainer = render_node(parent, "activity_card", func(): return preload("res://presentation/components/activity_card.tscn").instantiate())
+		card.configure(event, latest)
+		# Its authored children belong to the component, not the controller cursor.
+		render_cursors.erase(card)
+		return
 	var line := row(parent)
 	line.add_theme_constant_override("separation", 10)
 	var category := add_label(line, event.category, 11, GOLD if latest else MUTED)
@@ -789,28 +803,11 @@ func render_activity_row(parent: Node, message: String, latest: bool) -> void:
 	add_label(line, event.body, 13, TEXT if latest else MUTED)
 
 func render_build() -> void:
-	add_label(inspector, "GROW YOUR CASINO", 21, GOLD)
-	add_label(inspector, "Cash buys equipment; developed capacity and settled guest business earn access. Slots need no dealer, table games need one, and craps needs two plus a larger footprint.", 14)
-	add_label(inspector, "Tier access and game unlocks are shown in Casino development.", 12, MUTED)
-	render_slot_catalog()
-	for milestone in CasinoTuning.MILESTONES:
-		var feature: String = milestone.id
-		if feature == "slots": continue
-		if not sim.revealed(feature):
-			add_button(inspector, "LOCKED: ??? | Increase Casino Rating", func(): pass, true)
-			continue
-		if not sim.unlocked(feature):
-			add_button(inspector, "LOCKED: Blackjack | Develop the slot floor" if feature == "blackjack" else "LOCKED: %s | Rating %.0f" % [milestone.name, milestone.rating], func(): pass, true)
-			continue
-		if Games.COSTS.has(feature):
-			var purchase := add_button(inspector, "%s | $%d" % [milestone.name, sim.feature_cost(feature)], func(): build_kind = feature; toggle_build(), sim.cash < sim.feature_cost(feature))
-			purchase.tooltip_text = table_purchase_tooltip(feature)
-		elif feature == "expansion":
-			add_button(inspector, "Directional floor expansion >", func(): open_page("development"))
-		elif feature == "service":
-			add_button(inspector, "Drink service | Staff & coverage", func(): open_page("staff"))
-		else:
-			add_button(inspector, "%s | %s" % [milestone.name, "Purchased" if sim.feature_owned(feature) else "$%d" % sim.feature_cost(feature)], func(): sim.purchase_upgrade(feature); refresh(), sim.feature_owned(feature) or sim.cash < sim.feature_cost(feature))
+	if not mobile:
+		render_desktop_build()
+		return
+	# Mobile catalog is a retained horizontal palette owned by the shell.
+	return
 
 func render_slot_catalog() -> void:
 	add_label(inspector, "SLOT MACHINES", 16, GOLD)
@@ -1408,7 +1405,7 @@ func begin_player_roll() -> void:
 		active_roll_table = -1
 		refresh()
 		return
-	rolling = 2.2
+	rolling = felt.animation_duration
 	felt.capture_roll(table)
 	refresh()
 
@@ -1532,7 +1529,8 @@ func click_floor(at: Vector2) -> void:
 	commit_placement(at)
 
 func confirm_placement() -> void:
-	if floor_view.placement_target.is_finite(): commit_placement(floor_view.placement_target)
+	if not mobile: commit_placement(floor_view.preview)
+	elif floor_view.placement_target.is_finite(): commit_placement(floor_view.placement_target)
 
 func commit_placement(at: Vector2) -> void:
 	if not building:
@@ -1599,6 +1597,24 @@ func toggle_walk() -> void:
 	page = "table"
 	refresh()
 
+func remember_management_context() -> void:
+	if not play_context.is_empty(): return
+	play_context = {"page": page, "pane": mobile_pane, "selected": selected, "guest": selected_guest, "inspector": inspector_open, "expanded": context_expanded, "visitor": visitor, "pan": floor_view.pan_center, "scale": floor_view.view_scale, "close": floor_view.close_view}
+
+func restore_management_context() -> void:
+	if play_context.is_empty(): return
+	page = play_context.page
+	transition_pane(play_context.pane)
+	selected = int(play_context.selected)
+	selected_guest = int(play_context.guest)
+	inspector_open = bool(play_context.inspector)
+	context_expanded = bool(play_context.expanded)
+	visitor = bool(play_context.visitor)
+	floor_view.pan_center = play_context.pan
+	floor_view.view_scale = float(play_context.scale)
+	floor_view.close_view = bool(play_context.close)
+	play_context.clear()
+
 func join_table() -> void:
 	var table := sim.get_table(selected)
 	if table.is_empty() or not visitor or not sim.ready_for_play(table) or sim.player.distance_to(sim.bounds(table).get_center()) > 165:
@@ -1607,7 +1623,10 @@ func join_table() -> void:
 		sim.log_event("All eight seats are taken. Try another table.")
 		refresh()
 		return
-	if not sim.join_table(selected): return
+	remember_management_context()
+	if not sim.join_table(selected):
+		play_context.clear()
+		return
 	table_options = false
 	transition_pane("table")
 	page = "table"
@@ -1624,6 +1643,7 @@ func leave_table() -> void:
 		visitor = false
 		page = "table"
 		transition_pane("floor")
+		restore_management_context()
 		refresh()
 		return
 	if rolling > 0:
@@ -1633,8 +1653,9 @@ func leave_table() -> void:
 		refresh()
 		return
 	table_options = false
-	layout_ui()
 	transition_pane("floor")
+	restore_management_context()
+	layout_ui()
 	refresh()
 
 func toggle_doors() -> void:
@@ -1679,6 +1700,7 @@ func load_game() -> bool:
 	if not restored:
 		sim.log_event("Save is invalid or incompatible. Start a new casino.")
 	else:
+		play_context.clear()
 		milestone_notice.reset()
 		reset_dev_speed()
 		event_focus_staff = -1
@@ -1744,7 +1766,7 @@ func show_help() -> void:
 	if sim.feature_owned("service"): body += "\n\nDrink staff walk the floor. Recent gamblers receive basic comps; waiting and watching guests pay. Deliveries relieve thirst and support longer sessions."
 	if sim.feature_owned("craps"):
 		body += "\n\nCraps needs two dealers. The shooter keeps the dice until seven-out. Pass dice hands off to a CPU; Hold betting pauses that table's CPU rolls. My bets lists contracts and removable stakes."
-	body += "\n\nOn phones use Floor, Table, Manage and Log. Save locally before leaving."
+	body += "\n\nOn phones use Floor, Build, Staff and More. Guests, Finance and House Activity are also available in More. Save locally before leaving."
 	dialog("Build your house.", body, "Back to casino", func(): pass, false)
 
 func confirm_reset() -> void:
@@ -1793,6 +1815,7 @@ func show_new_game_setup(initial: bool = false) -> void:
 	layout_ui()
 
 func start_casino(mode: String, preferred: Array) -> void:
+	play_context.clear()
 	event_focus_staff = -1
 	sim = CasinoSimulation.new(mode, preferred)
 	sim.milestone_reached.connect(on_milestone)
@@ -1942,6 +1965,25 @@ func checkpoint_owner_play() -> bool:
 	return ok
 
 func render_context_summary() -> void:
+	if mobile:
+		if page == "guest":
+			var guest: Dictionary = floor_view.presentation.get("guests", {}).get(selected_guest, {})
+			if guest.is_empty():
+				add_label(inspector, "Guest has left the casino.", 16)
+				return
+			add_label(inspector, str(guest.name), 18, GOLD if guest.vip else TEXT)
+			add_label(inspector, "%s | Satisfaction %.0f%%" % [guest.state, guest.satisfaction], 14, TEAL)
+		else:
+			var asset := sim.get_table(selected)
+			if asset.is_empty():
+				add_label(inspector, "Select an object or guest.", 16)
+				return
+			add_label(inspector, "%s #%d" % [sim.asset_name(asset), selected], 16, TEXT)
+			var performance := sim.asset_performance(asset)
+			var state := "Repair needed" if asset.broken else "Open" if sim.operating(asset) else "Closed" if not sim.opened or not asset.staff_enabled else "Needs staff"
+			add_label(inspector, "%s | %d/%d players | Win %s" % [state, sim.seated(selected).size(), sim.guest_capacity(asset), compact_money(float(performance.guest_win))], 14, TEAL)
+		return
+
 	if page == "guest":
 		var found := sim.guests.filter(func(guest): return int(guest.id) == selected_guest)
 		if found.is_empty():
@@ -1963,14 +2005,17 @@ func render_context_summary() -> void:
 		var thumbnail: TextureRect = render_node(summary, "thumbnail", func(): return TextureRect.new())
 		var kind := sim.table_kind(table)
 		var asset := "casino/slots/slot_%02d.png" % (1 + int(table.id) % 5) if kind == "slots" else "casino/tables/" + ("ultimate_texas" if kind == "holdem" else kind) + ".png"
-		thumbnail.texture = PitBoss.texture(asset)
+		thumbnail.texture = preload("res://presentation/art_catalog.gd").texture_for(kind, int(table.id))
 		thumbnail.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		thumbnail.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		thumbnail.custom_minimum_size = Vector2(100, 100)
 	var identity: VBoxContainer = render_node(summary, "identity", func(): return VBoxContainer.new())
 	identity.size_flags_horizontal = SIZE_EXPAND_FILL
 	add_label(identity, sim.asset_name(table), 28, TEXT)
-	add_label(identity, sim.table_status(table), 18, TEAL if sim.ready_for_play(table) else MUTED)
+	add_label(identity, sim.table_status(table) if mobile else "REPAIR NEEDED" if table.broken else "OPEN" if sim.operating(table) else "CASINO CLOSED" if not sim.opened else "STAFFING PAUSED" if not table.staff_enabled else "NEEDS COVERAGE", 15, TEAL if sim.operating(table) else GOLD)
+	if not mobile:
+		add_label(identity, "Condition: " + ("Needs repair" if table.broken else "Working"), 13, MUTED)
+		if sim.required_crew(table) > 0: add_label(identity, "Dealers %d / %d" % [sim.crew(selected).size(), sim.required_crew(table)], 13, MUTED)
 	var figures: VBoxContainer = render_node(summary, "figures", func(): return VBoxContainer.new())
 	figures.size_flags_horizontal = SIZE_EXPAND_FILL
 	var performance := sim.asset_performance(table)
@@ -1983,6 +2028,9 @@ func render_context_summary() -> void:
 		add_button(actions, "Walk to play", toggle_walk)
 	add_button(actions, "Move", begin_move, visitor or sim.busy(table))
 	add_button(actions, "Configure", func(): context_expanded = true; refresh())
+	if not mobile:
+		add_button(actions, "Set minimum", func(): sim.change_minimum(selected); refresh())
+		if sim.required_crew(table) > 0: add_button(actions, "Staff", func(): open_page("staff"))
 
 func render_guest_directory() -> void:
 	add_label(inspector, "Guests on the floor", 28, TEXT)
@@ -1992,3 +2040,38 @@ func render_guest_directory() -> void:
 		var line := row(inspector)
 		add_label(line, "%s | %s" % [guest.name, guest.state], 18)
 		add_button(line, "Inspect", func(): select_guest(int(guest.id)))
+
+func render_desktop_build() -> void:
+	add_label(inspector, "BUILD YOUR FLOOR", 20, GOLD)
+	var tabs := row(inspector)
+	for category in ["slots", "tables"]:
+		var tab := add_button(tabs, category.capitalize(), func(): desktop_build_category = category; refresh())
+		tab.button_pressed = desktop_build_category == category
+		tab.toggle_mode = true
+	if desktop_build_category == "slots":
+		for id in CasinoTuning.SLOT_PROFILES: render_build_card("slots", id)
+	else:
+		for kind in Games.COSTS:
+			if kind != "slots": render_build_card(kind)
+	add_label(inspector, "Placement preserves clear aisles. Drag the floor to pan; R rotates.", 13, MUTED)
+	add_button(inspector, "Casino development", func(): open_page("development"))
+
+func render_build_card(kind: String, profile_id: String = "starter") -> void:
+	var available := sim.slot_unlocked(profile_id) if kind == "slots" else sim.unlocked(kind)
+	var cost := sim.purchase_cost(kind, profile_id)
+	var card: PanelContainer = render_node(inspector, "build_card", func(): return PanelContainer.new())
+	var content := row(card)
+	content.add_theme_constant_override("separation", 12)
+	var thumb: TextureRect = render_node(content, "art", func(): return TextureRect.new())
+	thumb.texture = preload("res://presentation/art_catalog.gd").texture_for(kind)
+	thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	thumb.custom_minimum_size = Vector2(60, 80)
+	var info: VBoxContainer = render_node(content, "info", func(): return VBoxContainer.new())
+	info.size_flags_horizontal = SIZE_EXPAND_FILL
+	add_label(info, str(CasinoTuning.SLOT_PROFILES[profile_id].name) if kind == "slots" else Games.NAMES[kind], 16, TEXT)
+	add_label(info, money(cost), 17, GOLD)
+	var button := add_button(info, "Place" if available else "Locked / development required", func(): build_kind = kind; build_slot_profile = profile_id; toggle_build(), not available or sim.cash < cost)
+	button.custom_minimum_size.y = 34
+	button.add_theme_font_size_override("font_size", 13)
+	button.tooltip_text = table_purchase_tooltip(kind) if kind != "slots" else "Purchase this machine profile using casino cash."

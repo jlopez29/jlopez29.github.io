@@ -1,11 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="240" height="336" viewBox="0 0 240 336">
 
 
-<rect x="3" y="3" width="234" height="330" rx="18" fill="#F7F3E9" stroke="#D8D2C4" stroke-width="5"/>
-<text x="22" y="48" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#111111">A</text>
-<text x="24" y="82" font-family="Arial, sans-serif" font-size="34" fill="#111111">♠</text>
-<text x="218" y="300" text-anchor="end" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#111111" transform="rotate(180 218 300)">A</text>
-<text x="216" y="266" text-anchor="end" font-family="Arial, sans-serif" font-size="34" fill="#111111" transform="rotate(180 216 266)">♠</text>
-<text x="120.0" y="196.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="112" fill="#111111">♠</text>
-
-</svg>
+<rect x="3" y="3" width="234" height="330" rx="18" fill="#F7F3E9" stroke="#D8D2C4" stroke-width="5" />
+<g transform=""><path d="M1094 272H492L397 0H10L563 1493H1022L1575 0H1188ZM588 549H997L793 1143Z" transform="translate(22 48) scale(0.0166016 -0.0166016)" fill="#111111" /></g><g transform=""><path d="M920 1492Q1014 1325 1230 1049Q1467 771 1473 714Q1512 629 1512 549V509Q1512 342 1350 246Q1297 224 1233 224Q1079 224 984 445H942V433Q942 150 1025 0H810V6Q895 157 895 442L892 445H854L807 357Q722 224 595 224Q408 224 332 433L323 506V552Q323 735 510 938Q825 1324 914 1489L917 1492Z" transform="translate(24 82) scale(0.0166016 -0.0166016)" fill="#111111" /></g><g transform="rotate(180 218 300)"><path d="M1094 272H492L397 0H10L563 1493H1022L1575 0H1188ZM588 549H997L793 1143Z" transform="translate(191.687 300) scale(0.0166016 -0.0166016)" fill="#111111" /></g><g transform="rotate(180 216 266)"><path d="M920 1492Q1014 1325 1230 1049Q1467 771 1473 714Q1512 629 1512 549V509Q1512 342 1350 246Q1297 224 1233 224Q1079 224 984 445H942V433Q942 150 1025 0H810V6Q895 157 895 442L892 445H854L807 357Q722 224 595 224Q408 224 332 433L323 506V552Q323 735 510 938Q825 1324 914 1489L917 1492Z" transform="translate(185.52 266) scale(0.0166016 -0.0166016)" fill="#111111" /></g><g transform=""><path d="M920 1492Q1014 1325 1230 1049Q1467 771 1473 714Q1512 629 1512 549V509Q1512 342 1350 246Q1297 224 1233 224Q1079 224 984 445H942V433Q942 150 1025 0H810V6Q895 157 895 442L892 445H854L807 357Q722 224 595 224Q408 224 332 433L323 506V552Q323 735 510 938Q825 1324 914 1489L917 1492Z" transform="translate(69.7969 196) scale(0.0546875 -0.0546875)" fill="#111111" /></g></svg>

@@ -1,0 +1,26 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://presentation/components/activity_card.gd" id="1"]
+[node name="ActivityCard" type="PanelContainer"]
+script = ExtResource("1")
+size_flags_horizontal = 3
+[node name="Row" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 12
+[node name="Icon" type="TextureRect" parent="Row"]
+layout_mode = 2
+custom_minimum_size = Vector2(26, 26)
+size_flags_vertical = 0
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+[node name="Text" type="VBoxContainer" parent="Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+[node name="Category" type="Label" parent="Row/Text"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+[node name="Body" type="Label" parent="Row/Text"]
+layout_mode = 2
+autowrap_mode = 2
+theme_override_font_sizes/font_size = 15

@@ -1,11 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="240" height="336" viewBox="0 0 240 336">
 
 
-<rect x="3" y="3" width="234" height="330" rx="18" fill="#F7F3E9" stroke="#D8D2C4" stroke-width="5"/>
-<text x="22" y="48" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#B91C1C">Q</text>
-<text x="24" y="82" font-family="Arial, sans-serif" font-size="34" fill="#B91C1C">♦</text>
-<text x="218" y="300" text-anchor="end" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#B91C1C" transform="rotate(180 218 300)">Q</text>
-<text x="216" y="266" text-anchor="end" font-family="Arial, sans-serif" font-size="34" fill="#B91C1C" transform="rotate(180 216 266)">♦</text>
-<text x="120.0" y="196.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="112" fill="#B91C1C">♦</text>
-
-</svg>
+<rect x="3" y="3" width="234" height="330" rx="18" fill="#F7F3E9" stroke="#D8D2C4" stroke-width="5" />
+<g transform=""><path d="M911 -27H881Q512 -27 307.0 177.0Q102 381 102 745Q102 1108 306.5 1314.0Q511 1520 870 1520Q1233 1520 1435.5 1316.0Q1638 1112 1638 745Q1638 493 1530.5 311.0Q1423 129 1221 37L1522 -299H1155ZM870 1241Q694 1241 597.0 1111.0Q500 981 500 745Q500 505 595.0 377.5Q690 250 870 250Q1047 250 1144.0 380.0Q1241 510 1241 745Q1241 981 1144.0 1111.0Q1047 1241 870 1241Z" transform="translate(22 48) scale(0.0166016 -0.0166016)" fill="#B91C1C" /></g><g transform=""><path d="M918 1492 1421 839Q1490 754 1490 741L918 0Q906 8 344 741Q344 755 455 893Z" transform="translate(24 82) scale(0.0166016 -0.0166016)" fill="#B91C1C" /></g><g transform="rotate(180 218 300)"><path d="M911 -27H881Q512 -27 307.0 177.0Q102 381 102 745Q102 1108 306.5 1314.0Q511 1520 870 1520Q1233 1520 1435.5 1316.0Q1638 1112 1638 745Q1638 493 1530.5 311.0Q1423 129 1221 37L1522 -299H1155ZM870 1241Q694 1241 597.0 1111.0Q500 981 500 745Q500 505 595.0 377.5Q690 250 870 250Q1047 250 1144.0 380.0Q1241 510 1241 745Q1241 981 1144.0 1111.0Q1047 1241 870 1241Z" transform="translate(189.097 300) scale(0.0166016 -0.0166016)" fill="#B91C1C" /></g><g transform="rotate(180 216 266)"><path d="M918 1492 1421 839Q1490 754 1490 741L918 0Q906 8 344 741Q344 755 455 893Z" transform="translate(185.52 266) scale(0.0166016 -0.0166016)" fill="#B91C1C" /></g><g transform=""><path d="M918 1492 1421 839Q1490 754 1490 741L918 0Q906 8 344 741Q344 755 455 893Z" transform="translate(69.7969 196) scale(0.0546875 -0.0546875)" fill="#B91C1C" /></g></svg>

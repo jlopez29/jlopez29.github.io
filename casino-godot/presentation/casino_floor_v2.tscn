@@ -1,8 +1,19 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=10 format=3]
 [ext_resource type="Script" path="res://presentation/casino_floor_v2.gd" id="1"]
 [ext_resource type="Texture2D" path="res://assets/pit_boss/flooring/burgundy_carpet.png" id="2"]
-[ext_resource type="Texture2D" path="res://assets/pit_boss/flooring/marble_dark.png" id="3"]
+[ext_resource type="Texture2D" path="res://assets/pit_boss/flooring/marble_light.png" id="3"]
 [ext_resource type="Texture2D" path="res://assets/pit_boss/casino/amenities/bar.png" id="4"]
+[ext_resource type="Texture2D" path="res://assets/pit_boss/flooring/wood_floor.png" id="5"]
+[ext_resource type="Texture2D" path="res://assets/pit_boss/casino/amenities/lounge_cluster.png" id="6"]
+[ext_resource type="Texture2D" path="res://assets/pit_boss/flooring/dark_tile.png" id="7"]
+[sub_resource type="AtlasTexture" id="LoungeArt"]
+atlas = ExtResource("6")
+region = Rect2(3, 3, 277, 310)
+filter_clip = true
+[sub_resource type="AtlasTexture" id="PlantArt"]
+atlas = ExtResource("6")
+region = Rect2(198, 0, 72, 80)
+filter_clip = true
 [node name="CasinoFloorV2" type="Control"]
 clip_contents = true
 script = ExtResource("1")
@@ -13,17 +24,53 @@ texture_repeat = 2
 texture = ExtResource("2")
 expand_mode = 1
 stretch_mode = 1
+modulate = Color(0.40, 0.35, 0.35, 1)
 [node name="Lobby" type="TextureRect" parent="World"]
 mouse_filter = 2
 texture_repeat = 2
 texture = ExtResource("3")
 expand_mode = 1
 stretch_mode = 1
+modulate = Color(0.34, 0.32, 0.28, 1)
+[node name="Walkway" type="TextureRect" parent="World"]
+mouse_filter = 2
+texture_repeat = 2
+texture = ExtResource("5")
+expand_mode = 1
+stretch_mode = 1
+modulate = Color(0.5, 0.5, 0.45, 1)
+[node name="RoomTrim" type="Line2D" parent="World"]
+width = 2.0
+default_color = Color(0.65, 0.48, 0.22, 0.38)
+[node name="LobbyTrim" type="Line2D" parent="World"]
+width = 1.5
+default_color = Color(0.8, 0.61, 0.30, 0.50)
+[node name="LoungeFloor" type="TextureRect" parent="World"]
+mouse_filter = 2
+texture = ExtResource("7")
+texture_repeat = 2
+expand_mode = 1
+stretch_mode = 1
+scale = Vector2(0.25, 0.25)
+modulate = Color(0.50, 0.46, 0.40, 1)
+[node name="LoungeShadow" type="Sprite2D" parent="World"]
+texture = SubResource("LoungeArt")
+scale = Vector2(0.28, 0.28)
+modulate = Color(0, 0, 0, 0.5)
+[node name="Lounge" type="Sprite2D" parent="World"]
+texture = SubResource("LoungeArt")
+scale = Vector2(0.28, 0.28)
+[node name="PlantLeft" type="Sprite2D" parent="World"]
+texture = SubResource("PlantArt")
+scale = Vector2(0.40, 0.40)
+[node name="PlantRight" type="Sprite2D" parent="World"]
+texture = SubResource("PlantArt")
+scale = Vector2(0.40, 0.40)
 [node name="Cage" type="Label" parent="World"]
 offset_left = 65.0
 offset_top = 20.0
 mouse_filter = 2
-text = "THE CAGE"
+text = "CASHIER"
 theme_override_font_sizes/font_size = 12
 [node name="Entrance" type="Label" parent="World"]
 offset_left = 225.0
@@ -36,6 +83,10 @@ mouse_filter = 2
 texture = ExtResource("4")
 expand_mode = 1
 stretch_mode = 5
+[node name="BarLabel" type="Label" parent="World"]
+mouse_filter = 2
+theme_override_font_sizes/font_size = 9
+theme_override_colors/font_color = Color(0.85, 0.75, 0.52, 1)
 [node name="Assets" type="Node2D" parent="World"]
 [node name="Staff" type="Node2D" parent="World"]
 [node name="Guests" type="Node2D" parent="World"]

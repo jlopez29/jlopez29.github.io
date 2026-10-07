@@ -315,3 +315,60 @@ To roll back presentation, use the old floor script/layout helper and restore
 controller construction from the prior revision. No simulation or play-mode
 source was modified by 0.4.6.5a. Desktop acceptance is the milestone; final mobile
 layout and further art work are deferred.
+
+## 0.4.6.5b desktop art and management pass
+
+The established presentation scenes remain authoritative for the shell. A
+shell-scoped desktop theme uses near-black surfaces, supplied luxury panel art,
+warm borders and quiet shadows; direct play keeps its existing theme/controller.
+Desktop navigation collapses to icons with selected captions. The compact HUD
+shows separate cash/wallet, visitors versus ready gaming seats, reputation and
+available staff coverage. Security telemetry is omitted because there is no
+security subsystem. Direct-play redesign remains deferred.
+
+`presentation/art_catalog.gd` caches furniture AtlasTextures with extraction-edge
+insets. Sprites and shadows retain simulation footprints and rotations; artwork
+may extend slightly past occupancy. Names and guest/staff dots stay readable in
+screen pixels. Marker appearance and static asset state update only on signature
+changes; textures and nodes are retained. Carpet, marble and wood use a handful
+of tiled nodes. Emerald rugs identify actual premium slot profiles, not a new
+zone system. Only existing dealer/service roles are rendered. Lounge/baccarat art
+is omitted because there are no corresponding gameplay systems.
+
+The contextual inspector summarizes real status, condition, players, minimum,
+guest gaming win and dealer coverage and routes existing Move/Configure/limits/
+Staff actions. Camera framing keeps selected art above the bottom sheet without
+changing world coordinates. Content transitions defer one layout pass after
+container measurement. The desktop build catalog is a narrow, temporary drawer
+with actual available/locked purchases and supplied thumbnails. Placement uses
+asset ghosts, real validity/cost, rotate, click or staged-target confirmation,
+and cancel. Activity cards classify the existing filtered House Activity feed;
+no economic or event logic is added. First-frame draw refreshes the read-only
+presentation index before rendering queued financial feedback.
+
+Asset interaction anchors live in `presentation/art_catalog.gd`, normalized to
+the cropped artwork. Asset views scale them with the furniture and rotate both
+seat and outward approach anchors into local node coordinates. The asset-backed
+floor uses `guest.seat` only for `Playing` markers; walking and all other states
+retain raw simulation positions. Approach anchors are presentation metadata,
+not AI destinations. Marker hit targets follow their visual positions.
+
+The desktop art pass keeps object captions contextual (selection or repair),
+uses retained oval table rugs and VIP slot mats, and adds a decorative lobby
+lounge and plants. Decor stays in the entrance band, outside gaming placement;
+it adds no collision, navigation, service, or economy state. Tiled materials,
+static trim/light accents, and fixed-pixel marker contrast require no per-object
+animation or new per-tick texture creation. Developer tools remain in Menu/F10.
+
+### 0.4.6.5c mobile management
+
+`presentation/mobile_management.gd` owns compact HUD layout, the retained
+horizontal Slots/Tables purchase palette, mobile navigation overflow, and safe
+control margins. It shares metric cards, inspectors, alerts and controller
+callbacks with desktop. Narrow phones move Guests and Finance into More;
+landscape uses a shallow palette and a compact contextual sheet on the right.
+Management details remain temporary scrollable pages. Placement hides these
+panes and replaces navigation with Rotate, Place/Move and Cancel. Mobile camera
+framing reserves the unobscured floor rectangle; touch drags and pinches share
+that camera and never mutate simulation geometry. Native touch handling ignores
+emulated mouse events and retains gesture capture across overlay boundaries.

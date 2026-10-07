@@ -16,6 +16,10 @@ var pointer := Vector2.ZERO
 var hover := ""
 var font: Font
 var portrait := false
+var vertical_layout := true
+var wallet := 0.0
+var winning_number := -1
+var hide_tray := false
 var factor := 1.0
 
 func _ready() -> void:
@@ -29,9 +33,10 @@ func mapped(r: Rect2) -> Rect2:
 	return Rect2(r.position * factor + Vector2(12,12), r.size * factor)
 
 func rebuild() -> void:
-	portrait = size.x < 700
-	factor = maxf(0.2, (size.x - 24) / (260.0 if portrait else 700.0))
-	custom_minimum_size.y = (700 if portrait else 260) * factor + 110
+	portrait = vertical_layout
+	factor = maxf(0.88, (size.x - 24) / (260.0 if portrait else 700.0))
+	custom_minimum_size.x = 284 if portrait else 640
+	custom_minimum_size.y = (700 if portrait else 260) * factor + (24 if hide_tray else 110)
 	cells.clear(); spots.clear(); tray.clear()
 	cells["0"] = mapped(Rect2(0,0,50,156))
 	for n in range(1,37):
@@ -59,7 +64,8 @@ func rebuild() -> void:
 			at = mapped(Rect2(50, logical_y, 0, 0)).position
 		spots[name] = at
 	var y := custom_minimum_size.y - 48
-	for i in range(4): tray[[5,10,25,100][i]] = Vector2(size.x * (i+0.5)/4, y)
+	if not hide_tray:
+		for i in range(4): tray[[5,10,25,100][i]] = Vector2(size.x * (i+0.5)/4, y)
 	queue_redraw()
 
 func target(at: Vector2) -> String:
@@ -81,7 +87,7 @@ func _gui_input(event: InputEvent) -> void:
 		if event.pressed:
 			if locked: return
 			for amount in tray:
-				if pointer.distance_to(tray[amount]) <= 25 and amount >= minimum:
+				if pointer.distance_to(tray[amount]) <= 25 and amount >= minimum and amount <= wallet:
 					selected = amount; dragging = true; denomination_changed.emit(selected); accept_event(); queue_redraw(); return
 		else:
 			var name := target(pointer)
@@ -110,9 +116,17 @@ func _draw() -> void:
 		if name.is_valid_int() and name != "0": color = Color("c62c37") if int(name) in Games.RED else Color("111c18")
 		if name == "Red": color = Color("c62c37")
 		if name == "Black": color = Color("111c18")
-		draw_rect(rect,color); draw_rect(rect,Color("ece8ce"),false,1.5)
-		var title: String = "2:1" if name.begins_with("Column") else name
-		caption(rect.get_center(),title,int(clampf(rect.size.x / maxf(2,title.length())*1.4,10,24)))
+		if name.is_valid_int():
+			# Asset cropping is presentation metadata; cells/spots above own bet geometry.
+			var n := int(name)
+			var source := Rect2(201, 230, 120, 356) if n == 0 else Rect2(320 + int((n - 1) / 3) * 120, 230 + (2 - (n - 1) % 3) * 118, 120, 118)
+			draw_texture_rect_region(PitBoss.texture("casino_play/roulette/roulette_betting_layout.png"), rect, source)
+		else:
+			draw_rect(rect, Color(0.06, 0.24, 0.16, 0.65))
+			draw_rect(rect, Color("c6a649"), false, 1.5)
+			var title: String = "2:1" if name.begins_with("Column") else name.replace("–", "-")
+			caption(rect.get_center(), title, int(clampf(rect.size.x / maxf(2, title.length()) * 1.4, 12, 24)))
+		if name == str(winning_number): draw_rect(rect.grow(-2), Color("ffe397"), false, 3)
 	# Small seam marks make streets and six-line bets discoverable.
 	for name in spots:
 		if name.begins_with("Street") or name.begins_with("Six line"): draw_circle(spots[name],2,Color("e8c778"))
@@ -124,6 +138,6 @@ func _draw() -> void:
 		elif spots.has(name): chip(spots[name],bets[name])
 	for amount in tray:
 		chip(tray[amount],amount,selected == amount)
-		if amount < minimum or locked: draw_circle(tray[amount],23,Color(0,0,0,0.55))
-	caption(Vector2(size.x/2,custom_minimum_size.y-83), hover if hover != "" else "Drag a chip or select one and tap the felt",12,Color("ffe397"))
+		if amount < minimum or amount > wallet or locked: draw_circle(tray[amount],23,Color(0,0,0,0.55))
+	if not hide_tray: caption(Vector2(size.x/2,custom_minimum_size.y-83), hover.replace("–", "-") if hover != "" else "Drag a chip or tap the felt",12,Color("ffe397"))
 	if dragging: chip(pointer,selected,true)
