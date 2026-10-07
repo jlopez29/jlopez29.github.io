@@ -1572,7 +1572,9 @@ func wants_drink(guest: Dictionary) -> bool:
 func deliver_drink(guest: Dictionary, employee: Dictionary) -> void:
 	if employee.is_empty():
 		if guest.state != "At bar" or not DrinkService.valid_slot(self, guest): return
-	elif employee.duty != "Active" or int(employee.service_target) != int(guest.id) or str(employee.service_product) != str(guest.drink_order): return
+	elif employee.get("duty", "") != "Active" or int(employee.get("service_target", -1)) != int(guest.id) or str(employee.get("service_product", "")) != str(guest.drink_order):
+		# An incomplete or stale assignment must neither crash nor deliver an unassigned order.
+		return
 	# Recheck eligibility/funds at delivery. Retain the quoted paid price.
 	if not wants_drink(guest): return
 	var id: String = str(guest.drink_order)
@@ -2780,11 +2782,16 @@ func owner_play_transaction(action: Callable) -> bool:
 	# A failed checkpoint rolls back this rare gameplay transaction atomically.
 	if owner_checkpoint.is_valid() and not owner_checkpoint.call(): return false
 	var before: Dictionary = snapshot() if owner_checkpoint.is_valid() else {}
+	var recovery_anchor_utc := recovery.anchor_utc
+	var recovery_anchor_ticks := recovery.anchor_ticks
 	var already_done: bool = owner_play.get("status") == "done"
 	var promotion_before := sponsored_income
 	if not action.call(): return false
 	if owner_checkpoint.is_valid() and not owner_checkpoint.call():
 		restore(before)
+		# Transaction rollback is not an offline return; retain the monotonic session clock.
+		recovery.anchor_utc = recovery_anchor_utc
+		recovery.anchor_ticks = recovery_anchor_ticks
 		log_event("Owner event action canceled because its save checkpoint failed.")
 		return false
 	if sponsored_income > promotion_before:
@@ -2816,6 +2823,8 @@ func private_transaction(action: Callable) -> bool:
 	var account_before := owner_account.snapshot()
 	var room_before := back_room.snapshot()
 	var recovery_before := recovery.snapshot()
+	var recovery_anchor_utc := recovery.anchor_utc
+	var recovery_anchor_ticks := recovery.anchor_ticks
 	var cash_before := cash
 	var profit_before := owner_account.profit_transferred
 	var accepted: bool = action.call()
@@ -2823,6 +2832,9 @@ func private_transaction(action: Callable) -> bool:
 		owner_account.restore(account_before)
 		back_room.restore(room_before, owner_account)
 		recovery.restore(recovery_before)
+		# A rejected action must not re-anchor against a changed device wall clock.
+		recovery.anchor_utc = recovery_anchor_utc
+		recovery.anchor_ticks = recovery_anchor_ticks
 		cash = cash_before
 		return false
 	var profit := owner_account.profit_transferred - profit_before
