@@ -1,6 +1,30 @@
 class_name CasinoTuning
 extends RefCounted
 
+# Character presentation only; sizes refer to the visible dot diameter in pixels.
+const GUEST_BASE_SCREEN_SIZE := 24.0
+const GUEST_MIN_SCREEN_SIZE := 18.0
+const GUEST_MAX_SCREEN_SIZE := 30.0
+const STAFF_BASE_SCREEN_SIZE := 26.0
+const PLAYER_BASE_SCREEN_SIZE := 28.0
+const CHARACTER_ZOOM_INFLUENCE := 0.25
+const CHARACTER_HIGH_ROLLER_WAGER := 100.0
+const CHARACTER_MOOD_THRESHOLDS := [35.0, 50.0, 70.0, 85.0]
+const REACTION_WIN_SECONDS := 0.6
+const REACTION_LOSS_SECONDS := 0.4
+const REACTION_BIG_SECONDS := 0.85
+const REACTION_JACKPOT_SECONDS := 1.25
+const REACTION_SERVICE_SECONDS := 0.7
+const REACTION_COOLDOWN_SECONDS := 0.3
+const REACTION_NEED_COOLDOWN_SECONDS := 12.0
+const CHARACTER_IDLE_INTERVAL_SECONDS := 10.0
+const CHARACTER_TEXTURE_DIAMETER := 76.0 / 128.0
+
+static func character_scale(zoom: float, base_size: float = GUEST_BASE_SCREEN_SIZE) -> float:
+	var safe_zoom := maxf(0.01, zoom)
+	var screen_size := clampf(base_size * pow(safe_zoom, CHARACTER_ZOOM_INFLUENCE), GUEST_MIN_SCREEN_SIZE * base_size / GUEST_BASE_SCREEN_SIZE, GUEST_MAX_SCREEN_SIZE * base_size / GUEST_BASE_SCREEN_SIZE)
+	return screen_size / (base_size * safe_zoom)
+
 const STARTING_CASH := 2500.0 # Normal is the primary balance target.
 const DIFFICULTIES := {
 	"normal": {"name": "Normal", "cash": STARTING_CASH, "restricted": true, "floor_chunks": {"left": 0, "right": 0, "bottom": 0}},

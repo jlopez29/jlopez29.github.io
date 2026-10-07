@@ -4,6 +4,7 @@ extends "res://scripts/floor.gd"
 const AssetScene = preload("res://presentation/components/casino_asset_view.tscn")
 const GuestScene = preload("res://presentation/components/guest_marker.tscn")
 const Catalog = preload("res://presentation/art_catalog.gd")
+const GuestMarker = preload("res://presentation/components/guest_marker.gd")
 const StaffScene = preload("res://presentation/components/staff_marker.tscn")
 var management_top := 72.0
 var mobile_viewport := Rect2()
@@ -25,8 +26,7 @@ func _ready() -> void:
 	$World/Bar.texture = Catalog.amenity_texture("bar")
 	$World/Cage.texture = Catalog.amenity_texture("cashier_cage")
 	world.show_behind_parent = true # Existing feedback draws above world nodes.
-	$World/Player.texture = PitBoss.texture("guests/base/guest_gold.svg")
-	$World/Player.scale = Vector2.ONE * 28 / $World/Player.texture.get_width()
+	$World/Player.update_view({"role": "Owner"}, sim.player if sim != null else Vector2.ZERO, zoom)
 
 func configure_view(compact: bool, landscape: bool) -> void:
 	if not view_configured:
@@ -262,7 +262,7 @@ func sync_world() -> void:
 			staff_views[id] = marker
 		staff_views[id].update_view(employees[id], staff_positions[id], zoom)
 	$World/Player.visible = visitor_mode
-	$World/Player.position = sim.player
+	$World/Player.update_view({"role": "Owner"}, sim.player, zoom)
 
 func guest_visual_position(guest: Dictionary) -> Vector2:
 	var raw := Vector2(float(guest.x), float(guest.y))
@@ -277,12 +277,14 @@ func select_at(screen: Vector2) -> void:
 	# selectable, while leaving all movement/placement input in the shared floor.
 	if not building:
 		var at := world_at(screen)
-		var distance := maxf(14, 22 / zoom) if compact_labels else 14.0 / zoom
+		var distance := INF
 		var nearest := -1
 		for id in guest_views:
 			var marker = guest_views[id]
-			var candidate := at.distance_to(marker.position)
-			if candidate < distance:
+			var candidate := at.distance_to(marker.position + marker.visual.position * marker.scale.x)
+			var hit_radius: float = (CasinoTuning.GUEST_BASE_SCREEN_SIZE / 2 + 3) * marker.scale.x
+			if compact_labels: hit_radius = maxf(hit_radius, 22 / zoom)
+			if candidate < hit_radius and candidate < distance:
 				distance = candidate
 				nearest = int(id)
 		if nearest >= 0:
@@ -323,3 +325,35 @@ func placement_is_valid() -> bool:
 	if moving_id > 0 and sim.busy(sim.get_table(moving_id)): return false
 	var target := placement_target if placement_target.is_finite() else preview
 	return sim.can_place(target, rotated, moving_id, build_kind) and (moving_id >= 0 or (sim.unlocked(build_kind) and (build_kind != "slots" or sim.slot_unlocked(build_slot_profile)) and sim.cash >= sim.purchase_cost(build_kind, build_slot_profile)))
+
+func _on_financial_event(event: Dictionary) -> void:
+	super._on_financial_event(event)
+	if presentation_speed <= 0 or presentation_speed > 4 or not is_visible_in_tree(): return
+	if str(event.get("category", "")) == "gaming" and int(event.get("guest_id", -1)) < 0:
+		# An aggregate house net cannot describe each craps player's own result.
+		for participant in event.get("participants", []):
+			var result: Dictionary = event.duplicate(false)
+			result.merge(participant, true)
+			react_guest_event(result)
+	else:
+		react_guest_event(event)
+
+func react_guest_event(event: Dictionary) -> void:
+	var marker = guest_views.get(int(event.get("guest_id", -1)))
+	if marker != null: marker.react(GuestMarker.financial_reaction(event))
+
+func _on_guest_thought(event: Dictionary) -> void:
+	super._on_guest_thought(event)
+	if presentation_speed <= 0 or presentation_speed > 4 or not is_visible_in_tree(): return
+	var marker = guest_views.get(int(event.get("guest_id", -1)))
+	if marker == null: return
+	# Reuse real, rate-limited qualitative events, leaving their useful text intact.
+	var message := str(event.get("text", "")).to_lower()
+	if "better drink service" in message or "service is too slow" in message or "nothing on the menu" in message:
+		marker.react(GuestMarker.Reaction.SERVICE_FAIL)
+	elif "drink" in message and ("could use" in message or "would be nice" in message):
+		marker.react(GuestMarker.Reaction.THIRSTY)
+	elif "wait" in message:
+		marker.react(GuestMarker.Reaction.WAITING)
+	elif "repair" in message or "no affordable" in message or "too high" in message or "more than i want to spend" in message or "off the menu" in message:
+		marker.react(GuestMarker.Reaction.FRUSTRATED)
