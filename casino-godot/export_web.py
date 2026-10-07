@@ -37,6 +37,13 @@ def main():
     )
     (project / "scripts" / "build_info.gd").write_text(metadata, encoding="utf-8")
     run_godot([args.godot, "--headless", "--path", str(project), "--editor", "--import", "--quit"])
+    # Browser viewport synchronization is shared by wrapper and exported shell.
+    destinations = ([project.parent / "casino-debug"] if args.debug else
+                    [project.parent / "casino", project.parent / "casino-debug"] if args.both else
+                    [project.parent / "casino"])
+    for destination in destinations:
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "visible_viewport.js").write_text((project / "web" / "visible_viewport.js").read_text(encoding="utf-8"), encoding="utf-8")
     if args.debug or args.both:
         output = project.parent / "casino-debug" / "game.html"
         output.parent.mkdir(parents=True, exist_ok=True)

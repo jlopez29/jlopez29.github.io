@@ -265,7 +265,7 @@ func _draw() -> void:
 	if building:
 		var valid: bool = sim.can_place(preview, rotated, moving_id, build_kind) and (moving_id >= 0 or (sim.unlocked(build_kind) and (build_kind != "slots" or sim.slot_unlocked(build_slot_profile)) and sim.cash >= sim.purchase_cost(build_kind, build_slot_profile)))
 		var rect := Rect2(preview, sim.furniture_size(build_kind, rotated))
-		draw_rect(rect.grow(CasinoTuning.ASSET_AISLE_CLEARANCE), Color(0.3, 0.8, 0.6, 0.07) if valid else Color(1, 0.3, 0.3, 0.08))
+		draw_rect(sim.placement_report(preview, rotated, moving_id, build_kind).candidate.circulation, Color(0.3, 0.8, 0.6, 0.07) if valid else Color(1, 0.3, 0.3, 0.08))
 		draw_rect(rect, Color(0.3, 0.85, 0.6, 0.3) if valid else Color(1, 0.3, 0.3, 0.3))
 		draw_rect(rect, TEAL if valid else Color("f08484"), false, 2)
 		text_at(preview + Vector2(8, 26), "$%d | %s" % [sim.purchase_cost(build_kind, build_slot_profile), CasinoTuning.SLOT_PROFILES[build_slot_profile].short_name if build_kind == "slots" else CasinoGames.NAMES[build_kind]], INK, 13)
@@ -306,9 +306,55 @@ func _draw() -> void:
 		if move_target.is_finite():
 			draw_arc(move_target, 8, 0, TAU, 20, GOLD, 1)
 	draw_set_transform(Vector2.ZERO)
+	if building:
+		var report := sim.placement_report(preview, rotated, moving_id, build_kind)
+		draw_placement_debug(report, bool(report.valid))
 	if compact_labels: draw_asset_badges()
 	draw_financial_feedback()
 	draw_thoughts()
+
+func placement_debug_origin() -> Vector2:
+	return Vector2(10, 86)
+
+func draw_placement_debug(report: Dictionary, can_purchase: bool) -> void:
+	if not OS.is_debug_build() or report.get("candidate", {}).is_empty(): return
+	var asset: Dictionary = report.candidate
+	var blue := Color("68cfff")
+	var purple := Color("d8a0ff")
+	var gold := Color("ffd478")
+	var result := Color("79c99a") if report.valid else Color("ff655f")
+	var pixel := 1.0 / maxf(zoom, 0.1)
+	draw_set_transform(camera, 0, Vector2.ONE * zoom)
+	draw_rect(report.walk, Color(0.75, 0.85, 0.9, 0.5), false, pixel)
+	for neighbor in sim.placement_geometry():
+		if int(neighbor.id) == moving_id: continue
+		draw_rect(neighbor.furniture, Color(blue, 0.35), false, pixel)
+		draw_rect(neighbor.circulation, Color(gold, 0.25), false, pixel)
+	draw_rect(asset.circulation, Color(gold, 0.09))
+	draw_rect(asset.circulation, gold, false, pixel)
+	draw_rect(asset.furniture, blue, false, 2 * pixel)
+	draw_rect(asset.art, purple, false, 1.5 * pixel)
+	draw_rect(asset.collision, result, false, 3 * pixel)
+	for groups in [["seats", "approaches", blue], ["dealers", "dealer_approaches", purple]]:
+		var seats: PackedVector2Array = asset[groups[0]]
+		var approaches: PackedVector2Array = asset[groups[1]]
+		for i in range(seats.size()):
+			draw_line(seats[i], approaches[i], Color(groups[2], 0.8), pixel)
+			draw_circle(seats[i], 3.5 * pixel, groups[2])
+			draw_rect(Rect2(approaches[i] - Vector2.ONE * 3 * pixel, Vector2.ONE * 6 * pixel), groups[2], false, 1.5 * pixel)
+	for failure in report.errors:
+		var point: Vector2 = failure.position
+		draw_line(point - Vector2(5, 5) * pixel, point + Vector2(5, 5) * pixel, Color("ff655f"), 2 * pixel)
+		draw_line(point - Vector2(5, -5) * pixel, point + Vector2(5, -5) * pixel, Color("ff655f"), 2 * pixel)
+	draw_set_transform(Vector2.ZERO)
+	var origin := placement_debug_origin()
+	var width := minf(420, size.x - origin.x - 10)
+	draw_rect(Rect2(origin, Vector2(width, 104)), Color(0.03, 0.07, 0.10, 0.94))
+	var reason := "VALID: all interaction paths reachable" if report.valid else "INVALID: " + str(report.errors[0].message)
+	if report.valid and not can_purchase: reason = "Geometry valid | check access, cash or busy asset"
+	var lines := ["DEV Placement | final bounds: green / red", "Blue: furniture/players | Purple: art/dealers", "Gold: circulation | dots: seats | boxes: approaches", "Red X: failed check | gray: walkable floor", reason]
+	for i in range(lines.size()):
+		draw_string(font, origin + Vector2(6, 18 + i * 19), lines[i], HORIZONTAL_ALIGNMENT_LEFT, width - 12, 12, result if i == 4 else INK)
 
 func draw_asset_badges() -> void:
 	# Compact, fixed-pixel identity/state inside each asset's screen footprint.
@@ -349,10 +395,10 @@ func draw_authored_asset(table: Dictionary) -> void:
 	draw_set_transform(camera, 0, Vector2.ONE * zoom)
 	if selected == int(table.id): draw_rect(rect.grow(3), GOLD, false, 2)
 	elif presentation.hot.get(int(table.id), false): draw_rect(rect.grow(3), Color("8b5cf6"), false, 2)
-	if table.broken: text_at(rect.position + Vector2(0, -4), "REPAIR", Color("ef4444"), 10)
-	if not compact_labels:
-		text_at(rect.position + Vector2(0, -13), "%s %02d" % [sim.slot_profile(table).short_name if kind == "slots" else CasinoGames.NAMES[kind], table.id], GOLD, 11)
-		text_at(rect.end + Vector2(-rect.size.x, 14), "Repair" if table.broken else "Open" if presentation.operating.get(int(table.id), false) else "Closed", TEAL, 10)
+	if table.broken:
+		var strength := (sin(pulse * 3.5) + 1) / 2
+		var radius := rect.size.length() / 2 + 5 + strength * 3
+		draw_arc(rect.get_center(), radius, 0, TAU, 64, Color(1, 0.27, 0.27, 0.4 + strength * 0.5), 2.5 / maxf(zoom, 0.1), true)
 
 func walk_to(at: Vector2) -> void:
 	if blocked(at): return

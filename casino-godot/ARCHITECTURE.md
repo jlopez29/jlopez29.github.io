@@ -21,8 +21,12 @@ are never hand-edited. Developer tools/actions and extreme speeds require
   neither consumes reserve advice to alter outcomes.
 - `main.gd`: responsive controller/HUD, inspectors, Finance, saves, state controls.
 - `floor.gd`: rendering, camera/input, placement and financial/thought feedback.
-- `floor_property.gd`: rectangular chunk geometry, placement/walk/navigation bounds,
+- `floor_property.gd`: rectangular chunk geometry, coarse placement/walk/navigation bounds,
   directional quotes, area upkeep and current-schema property validation.
+- `asset_placement.gd`: separate furniture/art/interaction/circulation geometry,
+  directional placement collisions and shared navigation/reachability validation.
+  Authored seat/dealer coordinates belong to `presentation/art_catalog.gd`; see
+  `PLACEMENT.md` for edge-clearance behavior and debug visualization.
 - `game_view.gd`, `game_art.gd`, `craps_layout.gd`: individual game presentation.
 - `finance_layout.gd`: content-measured horizontal/vertical reflow with atomic money.
 - `optional_objectives.gd`: bounded opt-in goal lifecycle, recent capability samples,

@@ -12,7 +12,9 @@ static func count(chunks: Dictionary) -> int:
 
 static func placement(kind: String, chunks: Dictionary) -> Rect2:
 	var room := rectangle(chunks)
-	var inset: Vector4 = CasinoTuning.FLOOR_SLOT_INSETS if kind == "slots" else CasinoTuning.FLOOR_TABLE_INSETS
+	# Table limits come from actual rotated interaction geometry, not global insets.
+	if kind != "slots": return walking(chunks)
+	var inset: Vector4 = CasinoTuning.FLOOR_SLOT_INSETS
 	return Rect2(room.position + Vector2(inset.x, inset.y), room.size - Vector2(inset.x + inset.z, inset.y + inset.w))
 
 static func walking(chunks: Dictionary) -> Rect2:

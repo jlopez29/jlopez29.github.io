@@ -176,7 +176,7 @@ func resolve(sim, id: int, outcome: String, result: Dictionary = {}) -> bool:
 	var effects: Dictionary = definition["expired" if outcome == "dismissed" else outcome]
 	# Opportunity rejection never mutates the economy, reputation or momentum.
 	if definition.category != "OPPORTUNITY" or outcome == "success":
-		sim.reputation = clampf(sim.reputation + float(effects.get("reputation", 0)), 0, 100)
+		sim.change_reputation(float(effects.get("reputation", 0)), "optional_event.%s.%s" % [event.type, outcome])
 		if effects.has("bankroll_reward"):
 			sim.reward_owner_bankroll(sim.owner_account.next_operation, float(effects.bankroll_reward), str(event.type))
 	# Navigation is not a successful management outcome. Only settled owner wins

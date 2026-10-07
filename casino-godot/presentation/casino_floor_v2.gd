@@ -245,11 +245,10 @@ func sync_world() -> void:
 	var staff_positions := {}
 	var employees := {}
 	for table_id in presentation.crew:
-		var bounds := sim.bounds(presentation.tables.get(table_id, {})) if presentation.tables.has(table_id) else Rect2()
 		var crew: Array = presentation.crew[table_id]
 		for i in range(crew.size()):
 			employees[int(crew[i].id)] = crew[i]
-			staff_positions[int(crew[i].id)] = bounds.position + Vector2(bounds.size.x + 15, 28 + i * 27)
+			staff_positions[int(crew[i].id)] = sim.dealer_position(presentation.tables[table_id], i)
 	for employee in sim.staff:
 		if employee.role == "Service" and employee.duty == "Active":
 			employees[int(employee.id)] = employee
@@ -306,7 +305,8 @@ func _draw() -> void:
 		var valid := placement_is_valid()
 		var rect := Rect2(preview, sim.furniture_size(build_kind, rotated))
 		var color := Color("79c99a") if valid else Color("f08484")
-		draw_rect(rect.grow(CasinoTuning.ASSET_AISLE_CLEARANCE), Color(color, 0.08))
+		var report := sim.placement_report(preview, rotated, moving_id, build_kind)
+		if not report.candidate.is_empty(): draw_rect(report.candidate.circulation, Color(color, 0.08))
 		var image := Catalog.texture_for(build_kind, moving_id if moving_id > 0 else sim.next_id)
 		var extent := Vector2(rect.size.y, rect.size.x) if rotated else rect.size
 		var ratio := Catalog.visual_scale(image, extent)
@@ -315,10 +315,14 @@ func _draw() -> void:
 		draw_set_transform(camera, 0, Vector2.ONE * zoom)
 		draw_rect(rect, Color(color, 0.14))
 		draw_rect(rect, color, false, 2)
+		draw_placement_debug(report, valid)
 
 		draw_set_transform(Vector2.ZERO)
 	draw_financial_feedback()
 	draw_thoughts()
+
+func placement_debug_origin() -> Vector2:
+	return mobile_viewport.position + Vector2(10, 8) if compact_labels and mobile_viewport.size.y > 0 else Vector2(10, management_top + 8)
 
 func placement_is_valid() -> bool:
 	if moving_id > 0 and sim.busy(sim.get_table(moving_id)): return false
@@ -348,10 +352,12 @@ func _on_guest_thought(event: Dictionary) -> void:
 	if marker == null: return
 	# Reuse real, rate-limited qualitative events, leaving their useful text intact.
 	var message := str(event.get("text", "")).to_lower()
-	if "better drink service" in message or "service is too slow" in message or "nothing on the menu" in message:
+	if "where's my drink" in message or "my drink never arrived" in message or "better drink service" in message or "service is too slow" in message or "nothing on the menu" in message:
 		marker.react(GuestMarker.Reaction.SERVICE_FAIL)
 	elif "drink" in message and ("could use" in message or "would be nice" in message):
 		marker.react(GuestMarker.Reaction.THIRSTY)
+	elif "repair" in message or "broken" in message:
+		marker.react(GuestMarker.Reaction.FRUSTRATED)
 	elif "wait" in message:
 		marker.react(GuestMarker.Reaction.WAITING)
 	elif "repair" in message or "no affordable" in message or "too high" in message or "more than i want to spend" in message or "off the menu" in message:

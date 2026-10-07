@@ -35,6 +35,9 @@ static func rest(sim, employee: Dictionary, state: String) -> void:
 	employee.rest_due = ""
 	if state == "Off Duty": employee.available_at = sim.elapsed + CasinoTuning.STAFF_OFF_DUTY_MINUTES
 	if employee.role == "Service":
+		for guest in sim.guests:
+			if int(guest.id) == int(employee.get("service_target", -1)) and guest.drink_state == "SERVICE_ASSIGNED":
+				sim.DrinkService.transition(sim, guest, "WAITING_FOR_SERVICE")
 		employee.service_target = -1
 		employee.service_product = ""
 		employee.erase("service_state")

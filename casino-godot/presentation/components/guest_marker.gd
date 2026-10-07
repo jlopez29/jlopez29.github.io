@@ -74,6 +74,7 @@ func update_guest(guest: Dictionary, selected_id: int, has_thought: bool, compac
 	var next_mood := 0
 	for threshold in CasinoTuning.CHARACTER_MOOD_THRESHOLDS:
 		if satisfaction >= threshold: next_mood += 1
+	if bool(guest.get("repair_frustrated", false)): next_mood = 0
 	var next := [int(guest.id), guest.vip, int(guest.id) == selected_id, next_mood, guest.state, float(guest.get("wager_limit", 0)), has_thought, compact]
 	var now := Time.get_ticks_msec()
 	if idle_next == 0: idle_next = now + 3000 + (int(guest.id) * 977) % 7000

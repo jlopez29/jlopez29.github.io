@@ -109,7 +109,7 @@ func update_state() -> void:
 		button.tooltip_text = "Purchase price: " + ui.money(price) if unlocked else "See Casino development in More for access requirements."
 	for button in ui.bottom_nav.get_children():
 		var target: String = button.get_meta("shell_page", "")
-		button.visible = target not in ["guests", "finance"] or get_viewport_rect().size.x >= 540
+		button.visible = target not in ["guests", "finance"] or ui.viewport_dimensions.x - ui.viewport_insets.x - ui.viewport_insets.z >= 540
 		button.button_pressed = target == ui.mobile_pane or (ui.mobile_pane == "table" and target == ui.page) or (target == "build" and ui.building)
 	if ui.mobile and not playing:
 		ui.floor_actions.visible = ui.building
@@ -122,12 +122,8 @@ func layout(ui: Control, dimensions: Vector2) -> void:
 	var w := dimensions.x
 	var h := dimensions.y
 	var landscape := w > h and h < 600
-	var edge := Vector4(8, 8, 8, 8) # left, top, right, bottom; browser wrapper supplies web safe areas.
-	if OS.has_feature("android") or OS.has_feature("ios"):
-		var safe := DisplayServer.get_display_safe_area()
-		var screen := Vector2(DisplayServer.screen_get_size())
-		var ratio := dimensions / screen
-		edge = Vector4(maxf(8, safe.position.x * ratio.x), maxf(8, safe.position.y * ratio.y), maxf(8, (screen.x - safe.end.x) * ratio.x), maxf(8, (screen.y - safe.end.y) * ratio.y))
+	var safe: Vector4 = ui.viewport_insets
+	var edge := Vector4(maxf(8, safe.x), maxf(8, safe.y), maxf(8, safe.z), maxf(8, safe.w))
 	var left := edge.x
 	var right := w - edge.z
 	var width := right - left
@@ -206,7 +202,8 @@ func layout(ui: Control, dimensions: Vector2) -> void:
 	var sheet_size := Vector2(width, nav_y - sheet_top - 8)
 	var sheet_x := left
 	if contextual:
-		var sheet_height := minf(h * 0.62, nav_y - top - 12) if ui.context_expanded else 144.0
+		var available_sheet_height := maxf(0, nav_y - top - 12)
+		var sheet_height := minf((h - edge.y - edge.w) * 0.62 if ui.context_expanded else 144.0, available_sheet_height)
 		if landscape:
 			sheet_size = Vector2(minf(340, width * 0.43), minf(sheet_height, nav_y - top - 12))
 			sheet_x = right - sheet_size.x

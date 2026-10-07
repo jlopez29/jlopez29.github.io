@@ -31,7 +31,7 @@ static func set_menu(sim, id: String, enabled: bool) -> void:
 		sim.drink_menu.erase(id)
 		for guest in sim.guests:
 			if guest.drink_order == id:
-				cancel_order(sim, guest)
+				sim.DrinkService.fail(sim, guest, "Ordered drink removed from menu")
 				sim.think(guest, "That drink is off the menu. I'll choose again.", 2)
 
 static func set_price(sim, id: String, price: float) -> void:
@@ -80,7 +80,7 @@ static func request(sim, guest: Dictionary) -> void:
 		if guest.wallet >= price: return
 		sim.drink_stats[str(guest.drink_order)].price_declines += 1
 		cancel_order(sim, guest)
-	if sim.elapsed < int(guest.drink_request_at): return
+	if guest.drink_state == "SERVICE_FAILED" or sim.elapsed < int(guest.drink_request_at): return
 	guest.drink_request_at = sim.elapsed + CasinoTuning.DRINK_ORDER_RETRY_MINUTES
 	var desired: String = choose(sim, guest, sim.drink_access)
 	if desired == "": return
@@ -109,9 +109,14 @@ static func request(sim, guest: Dictionary) -> void:
 	guest.drink_order = chosen
 	guest.drink_quote = float(sim.drink_prices[chosen])
 	sim.drink_stats[chosen].orders += 1
+	sim.DrinkService.begin(sim, guest)
+	sim.DrinkService.transition(sim, guest, "WAITING_FOR_SERVICE")
 	if desired == chosen: sim.think(guest, "I'd like %s." % str(CasinoTuning.DRINK_PROFILES[chosen].name).to_lower())
 
 static func cancel_order(sim, guest: Dictionary) -> void:
+	sim.DrinkService.release_assignment(sim, guest)
+	if guest.drink_state in ["SEEKING_SERVICE", "WAITING_FOR_SERVICE", "SERVICE_ASSIGNED"]:
+		sim.DrinkService.transition(sim, guest, "NEED")
 	if guest.drink_order != "": sim.drink_stats[str(guest.drink_order)].unserved += 1
 	guest.drink_order = ""
 	guest.drink_quote = 0.0

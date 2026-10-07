@@ -27,6 +27,14 @@ const SEAT_ANCHORS := {
 	# Seven red player chairs; the black dealer chair is deliberately excluded.
 	"holdem": [Vector2(0.195, 0.148), Vector2(0.803, 0.148), Vector2(0.956, 0.516), Vector2(0.763, 0.84), Vector2(0.505, 0.921), Vector2(0.211, 0.84), Vector2(0.049, 0.516), Vector2(0.37, 0.87)],
 }
+# Dealer positions match the chip rail / black dealer chair, separate from players.
+const DEALER_ANCHORS := {
+	"blackjack": [Vector2(0.50, 0.03)],
+	"roulette": [Vector2(0.20, 0.18)],
+	"craps": [Vector2(0.45, 0.05), Vector2(0.60, 0.05)],
+	"holdem": [Vector2(0.50, 0.07)],
+}
+
 # Art anchors describe the public/customer side, not additional gameplay locations.
 const AMENITY_WIDTHS := {"bar": 220.0, "cashier_cage": 170.0}
 const AMENITY_CUSTOMER_ANCHORS := {"bar": Vector2(0.53, 0.87), "cashier_cage": Vector2(0.5, 1.0)}
@@ -48,18 +56,35 @@ static func seat_position_for(kind: String, seat_index: int, bounds: Rect2, rota
 	var local: Vector2 = (anchors[seat_index] - Vector2(0.5, 0.5)) * visual_size_for(kind, bounds, rotated, id)
 	return bounds.get_center() + local.rotated(PI / 2 if rotated else 0.0)
 
-static func approach_position_for(kind: String, seat_index: int, bounds: Rect2, rotated: bool, id: int = 0) -> Vector2:
-	var seat := seat_position_for(kind, seat_index, bounds, rotated, id)
-	var direction := Vector2.DOWN.rotated(PI / 2 if rotated else 0.0) if kind == "slots" else (seat - bounds.get_center()).normalized()
-	# Navigation stops beyond the footprint and its rounded grid-cell clearance.
-	# Only the controlled final entry travels from this point to the authored chair.
-	var clearance := bounds.grow(9 + CasinoTuning.FLOOR_NAV_CELL / 2 + 1)
+static func art_bounds_for(kind: String, bounds: Rect2, rotated: bool, id: int = 0) -> Rect2:
+	var size := visual_size_for(kind, bounds, rotated, id)
+	if rotated: size = Vector2(size.y, size.x)
+	return Rect2(bounds.get_center() - size / 2, size)
+
+static func dealer_position_for(kind: String, index: int, bounds: Rect2, rotated: bool, id: int = 0) -> Vector2:
+	var anchors: Array = DEALER_ANCHORS.get(kind, [])
+	if index < 0 or index >= anchors.size(): return bounds.get_center()
+	var local: Vector2 = (anchors[index] - Vector2(0.5, 0.5)) * visual_size_for(kind, bounds, rotated, id)
+	return bounds.get_center() + local.rotated(PI / 2 if rotated else 0.0)
+
+static func interaction_approach_for(seat: Vector2, bounds: Rect2, direction: Vector2, minimum_distance: float = 24.0) -> Vector2:
+	# Only the controlled final entry crosses the footprint to the authored chair.
+	var clearance := bounds.grow(CasinoTuning.ASSET_NAV_RADIUS + CasinoTuning.FLOOR_NAV_CELL / 2 + 1)
 	var exit_distance := INF
 	if not is_zero_approx(direction.x):
 		exit_distance = minf(exit_distance, ((clearance.end.x if direction.x > 0 else clearance.position.x) - seat.x) / direction.x)
 	if not is_zero_approx(direction.y):
 		exit_distance = minf(exit_distance, ((clearance.end.y if direction.y > 0 else clearance.position.y) - seat.y) / direction.y)
-	return seat + direction * maxf(24, exit_distance)
+	return seat + direction * maxf(minimum_distance, exit_distance)
+
+static func approach_position_for(kind: String, seat_index: int, bounds: Rect2, rotated: bool, id: int = 0) -> Vector2:
+	var seat := seat_position_for(kind, seat_index, bounds, rotated, id)
+	var direction := Vector2.DOWN.rotated(PI / 2 if rotated else 0.0) if kind == "slots" else (seat - bounds.get_center()).normalized()
+	return interaction_approach_for(seat, bounds, direction)
+
+static func dealer_approach_for(kind: String, index: int, bounds: Rect2, rotated: bool, id: int = 0) -> Vector2:
+	var seat := dealer_position_for(kind, index, bounds, rotated, id)
+	return interaction_approach_for(seat, bounds, (seat - bounds.get_center()).normalized(), CasinoTuning.ASSET_NAV_RADIUS)
 
 static func path_for(kind: String, id: int = 0) -> String:
 	return "casino/slots/slot_%02d.png" % (1 + id % 5) if kind == "slots" else "casino/tables/" + ("ultimate_texas" if kind == "holdem" else kind) + ".png"

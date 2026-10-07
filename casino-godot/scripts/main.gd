@@ -1,5 +1,6 @@
 extends Control
 
+const VisibleViewport = preload("res://scripts/visible_viewport.gd")
 const FinancialText = preload("res://scripts/financial_text.gd")
 const DeveloperPanel = preload("res://scripts/developer_panel.gd")
 const MilestoneNotice = preload("res://scripts/milestone_notice.gd")
@@ -14,6 +15,12 @@ const MUTED := Color("9ca3af")
 const TEXT := Color("eae4d6")
 
 @onready var presentation_shell: Control = $PitBossShell
+
+var visible_viewport := VisibleViewport.new()
+var viewport_dimensions := Vector2.ZERO
+var viewport_insets := Vector4.ZERO
+var viewport_sync_pending := false
+var viewport_layout_count := 0
 
 var displayed_cash := 0.0
 var treasury_target := 0.0
@@ -127,7 +134,9 @@ func _ready() -> void:
 	displayed_cash = sim.cash
 	treasury_target = sim.cash
 	presentation_shell.mount(self)
-	get_viewport().size_changed.connect(func(): call_deferred("layout_ui"))
+	get_viewport().size_changed.connect(queue_viewport_sync)
+	visible_viewport.connect_web(queue_viewport_sync)
+	queue_viewport_sync()
 	milestone_notice = MilestoneNotice.new()
 	add_child(milestone_notice)
 	sim.milestone_reached.connect(on_milestone)
@@ -144,13 +153,27 @@ func _ready() -> void:
 	refresh()
 	show_new_game_setup(true)
 
+func _exit_tree() -> void:
+	visible_viewport.disconnect_web()
+
+func queue_viewport_sync() -> void:
+	if viewport_sync_pending: return
+	viewport_sync_pending = true
+	call_deferred("sync_visible_viewport")
+
+func sync_visible_viewport() -> void:
+	viewport_sync_pending = false
+	var measurement := visible_viewport.measure(get_window())
+	if measurement.dimensions == viewport_dimensions and measurement.insets == viewport_insets: return
+	layout_ui()
+
 func layout_ui() -> void:
 	if not is_instance_valid(bottom_nav): return
-	var dimensions := Vector2(get_window().size)
-	if OS.has_feature("web"):
-		dimensions = Vector2(float(JavaScriptBridge.eval("window.innerWidth", true)), float(JavaScriptBridge.eval("window.innerHeight", true)))
-	dimensions.x = maxf(320, dimensions.x)
-	dimensions.y = maxf(300, dimensions.y)
+	viewport_layout_count += 1
+	var measurement := visible_viewport.measure(get_window())
+	viewport_dimensions = measurement.dimensions
+	viewport_insets = measurement.insets
+	var dimensions := viewport_dimensions
 	if get_window().content_scale_size != Vector2i(dimensions):
 		get_window().content_scale_size = Vector2i(dimensions)
 	var w := dimensions.x
@@ -169,8 +192,9 @@ func layout_dialog() -> void:
 	var dimensions := Vector2(get_window().content_scale_size)
 	# Containers may briefly expand before wrapped labels finish measuring.
 	# Reapply the viewport width after minimum-size changes, then center actual size.
-	modal.size = Vector2(minf(660, dimensions.x - 24), dimensions.y - 24)
-	modal.position = Vector2(maxf(12, (dimensions.x - modal.size.x) / 2), 12)
+	var usable := dimensions - Vector2(viewport_insets.x + viewport_insets.z, viewport_insets.y + viewport_insets.w)
+	modal.size = Vector2(minf(660, usable.x - 24), usable.y - 24)
+	modal.position = Vector2(viewport_insets.x + maxf(12, (usable.x - modal.size.x) / 2), viewport_insets.y + 12)
 	for child in get_children():
 		if child.has_meta("modal_shade"): child.size = dimensions
 
@@ -1879,7 +1903,15 @@ func publish_debug() -> void:
 	if full: debug_full_timer = 0
 	var diagnostics := {"elapsed": sim.elapsed, "day": sim.day, "minute": sim.minute, "cash": sim.cash, "speed": speed, "guests": sim.guests.size(), "assets": sim.tables.size(), "staff": sim.staff.size(), "nodes": Performance.get_monitor(Performance.OBJECT_NODE_COUNT), "redraws": floor_view.redraw_count, "momentum": sim.momentum.value, "momentum_band": sim.momentum.band(), "momentum_contributors": sim.momentum.contributors}
 	JavaScriptBridge.eval("window.pitBossDiagnostics = " + JSON.stringify(diagnostics), true)
+	var mobile_rects := {}
+	for entry in [{"name": "bottom_nav", "control": bottom_nav}, {"name": "floor_actions", "control": floor_actions}, {"name": "mode_hint", "control": mode_hint}, {"name": "palette", "control": presentation_shell.mobile_management.palette}, {"name": "inspector", "control": inspector_panel}, {"name": "events", "control": events_panel}, {"name": "side", "control": side_panel}]:
+		var rect: Rect2 = entry.control.get_global_rect()
+		mobile_rects[entry.name] = {"rect": [rect.position.x, rect.position.y, rect.size.x, rect.size.y], "visible": entry.control.is_visible_in_tree()}
 	var layout := {
+		"viewport": [viewport_dimensions.x, viewport_dimensions.y],
+		"safe_area": [viewport_insets.x, viewport_insets.y, viewport_insets.z, viewport_insets.w],
+		"layout_count": viewport_layout_count, "mobile_rects": mobile_rects,
+		"mobile_floor": [floor_view.mobile_viewport.position.x, floor_view.mobile_viewport.position.y, floor_view.mobile_viewport.size.x, floor_view.mobile_viewport.size.y],
 		"responsive_state": responsive_state, "pane": mobile_pane, "page": page,
 		"building": building, "moving": moving, "visitor": visitor,
 		"selected": selected, "selected_guest": selected_guest, "joined": sim.joined,

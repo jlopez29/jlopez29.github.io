@@ -9,12 +9,12 @@ var approach_anchors := PackedVector2Array()
 var asset_path := ""
 var signature: Array = []
 var last_zoom := -1.0
+var repair_needed := false
+var repair_pulse := 0.0
 var selection_skin: StyleBoxFlat
 @onready var sprite: Sprite2D = $Sprite
 @onready var shadow: Sprite2D = $Shadow
 @onready var outline: Panel = $Outline
-@onready var caption: Label = $Caption
-@onready var state_label: Label = $State
 
 func _ready() -> void:
 	selection_skin = Art.box(Color(0.83, 0.69, 0.22, 0.025), Art.GOLD, 0)
@@ -22,6 +22,7 @@ func _ready() -> void:
 	selection_skin.shadow_color = Color(0.83, 0.69, 0.22, 0.17)
 	selection_skin.shadow_size = 10
 	outline.add_theme_stylebox_override("panel", selection_skin)
+	set_process(false)
 
 func update_view(sim: CasinoSimulation, table: Dictionary, index: Dictionary, selected_id: int, compact: bool) -> void:
 	simulation_bounds = sim.bounds(table)
@@ -32,6 +33,9 @@ func update_view(sim: CasinoSimulation, table: Dictionary, index: Dictionary, se
 	var next := [table.kind, simulation_bounds, table.rotated, table.broken, selected_id == int(table.id), operating, hot, compact, table.slot_profile]
 	if signature == next: return
 	signature = next
+	repair_needed = bool(table.broken)
+	set_process(repair_needed)
+	queue_redraw()
 	last_zoom = -1.0
 	var kind := sim.table_kind(table)
 	var path := Catalog.path_for(kind, int(table.id))
@@ -66,11 +70,6 @@ func update_view(sim: CasinoSimulation, table: Dictionary, index: Dictionary, se
 	$Rug.position = -simulation_bounds.size / 2 - Vector2.ONE * 8
 	$Rug.scale = Vector2.ONE * 0.25
 	$Rug.size = (simulation_bounds.size + Vector2.ONE * 16) / 0.25
-	caption.text = "%s %02d" % [sim.slot_profile(table).short_name if kind == "slots" else str(CasinoGames.NAMES[kind]).replace("’", "'"), table.id]
-	caption.visible = is_selected or table.broken
-	state_label.text = "Repair needed" if table.broken else "Open" if operating else "Closed" if not sim.opened else "Staffing paused" if not table.staff_enabled else "Needs coverage"
-	state_label.visible = table.broken or selected_id == int(table.id)
-	state_label.modulate = Color("ff9486") if table.broken else Color("a6c9a6") if operating else Art.MUTED
 	$MachineLight.visible = kind == "slots" and operating and not table.broken
 	$MachineLight.position = Vector2(0, -visual_size.y * 0.28).rotated(sprite.rotation)
 	$MachineLight.rotation = sprite.rotation
@@ -78,10 +77,17 @@ func update_view(sim: CasinoSimulation, table: Dictionary, index: Dictionary, se
 func set_view_zoom(value: float) -> void:
 	if is_equal_approx(last_zoom, value): return
 	last_zoom = value
-	# Names/status use fixed screen pixels; furniture remains in world units.
-	caption.scale = Vector2.ONE / value
-	state_label.scale = Vector2.ONE / value
-	caption.position = Vector2(-simulation_bounds.size.x / 2, -simulation_bounds.size.y / 2 - 22 / value)
-	state_label.position = Vector2(-simulation_bounds.size.x / 2, simulation_bounds.size.y / 2 + 4 / value)
-	caption.size = Vector2(maxf(75, simulation_bounds.size.x * value), 20)
-	caption.clip_text = true
+	if repair_needed: queue_redraw()
+
+func _process(delta: float) -> void:
+	if not is_visible_in_tree(): return
+	repair_pulse += delta
+	queue_redraw()
+
+func _draw() -> void:
+	if not repair_needed: return
+	var pulse := (sin(repair_pulse * 3.5) + 1) / 2
+	var radius := simulation_bounds.size.length() / 2 + 5 + pulse * 3
+	var red := Color("ef4444")
+	draw_circle(Vector2.ZERO, radius, Color(red, 0.025 + pulse * 0.035))
+	draw_arc(Vector2.ZERO, radius, 0, TAU, 64, Color(red, 0.4 + pulse * 0.5), 2.5 / maxf(0.1, last_zoom), true)

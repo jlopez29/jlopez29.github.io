@@ -234,10 +234,16 @@ func bar_service_checks() -> void:
 	check(sim.drink_menu == ["basic", "water"] and "lager" not in sim.drink_menu, "Purchase supplies two basic products only")
 	before = sim.cash
 	check(not sim.purchase_bar() and sim.cash == before, "Duplicate purchase rejected")
-	for minute_index in range(140): sim.step()
-	check(guest.thirst > sim.thirst_discomfort() and guest.satisfaction < 25, "Purchased unstaffed bar develops thirst and dissatisfaction")
-	check(sim.incidents.any(func(i): return i.type == "service"), "Purchased unstaffed bar creates real service complaint")
-	check(sim.reputation < rep_before and int(sim.traffic_totals.departures.service) > 0, "Unserved drink departure naturally damages reputation")
+	guest.thirst = 30
+	guest.state = "Waiting"
+	sim.step()
+	check(guest.state == "To bar" and guest.satisfaction == 65, "Purchased bar offers counter access without floor hires")
+	for minute_index in range(12):
+		sim.step()
+		sim.move_guests(1.0)
+	check(sim.bar_totals.sold + sim.bar_totals.comped > 0, "Counter serves without floor Service staff")
+	check(not sim.incidents.any(func(i): return i.type == "service"), "Ordinary thirst creates no service complaint")
+	check(sim.reputation >= rep_before and int(sim.traffic_totals.departures.service) == 0, "Normal drink need never damages reputation")
 	sim = CasinoSimulation.new("easy", ["slots"])
 	check(sim.unlocked("service") and not sim.bar_owned, "Easy grants purchase access only")
 	check(sim.purchase_bar(), "Easy bar purchased")
