@@ -1857,10 +1857,10 @@ func publish_debug() -> void:
 				ancestor = ancestor.get_parent()
 			buttons.append({"text": button.text, "disabled": button.disabled, "x": rect.position.x, "y": rect.position.y, "w": rect.size.x, "h": rect.size.y, "clip": [clip.position.x, clip.position.y, clip.size.x, clip.size.y]})
 	debug_full_timer += CasinoTuning.DEBUG_SNAPSHOT_SECONDS
-	var full := debug_full_timer >= CasinoTuning.DEBUG_FULL_SNAPSHOT_SECONDS or bool(JavaScriptBridge.eval("window.neonHouseRequestFullState === true", true))
+	var full := debug_full_timer >= CasinoTuning.DEBUG_FULL_SNAPSHOT_SECONDS or bool(JavaScriptBridge.eval("window.pitBossRequestFullState === true", true))
 	if full: debug_full_timer = 0
 	var diagnostics := {"elapsed": sim.elapsed, "day": sim.day, "minute": sim.minute, "cash": sim.cash, "speed": speed, "guests": sim.guests.size(), "assets": sim.tables.size(), "staff": sim.staff.size(), "nodes": Performance.get_monitor(Performance.OBJECT_NODE_COUNT), "redraws": floor_view.redraw_count, "momentum": sim.momentum.value, "momentum_band": sim.momentum.band(), "momentum_contributors": sim.momentum.contributors}
-	JavaScriptBridge.eval("window.neonHouseDiagnostics = " + JSON.stringify(diagnostics), true)
+	JavaScriptBridge.eval("window.pitBossDiagnostics = " + JSON.stringify(diagnostics), true)
 	var layout := {
 		"responsive_state": responsive_state, "pane": mobile_pane, "page": page,
 		"building": building, "moving": moving, "visitor": visitor,
@@ -1870,9 +1870,9 @@ func publish_debug() -> void:
 		"camera": [floor_view.camera.x, floor_view.camera.y], "zoom": floor_view.zoom,
 		"labels": debug_label_layout(inspector) if full else [],
 	}
-	JavaScriptBridge.eval("window.neonHouseLayout = " + JSON.stringify(layout), true)
-	JavaScriptBridge.eval("window.neonHouseUI = " + JSON.stringify(buttons), true)
-	if full: JavaScriptBridge.eval("window.neonHouseSnapshot = " + JSON.stringify(sim.snapshot()), true)
+	JavaScriptBridge.eval("window.pitBossLayout = " + JSON.stringify(layout), true)
+	JavaScriptBridge.eval("window.pitBossUI = " + JSON.stringify(buttons), true)
+	if full: JavaScriptBridge.eval("window.pitBossSnapshot = " + JSON.stringify(sim.snapshot()), true)
 
 func debug_label_layout(parent: Node) -> Array:
 	var labels: Array = []

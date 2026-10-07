@@ -12,8 +12,8 @@ try {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type()==='error' && !m.text().includes('404')) errors.push(m.text()); });
-  const state = () => page.evaluate(() => window.neonHouseSnapshot);
-  const target = prefix => page.evaluate(prefix => window.neonHouseUI.find(b=>b.text.startsWith(prefix) && !b.disabled), prefix);
+  const state = () => page.evaluate(() => window.pitBossSnapshot);
+  const target = prefix => page.evaluate(prefix => window.pitBossUI.find(b=>b.text.startsWith(prefix) && !b.disabled), prefix);
   async function swipe(x,y,dy) {
    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
    for(let i=1;i<=10;i++) {await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y+dy*i/10}]}); await page.waitForTimeout(25);}
@@ -22,7 +22,7 @@ try {
   }
   async function button(prefix) {
    console.log(`${mobile ? "touch" : "desktop"}: ${prefix}`);
-   await page.waitForFunction(prefix => window.neonHouseUI.some(b=>b.text.startsWith(prefix) && !b.disabled), prefix, {timeout:30000});
+   await page.waitForFunction(prefix => window.pitBossUI.some(b=>b.text.startsWith(prefix) && !b.disabled), prefix, {timeout:30000});
    await page.waitForTimeout(150);
    for(let i=0;i<18;i++) {
     const b=await target(prefix); assert.ok(b,`Enabled button: ${prefix}`);
@@ -41,26 +41,26 @@ try {
   async function pane(name) {
    if(!mobile)return;
    console.log(`touch pane: ${name}`);
-   await page.waitForFunction(name=>window.neonHouseUI.some(b=>b.text===name),name,{timeout:30000});
-   const b=await page.evaluate(name=>window.neonHouseUI.filter(b=>b.text===name).sort((a,b)=>b.y-a.y)[0],name);
+   await page.waitForFunction(name=>window.pitBossUI.some(b=>b.text===name),name,{timeout:30000});
+   const b=await page.evaluate(name=>window.pitBossUI.filter(b=>b.text===name).sort((a,b)=>b.y-a.y)[0],name);
    await page.touchscreen.tap(b.x+b.w/2,b.y+b.h/2);
-   await page.waitForFunction(name=>window.neonHouseLayout.pane===name.toLowerCase(),name,{timeout:30000});
+   await page.waitForFunction(name=>window.pitBossLayout.pane===name.toLowerCase(),name,{timeout:30000});
   }
   try {
-   await page.addInitScript(()=>{window.neonHouseRequestFullState=true;});
+   await page.addInitScript(()=>{window.pitBossRequestFullState=true;});
    await page.goto(process.env.CASINO_TEST_URL || 'http://127.0.0.1:8093/casino-debug/game.html');
-   await page.waitForFunction(()=>window.neonHouseUI,null,{timeout:90000});
+   await page.waitForFunction(()=>window.pitBossUI,null,{timeout:90000});
    await button('Start casino');
    await pane('Manage');
    if(mobile) {await page.keyboard.press('Space'); await page.waitForTimeout(1200);} else await button('Pause');
    await pane('Table'); await button('Move table');
-   await page.waitForFunction(()=>window.neonHouseLayout.building && window.neonHouseLayout.floor_visible && !window.neonHouseLayout.inspector_visible || window.neonHouseLayout.building && !window.neonHouseLayout.responsive_state.startsWith('mobile'));
-   let layout=await page.evaluate(()=>window.neonHouseLayout);
+   await page.waitForFunction(()=>window.pitBossLayout.building && window.pitBossLayout.floor_visible && !window.pitBossLayout.inspector_visible || window.pitBossLayout.building && !window.pitBossLayout.responsive_state.startsWith('mobile'));
+   let layout=await page.evaluate(()=>window.pitBossLayout);
    assert.ok(layout.floor_visible,'Move exposes floor');
    const selection=layout.selected;
    if(mobile) {
     await page.setViewportSize({width:844,height:390});await page.waitForTimeout(1200);
-    layout=await page.evaluate(()=>window.neonHouseLayout);
+    layout=await page.evaluate(()=>window.pitBossLayout);
     assert.ok(layout.floor_visible && !layout.inspector_visible,'Landscape move exposes targeting surface');
     assert.equal(layout.selected,selection,'Resize preserves selection');
     await page.setViewportSize({width:390,height:844});await page.waitForTimeout(1200);
@@ -68,12 +68,12 @@ try {
    await button('Cancel');
    await pane('Manage'); await button('+ Build games...');
    await button('Place machine -');
-   await page.waitForFunction(()=>window.neonHouseLayout.building && window.neonHouseLayout.floor_visible);
+   await page.waitForFunction(()=>window.pitBossLayout.building && window.pitBossLayout.floor_visible);
    await button('Cancel');
    await pane('Manage'); await button('Walk the floor');
-   await page.waitForFunction(()=>window.neonHouseLayout.visitor);
+   await page.waitForFunction(()=>window.pitBossLayout.visitor);
    await pane('Floor');
-   await page.screenshot({path:`/tmp/neon-house-${mobile?'mobile':'desktop'}.png`});
+   await page.screenshot({path:`/tmp/pit-boss-${mobile?'mobile':'desktop'}.png`});
    await pane('Manage'); await button('Manage casino');
    for(const action of ['Finance','Casino development','Staff & assignments','Incidents & decisions']) {
     await pane('Manage'); await button(action);
@@ -83,7 +83,7 @@ try {
    if(!mobile) {await button('Save');const saved=await state();await button('Load');const loaded=await state();assert.equal(loaded.version,saved.version);assert.equal(loaded.cash,saved.cash);}
    assert.deepEqual(errors,[]);
    console.log(`${mobile?'Touch portrait/landscape':'Desktop'} passed: move/build/cancel, resize, walk/manage, pages, speed transitions${mobile?'':', save/load'}.`);
-  } catch(e) {await page.screenshot({path:'/tmp/neon-house-failure.png'});console.error(errors); console.error(JSON.stringify((await state()).tables));throw e;}
+  } catch(e) {await page.screenshot({path:'/tmp/pit-boss-failure.png'});console.error(errors); console.error(JSON.stringify((await state()).tables));throw e;}
   finally {await context.close();}
  }
 } finally {await browser.close();}

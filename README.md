@@ -10,7 +10,7 @@ other apps. There is no repository-wide package install or build step.
 
 | Project | Description | Source / documentation | Site path |
 | --- | --- | --- | --- |
-| Neon House | Casino tycoon prototype with a shared craps simulation and walkable player mode | [casino-godot/](casino-godot/README.md) | `/casino/` |
+| Pit Boss | Casino tycoon prototype with a shared craps simulation and walkable player mode | [casino-godot/](casino-godot/README.md) | `/casino/` |
 | Portfolio | Project showcase with responsive navigation and light/dark themes | [index.html](index.html), [home.css](home.css) | `/` |
 | PoolPicks | NFL confidence picks, weekly leaderboards, playoff picks, and achievements; currently configured for the private AFCU group | [poolpicks-app/](poolpicks-app/README.md) | `/poolpicks/` |
 | LoL IQ | League of Legends training games, champion scouting, and guided lessons | [loliq/](loliq/README.md) | `/loliq/` |
@@ -78,7 +78,7 @@ not automatically connected to an emulator, so signing in or submitting picks
 can affect real data. Review [PoolPicks setup](poolpicks-app/README.md) before
 testing against Firebase.
 
-## Neon House development
+## Pit Boss development
 
 Open `casino-godot/project.godot` in Godot 4.7.2 standard edition (no .NET
 required). The game uses GDScript and the Compatibility renderer, with a

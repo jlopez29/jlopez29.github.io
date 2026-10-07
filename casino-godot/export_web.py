@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stamp build information and export the current Neon House web release."""
+"""Stamp build information and export the current Pit Boss web release."""
 import argparse
 from datetime import datetime, timezone
 import json
@@ -24,7 +24,7 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--both", action="store_true", help="Build release and debug from one source/import/build timestamp")
     mode.add_argument("--debug", action="store_true", help="Export to casino-debug/ with developer tooling; leave casino/ unchanged")
-    parser.add_argument("--version", default="0.4", help="Player-facing version")
+    parser.add_argument("--version", default="0.4.2.6", help="Player-facing version")
     args = parser.parse_args()
     project = Path(__file__).resolve().parent
     updated = datetime.now(timezone.utc).astimezone(ZoneInfo("America/New_York"))

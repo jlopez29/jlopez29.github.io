@@ -1,4 +1,4 @@
-# Neon House 0.4.2 performance and stability
+# Pit Boss 0.4.2 performance and stability
 
 ## Scope and measurement limits
 
@@ -84,7 +84,7 @@ before the change and 3 times afterward, following camera warmup.
   naturally on real content/minimum-size changes; forced patch sorting is gone.
 - `main.gd` / `tuning.gd`: frequent debug diagnostics every 0.5 seconds; full
   state and inspector-label geometry every 2 seconds. Browser checks can
-  explicitly request full polling with `window.neonHouseRequestFullState = true`.
+  explicitly request full polling with `window.pitBossRequestFullState = true`.
   Timer publication is the only regular publication path. Release exports
   expose no production debug controls/telemetry.
 - `game_view.gd`: native array/scalar comparison instead of per-frame JSON;
@@ -152,7 +152,7 @@ A 60-minute heap measurement was not run; the release soak was stopped at the us
 ## Reproduction commands
 
 ```sh
-GODOT=/home/codespace/.cache/neon-house-tools/Godot_v4.7.2-stable_linux.x86_64
+GODOT=godot
 python3 casino-godot/export_web.py --both --godot "$GODOT" --version 0.4.2
 python3 casino-godot/tests/run_regression.py --godot "$GODOT"
 "$GODOT" --headless --path casino-godot --script tests/performance_checks.gd

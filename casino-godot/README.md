@@ -1,4 +1,4 @@
-# Neon House — playable 0.2
+# Pit Boss — playable 0.4.2.6
 
 A Godot/GDScript casino tycoon prototype with craps, slots, roulette, blackjack, and Ultimate Texas Hold’em.
 Manage the business, walk its floor, and play at your own tables. The goal is to
@@ -190,9 +190,9 @@ its menu-based interactions need updating for the dedicated table view.
 It requires Playwright/Chromium installed in your development environment:
 
 ```sh
-mkdir -p /tmp/neon-house-preview
-godot --headless --path casino-godot --export-debug Web /tmp/neon-house-preview/game.html
-python3 -m http.server 8090 --bind 127.0.0.1 --directory /tmp/neon-house-preview
+mkdir -p /tmp/pit-boss-preview
+godot --headless --path casino-godot --export-debug Web /tmp/pit-boss-preview/game.html
+python3 -m http.server 8090 --bind 127.0.0.1 --directory /tmp/pit-boss-preview
 # In another terminal:
 node casino-godot/tests/browser_smoke.mjs
 ```
@@ -247,7 +247,7 @@ forced access through `OS.is_debug_build()`.
 Build the separate local development export (never overwrites `casino/`):
 
 ```sh
-python3 casino-godot/export_web.py --godot /home/codespace/.cache/neon-house-tools/Godot_v4.7.2-stable_linux.x86_64 --debug
+python3 casino-godot/export_web.py --godot godot --debug
 python3 -m http.server 8081 --bind 0.0.0.0 --directory casino-debug
 ```
 

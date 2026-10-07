@@ -1,4 +1,4 @@
-# Neon House 0.4 — Phase 04.2.5 responsive audit
+# Pit Boss 0.4 — Phase 04.2.5 responsive audit
 
 Source changes completed. This pass changes presentation, navigation, and pointer handling. Simulation rules, economy, progression requirements, property dimensions, and asset footprints are unchanged. Phase 04.3 is not implemented.
 

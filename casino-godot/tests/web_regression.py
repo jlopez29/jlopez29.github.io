@@ -7,7 +7,7 @@ def check(ok,name):
  print(('PASS ' if ok else 'FAIL ')+name,flush=True)
 async def click_ui(page,text):
  for attempt in range(12):
-  buttons=await page.evaluate('window.neonHouseUI || []')
+  buttons=await page.evaluate('window.pitBossUI || []')
   matches=[b for b in buttons if b['text']==text and not b['disabled']]
   for b in matches:
    x=b['x']+b['w']/2;y=b['y']+b['h']/2;c=b['clip']
@@ -24,15 +24,15 @@ async def main():
   page=await browser.new_page(viewport={'width':1440,'height':900})
   page.on('pageerror',lambda e:report['errors'].append(str(e)))
   page.on('console',lambda m:report['errors'].append(m.text) if m.type=='error' else None)
-  await page.add_init_script('window.neonHouseRequestFullState = true')
+  await page.add_init_script('window.pitBossRequestFullState = true')
   await page.goto('http://127.0.0.1:8093/casino-debug/game.html')
-  await page.wait_for_function('window.neonHouseUI && window.neonHouseUI.length',timeout=90000)
+  await page.wait_for_function('window.pitBossUI && window.pitBossUI.length',timeout=90000)
   await click_ui(page,'Start casino')
   await click_ui(page,'Open casino')
   await click_ui(page,'4x')
-  before=await page.evaluate('window.neonHouseSnapshot.elapsed')
-  await page.wait_for_function('(before)=>window.neonHouseSnapshot.elapsed>before',arg=before,timeout=30000)
-  after=await page.evaluate('window.neonHouseSnapshot.elapsed')
+  before=await page.evaluate('window.pitBossSnapshot.elapsed')
+  await page.wait_for_function('(before)=>window.pitBossSnapshot.elapsed>before',arg=before,timeout=30000)
+  after=await page.evaluate('window.pitBossSnapshot.elapsed')
   check(after>before,'Debug 4x advances actual simulation')
   await page.keyboard.press('F10');await page.wait_for_timeout(500)
   await page.screenshot(path='/tmp/v03-dev-panel.png')
@@ -42,13 +42,13 @@ async def main():
   await click_ui(page,'Pause')
   await page.wait_for_timeout(1500) # Observe a stable, paused authoritative snapshot.
   await click_ui(page,'Save')
-  saved=await page.evaluate('window.neonHouseSnapshot')
+  saved=await page.evaluate('window.pitBossSnapshot')
   await click_ui(page,'Play')
-  await page.wait_for_function('(at)=>window.neonHouseSnapshot.elapsed>at+3',arg=saved['elapsed'],timeout=30000)
+  await page.wait_for_function('(at)=>window.pitBossSnapshot.elapsed>at+3',arg=saved['elapsed'],timeout=30000)
   await click_ui(page,'Load')
   await click_ui(page,'Pause')
   await page.wait_for_timeout(1500)
-  loaded=await page.evaluate('window.neonHouseSnapshot')
+  loaded=await page.evaluate('window.pitBossSnapshot')
   check(loaded['elapsed']<=saved['elapsed']+3 and loaded['version']==saved['version'],'Browser current save/load')
   for action in ['Finance','Casino development','Staff & assignments','Incidents & decisions','+ Build games...']:
    await click_ui(page,action)
@@ -64,7 +64,7 @@ async def main():
   await release.goto('http://127.0.0.1:8093/casino/game.html')
   await release.wait_for_timeout(25000)
   check(await release.locator('canvas').is_visible(),'Release web canvas starts')
-  check(await release.evaluate('typeof window.neonHouseSnapshot === "undefined" && typeof window.neonHouseUI === "undefined"'),'Release has no debug telemetry')
+  check(await release.evaluate('typeof window.pitBossSnapshot === "undefined" && typeof window.pitBossUI === "undefined"'),'Release has no debug telemetry')
   await release.mouse.click(720,413);await release.wait_for_timeout(1000)
   await release.keyboard.press('F10');await release.wait_for_timeout(500)
   await release.screenshot(path='/tmp/v03-release-f10.png')

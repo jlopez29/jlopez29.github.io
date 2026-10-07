@@ -1,8 +1,8 @@
-# Neon House — Agent Instructions
+# Pit Boss — Agent Instructions
 
 ## Project and scope
 
-Neon House is an extremely early pre-alpha Godot casino management/tycoon game combining management, walking the floor, and personally playing casino games.
+Pit Boss is an extremely early pre-alpha Godot casino management/tycoon game combining management, walking the floor, and personally playing casino games.
 
 Priority loop: **Build → Attract → Operate → Earn → Reinvest → Unlock → Expand**.
 Management explains **what** is happening; walking the floor helps explain **why**. The floor should feel alive and financially active.

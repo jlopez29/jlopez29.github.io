@@ -5,7 +5,7 @@ obsolete starter-craps and legacy-save-migration assumptions have been removed.
 The wrapper fails on runtime/script errors as well as assertions and timeouts.
 
 ```sh
-python3 casino-godot/tests/run_regression.py --godot /home/codespace/.cache/neon-house-tools/Godot_v4.7.2-stable_linux.x86_64
+python3 casino-godot/tests/run_regression.py --godot godot
 ```
 
 `--quick` skips the six seeded 48-game-hour simulation runs. The full suite covers
@@ -79,7 +79,7 @@ checks do not replace real touch/browser gameplay verification.
 Run only the new event/game checks, without the broad regression or long runs:
 
 ```sh
-/home/codespace/.cache/neon-house-tools/Godot_v4.7.2-stable_linux.x86_64 --headless --path casino-godot --script tests/owner_events_smoke.gd
+godot --headless --path casino-godot --script tests/owner_events_smoke.gd
 ```
 
 This uses actual seeded rules for losses/pushes/wins, blackjack extra stakes,
@@ -94,7 +94,7 @@ manual gameplay checks; no new broad regression run is required for this step.
 ## Casino Momentum (0.4.2.5)
 
 ```sh
-/home/codespace/.cache/neon-house-tools/Godot_v4.7.2-stable_linux.x86_64 --headless --path casino-godot --script tests/momentum_smoke.gd
+godot --headless --path casino-godot --script tests/momentum_smoke.gd
 ```
 
 Focused checks cover gradual idle/active behavior, real operating conditions,
@@ -107,7 +107,7 @@ Core momentum checks also run through the existing regression entry point.
 ## Dynamic optional objectives (0.4.2.6)
 
 ```sh
-/home/codespace/.cache/neon-house-tools/Godot_v4.7.2-stable_linux.x86_64 --headless --path casino-godot --script tests/objectives_smoke.gd
+godot --headless --path casino-godot --script tests/objectives_smoke.gd
 ```
 
 Covers achievable context/scaling, opt-in progress, actual net settlements,

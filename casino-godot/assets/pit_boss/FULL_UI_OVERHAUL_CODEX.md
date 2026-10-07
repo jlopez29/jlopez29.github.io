@@ -636,7 +636,7 @@ Visible product branding is now:
 
 PIT BOSS
 
-Treat "Neon House" as old prototype branding.
+Use "Pit Boss" consistently for all game branding.
 
 Do NOT blindly rename internal classes, scene files, resources, save keys, project IDs, or namespaces
 unless required.
