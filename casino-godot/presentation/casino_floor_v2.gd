@@ -218,10 +218,10 @@ func sync_world() -> void:
 		var cage_art := Catalog.amenity_visual_bounds("cashier_cage", CasinoSimulation.CAGE_PICKUP)
 		$World/Cage.position = cage_art.position
 		$World/Cage.size = cage_art.size
-	$World/Bar.visible = sim.guest_feature_relevant("service")
-	$World/BarLabel.visible = $World/Bar.visible and not sim.bar_available()
+	$World/Bar.visible = sim.bar_available()
+	$World/BarLabel.visible = false
 	$World/BarLabel.position = $World/Bar.position + Vector2(6, -13)
-	$World/BarLabel.text = "COCKTAIL BAR" if sim.bar_available() else "BAR / NO SERVICE"
+	$World/BarLabel.text = "COCKTAIL BAR"
 	prune(asset_views, presentation.tables)
 	for id in presentation.tables:
 		if not asset_views.has(id):
@@ -287,6 +287,9 @@ func select_at(screen: Vector2) -> void:
 				nearest = int(id)
 		if nearest >= 0:
 			guest_clicked.emit(nearest)
+			return
+		if sim.bar_available() and Rect2($World/Bar.position, $World/Bar.size).has_point(at) and not visitor_mode:
+			bar_clicked.emit()
 			return
 	super.select_at(screen)
 

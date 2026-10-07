@@ -182,6 +182,9 @@ static func allocate_dealers(sim, employees: Array) -> void:
 		employee.table = assignment
 		employee.duty = "Active" if assignment >= 0 else "Relief"
 
+static func continuous_roster(positions: int, relief: int) -> int:
+	return ceili((positions + relief) * float(CasinoTuning.STAFF_SHIFT_MINUTES + CasinoTuning.STAFF_OFF_DUTY_MINUTES) / CasinoTuning.STAFF_SHIFT_MINUTES)
+
 static func summary(sim, role: String) -> Dictionary:
 	var result := {"employed": 0, "active": 0, "relief": 0, "break": 0, "off_duty": 0, "ready_next_shift": 0, "required": required(sim, role)}
 	for employee in sim.staff:
@@ -190,9 +193,9 @@ static func summary(sim, role: String) -> Dictionary:
 		var key: String = {"Active": "active", "Relief": "relief", "Break": "break", "Off Duty": "off_duty"}[employee.duty]
 		result[key] += 1
 		if can_start(sim, employee): result.ready_next_shift += 1
-	result.coverage = "SHORT STAFFED" if int(result.active) < int(result.required) else "GOOD" if int(result.relief) > 0 else "LEAN" if int(result.required) > 0 else "NO POSITIONS"
 	result.relief_recommended = maxi(1, ceili(int(result.required) * CasinoTuning.STAFF_RELIEF_RECOMMENDATION)) if int(result.required) > 0 else 0
-	result.continuous_recommended = ceili((int(result.required) + int(result.relief_recommended)) * float(CasinoTuning.STAFF_SHIFT_MINUTES + CasinoTuning.STAFF_OFF_DUTY_MINUTES) / CasinoTuning.STAFF_SHIFT_MINUTES)
+	result.continuous_recommended = continuous_roster(int(result.required), maxi(int(result.relief_recommended), int(sim.relief_targets[role]))) if int(result.required) > 0 else 0
+	result.coverage = "NO POSITIONS" if int(result.required) == 0 else "SHORT STAFFED" if int(result.active) < int(result.required) else "LEAN COVERAGE" if int(result.employed) < int(result.continuous_recommended) or int(result.relief) < int(sim.relief_targets[role]) else "GOOD COVERAGE"
 	return result
 
 static func report_problems(sim) -> void:

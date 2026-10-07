@@ -135,6 +135,7 @@ func run() -> void:
 	# Existing service crew collects at the unchanged bar pickup and delivers an order.
 	start(["slots"])
 	ui.sim.set_open(true)
+	ui.sim.purchase_bar()
 	check(ui.sim.hire("Service", -1), "Hire existing service role")
 	for product in ui.sim.drink_access: ui.sim.set_drink_menu(product, true)
 	ui.sim.spawn_guest()

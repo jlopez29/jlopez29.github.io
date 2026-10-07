@@ -32,7 +32,8 @@ var overhead := 0.0
 # Cash expenses recorded once; classifications never make an additional charge.
 var expense_totals := {"dealer_payroll": 0.0, "service_payroll": 0.0, "upkeep": 0.0, "repairs": 0.0, "comps": 0.0, "hiring": 0.0, "construction": 0.0, "sales": 0.0, "drink_products": 0.0, "drink_comps": 0.0, "property_upkeep": 0.0}
 var payroll_by_state := {"active": 0.0, "relief": 0.0, "break": 0.0, "off_duty": 0.0}
-var relief_targets := {"Dealer": 1, "Service": 0}
+var relief_targets := {"Dealer": 1, "Service": 1}
+var bar_owned := false
 var service_positions := 1
 var staff_shift_handover_at := -CasinoTuning.STAFF_SHIFT_HANDOVER_GAP
 var staffing_notice_signature := "" # Transient, rate-limited operational warnings.
@@ -151,11 +152,11 @@ func stars() -> int:
 
 func feature_cost(feature: String) -> float:
 	if Games.COSTS.has(feature): return float(Games.COSTS[feature])
-	return float({"service": CasinoTuning.HIRING_COST, "vip": CasinoTuning.VIP_COST, "high_limit": CasinoTuning.HIGH_LIMIT_COST}.get(feature, 0))
+	return float({"service": CasinoTuning.BAR_PURCHASE_COST, "vip": CasinoTuning.VIP_COST, "high_limit": CasinoTuning.HIGH_LIMIT_COST}.get(feature, 0))
 
 func feature_owned(feature: String) -> bool:
 	match feature:
-		"service": return staff.any(func(s): return s.role == "Service")
+		"service": return bar_owned
 		"expansion": return Property.count(floor_chunks) > 0
 		"vip": return vip_enabled
 		"high_limit": return high_limit_enabled
@@ -189,8 +190,6 @@ func guest_profile_name(guest: Dictionary) -> String:
 	return str(archetype(guest).name)
 
 func guest_arrival_thought(guest: Dictionary) -> String:
-	if guest_feature_relevant("service") and not bar_available() and rng.randf() < CasinoTuning.BAR_ANTICIPATION_CHANCE:
-		return "A bar for breaks would be nice."
 	var interest := guest_current_interest(guest)
 	var name: String = "hold'em" if interest == "holdem" else interest
 	if feature_owned(interest):
@@ -221,7 +220,7 @@ func onboarding_text() -> String:
 	if not feature_owned("blackjack"):
 		return "4. Develop capacity with better slots, serve gamblers and retain an operating reserve. Blackjack: $%d + dealer $%d; suggested payout/payroll reserve $%d." % [Games.COSTS.blackjack, CasinoTuning.HIRING_COST, CasinoTuning.BLACKJACK_RESERVE]
 	if not feature_owned("service"):
-		return "Your first table needs one dealer. Drink service is the next step; staff cost $%d plus hourly wages." % CasinoTuning.HIRING_COST
+		return "Bar access unlocks a $%d purchase. Budget for service hires and hourly wages before buying." % CasinoTuning.BAR_PURCHASE_COST
 	return "Grow at your own pace. Cash pays for purchases; developed capacity and guest business earn access."
 
 func slot_profile(table: Dictionary) -> Dictionary:
@@ -343,6 +342,10 @@ func refresh_progression() -> void:
 			log_event("Unlocked: Blackjack. Table $%d + dealer $%d; aim to retain $%d for payroll and payouts. Purchase when ready." % [Games.COSTS.blackjack, CasinoTuning.HIRING_COST, CasinoTuning.BLACKJACK_RESERVE])
 	for milestone in CasinoTuning.MILESTONES:
 		if milestone.id in ["slots", "blackjack"] or not unlocked(str(milestone.id)): continue
+		if milestone.id == "service":
+			if award_milestone("unlock:service", "Bar Service Available", "Your casino can now purchase a bar. Drink expectations begin only after purchase; budget for hires and payroll."):
+				log_event("Unlocked: Bar purchase. Buy through Build / Amenities when ready; drink service is optional until purchase.")
+			continue
 		if award_milestone("unlock:" + str(milestone.id), str(milestone.name).replace("’", "'") + " unlocked", "New options are available in Build / Staff. Expand when your business can support them.", 2 if milestone.id == "craps" else 1):
 			log_event("Unlocked: %s. Purchase through Build / Staff." % milestone.name)
 
@@ -544,7 +547,10 @@ func floor_presentation() -> Dictionary:
 
 func hire(role: String, target: int) -> bool:
 	if role not in ["Dealer", "Service"]: return false
-	if (role == "Service" and not unlocked("service")) or (role == "Dealer" and not unlocked("blackjack")):
+	if role == "Service" and not bar_owned:
+		log_event("Purchase the bar before hiring drink service staff.")
+		return false
+	if role == "Dealer" and not unlocked("blackjack"):
 		log_event("Develop the casino and complete the next unlock requirements for this staff role.")
 		return false
 	if staff.size() >= CasinoTuning.MAX_STAFF:
@@ -1278,8 +1284,20 @@ func bar_bounds() -> Rect2:
 	return CasinoTuning.BAR_COUNTER
 
 func bar_available() -> bool:
-	# The counter opens with service access; hiring controls actual delivery.
-	return unlocked("service") or feature_owned("service")
+	return bar_owned
+
+func purchase_bar() -> bool:
+	if bar_owned or not unlocked("service") or cash < CasinoTuning.BAR_PURCHASE_COST: return false
+	spend_nonpayroll(CasinoTuning.BAR_PURCHASE_COST, "construction")
+	bar_owned = true
+	# Purchase provides a usable basic menu. Later unlocks remain optional.
+	for id in ["basic", "water"]:
+		if id not in drink_access: drink_access.append(id)
+		Bar.set_menu(self, id, true)
+	presentation_revision += 1
+	refresh_progression()
+	log_event("BAR - Bar purchased. House Soda and Sparkling Water are on the menu. Hire service staff and plan relief coverage.")
+	return true
 
 func bar_guest_position(slot: int) -> Vector2:
 	return bar_bounds().position + CasinoTuning.BAR_GUEST_OFFSETS[clampi(slot, 0, CasinoTuning.BAR_GUEST_OFFSETS.size() - 1)]
@@ -1990,11 +2008,12 @@ func satisfaction() -> float:
 	return total / guests.size()
 
 func snapshot() -> Dictionary:
-	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "owner_bankroll": owner_account.snapshot(), "optional_events": optional_events.snapshot(), "momentum": momentum.snapshot(), "optional_objectives": optional_objectives.snapshot(), "owner_play": owner_play.duplicate(true), "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
+	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_owned": bar_owned, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "owner_bankroll": owner_account.snapshot(), "optional_events": optional_events.snapshot(), "momentum": momentum.snapshot(), "optional_objectives": optional_objectives.snapshot(), "owner_play": owner_play.duplicate(true), "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
 
 func restore(data: Dictionary) -> bool:
 	if not valid_number(data.get("version")) or data.version != CasinoTuning.SAVE_VERSION:
 		return false
+	if not data.get("bar_owned") is bool: return false
 	data = data.duplicate(true)
 	var restored_owner := OwnerAccount.new()
 	if data.has("owner_bankroll"):
@@ -2214,6 +2233,12 @@ func restore(data: Dictionary) -> bool:
 	for message in data.alerts:
 		if not message is String:
 			return false
+	if not data.bar_owned:
+		if not data.drink_access.is_empty() or not data.drink_menu.is_empty(): return false
+		if data.staff.any(func(employee): return employee.role == "Service"): return false
+		if data.guests.any(func(guest): return guest.state in ["To bar", "At bar"] or guest.drink_order != ""): return false
+		if data.incidents.any(func(incident): return incident.type == "service"): return false
+		if float(data.bar_totals.sold) + float(data.bar_totals.comped) > 0: return false
 	var restored_play = data.get("owner_play", {})
 	if not OwnerPlay.valid(restored_play, restored_owner, restored_events, data.tables) or (not restored_play.is_empty() and int(data.joined) >= 0): return false
 	owner_play = restored_play.duplicate(true)
@@ -2230,6 +2255,7 @@ func restore(data: Dictionary) -> bool:
 	traffic_totals = data.traffic_totals.duplicate(true)
 	traffic_bad_visits = int(data.traffic_bad_visits)
 	traffic_reputation_at = int(data.traffic_reputation_at)
+	bar_owned = data.bar_owned
 	bar_totals = data.bar_totals.duplicate()
 	drink_access = data.drink_access.duplicate()
 	drink_menu = data.drink_menu.duplicate()

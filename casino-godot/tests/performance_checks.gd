@@ -59,9 +59,8 @@ func run() -> void:
 	var plain := CasinoSimulation.new()
 	var batched := CasinoSimulation.new()
 	plain.rng.seed = 422
-	batched.rng.seed = 422
 	plain.opened = true
-	batched.opened = true
+	check(batched.restore(plain.snapshot()), "Feedback comparison starts from identical complete state, including optional-event RNG")
 	var floor := Floor.new()
 	floor.sim = batched
 	floor.set_presentation_speed(4)
@@ -73,7 +72,7 @@ func run() -> void:
 		floor.presentation_step()
 	check(plain.snapshot() == batched.snapshot() and plain.rng.state == batched.rng.state, "500-tick exact state/RNG equivalence with feedback connected")
 	floor.free()
-	var ui := Main.new()
+	var ui: Main = load("res://main.tscn").instantiate()
 	root.add_child(ui)
 	await process_frame
 	ui.close_modal()

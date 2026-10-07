@@ -935,21 +935,25 @@ func render_staff() -> void:
 		render_staff_role("Dealer", "Dealers")
 	else:
 		add_label(inspector, "Your slots operate without dealers.", 14, MUTED)
-	if sim.guest_feature_relevant("service"):
+	if sim.bar_available():
 		render_staff_role("Service", "Drink service")
+	elif sim.revealed("service"):
+		render_bar_purchase()
 
 func render_staff_role(role: String, title: String) -> void:
 	var coverage: Dictionary = sim.staffing_summary(role)
 	add_gap(inspector, 12)
 	add_label(inspector, "%s - %d employed" % [title, int(coverage.employed)], 20, GOLD)
-	add_label(inspector, str(coverage.coverage), 14, TEAL if coverage.coverage == "GOOD" else GOLD)
-	finance_short_metric(inspector, "Active / required positions", "%d / %d" % [int(coverage.active), int(coverage.required)])
-	finance_short_metric(inspector, "Relief available", str(coverage.relief))
-	if int(coverage["break"]) > 0: finance_short_metric(inspector, "On break", str(coverage["break"]))
-	if int(coverage.off_duty) > 0:
-		finance_short_metric(inspector, "Off duty / ready for next shift", "%d / %d" % [int(coverage.off_duty), int(coverage.ready_next_shift)])
+	add_label(inspector, str(coverage.coverage), 16, TEAL if coverage.coverage == "GOOD COVERAGE" else GOLD)
+	for metric in [{"name": "ACTIVE", "key": "active"}, {"name": "RELIEF", "key": "relief"}, {"name": "BREAK", "key": "break"}, {"name": "OFF DUTY", "key": "off_duty"}, {"name": "REQUIRED", "key": "required"}]:
+		finance_short_metric(inspector, metric.name, str(coverage[metric.key]))
 	if int(coverage.required) > 0:
-		add_label(inspector, "Plan for %d active + %d relief on shift. For continuous shifts, aim for about %d employed; actual needs depend on breaks and utilization." % [int(coverage.required), int(coverage.relief_recommended), int(coverage.continuous_recommended)], 13, MUTED)
+		finance_short_metric(inspector, "Recommended roster for continuous operation", str(coverage.continuous_recommended))
+		if coverage.coverage == "SHORT STAFFED":
+			add_label(inspector, "Hire %d more employees for current coverage." % maxi(1, int(coverage.required) - int(coverage.active)), 14, GOLD)
+		elif coverage.coverage == "LEAN COVERAGE":
+			var shortfall := maxi(0, int(coverage.continuous_recommended) - int(coverage.employed))
+			add_label(inspector, "Hire %d more employees for reliable continuous shifts." % shortfall if shortfall > 0 else "Rested relief is needed. Review your relief target and roster energy.", 14, GOLD)
 	var controls := row(inspector)
 	add_button(controls, "-", func(): sim.set_relief_target(role, int(sim.relief_targets[role]) - 1); refresh(), int(sim.relief_targets[role]) == 0)
 	add_label(controls, "Relief target: %d" % int(sim.relief_targets[role]), 14, TEXT)
@@ -960,8 +964,8 @@ func render_staff_role(role: String, title: String) -> void:
 		add_button(positions, "-", func(): sim.set_service_positions(sim.service_positions - 1); refresh(), sim.service_positions <= 1)
 		add_label(positions, "Floor positions: %d" % sim.service_positions, 14, TEXT)
 		add_button(positions, "+", func(): sim.set_service_positions(sim.service_positions + 1); refresh(), sim.service_positions >= CasinoTuning.MAX_STAFF)
-	var accessible: bool = sim.unlocked("blackjack" if role == "Dealer" else "service")
-	var hire := add_button(inspector, "Hire %s | $%d" % [role.to_lower(), CasinoTuning.HIRING_COST] if accessible else "Service access approaching", func(): sim.hire(role, -1); refresh(), not accessible)
+	var accessible: bool = sim.unlocked("blackjack") if role == "Dealer" else sim.bar_owned
+	var hire := add_button(inspector, "Hire %s | $%d" % [role.to_lower(), CasinoTuning.HIRING_COST] if accessible else "Service access approaching", func(): sim.hire(role, -1); refresh(), not accessible or sim.cash < CasinoTuning.HIRING_COST or sim.staff.size() >= CasinoTuning.MAX_STAFF)
 	hire.tooltip_text = "$%d per game hour on shift. Extra roster employees rest unpaid until coverage is needed. Relief targets use hired staff; they do not create employees." % (CasinoTuning.DEALER_WAGE if role == "Dealer" else CasinoTuning.SERVICE_WAGE)
 	if int(coverage.employed) == 0: return
 	add_button(inspector, "Hide employee details" if staff_details_role == role else "Employee details >", func(): staff_details_role = "" if staff_details_role == role else role; refresh())
@@ -1092,10 +1096,23 @@ func show_bar_product(id: String) -> void:
 	bar_menu_tab = "active" if id in sim.drink_menu else "available"
 	open_page("bar")
 
+func render_bar_purchase() -> void:
+	add_label(inspector, "BAR SERVICE", 20, GOLD)
+	finance_short_metric(inspector, "Purchase with Casino Cash", money(CasinoTuning.BAR_PURCHASE_COST))
+	add_label(inspector, "Unlocks drink service and Service staff. House Soda and Sparkling Water start on your menu; you can change them later.", 14, MUTED)
+	finance_short_metric(inspector, "Hiring / training per employee", money(CasinoTuning.HIRING_COST))
+	finance_short_metric(inspector, "Per employee on shift", money(CasinoTuning.SERVICE_WAGE) + "/game-hour")
+	add_label(inspector, "Recommended startup: 1 active + 1 relief. Off Duty staff are unpaid.", 14, TEXT)
+	finance_short_metric(inspector, "Recommended continuous roster", str(sim.Staffing.continuous_roster(1, 1)))
+	add_label(inspector, "Drink expectations begin after purchase. Delaying purchase has no missing-service penalty.", 13, MUTED)
+	if not sim.unlocked("service"):
+		add_label(inspector, "Requires Bar access at Casino Rating 20 after Blackjack access.", 14, GOLD)
+	add_button(inspector, "Bar owned" if sim.bar_owned else "Purchase Bar | " + money(CasinoTuning.BAR_PURCHASE_COST), func(): sim.purchase_bar(); refresh(), not sim.unlocked("service") or sim.bar_owned or sim.cash < CasinoTuning.BAR_PURCHASE_COST)
+
 func render_bar_menu() -> void:
 	add_label(inspector, "DRINK MENU", 12, GOLD)
 	if not sim.bar_available():
-		add_label(inspector, "Drink products become available with service access.", 15, MUTED)
+		render_bar_purchase()
 		return
 	add_label(inspector, sim.Bar.identity(sim), 22, TEXT)
 	finance_short_metric(inspector, "On menu / unlocked", "%d / %d" % [sim.drink_menu.size(), sim.drink_access.size()])
@@ -1699,7 +1716,8 @@ func load_game() -> bool:
 	var data = JSON.parse_string(FileAccess.get_file_as_string(CasinoTuning.SAVE_PATH))
 	var restored: bool = data is Dictionary and sim.restore(data)
 	if not restored:
-		sim.log_event("Save is invalid or incompatible. Start a new casino.")
+		var removal := DirAccess.remove_absolute(CasinoTuning.SAVE_PATH)
+		sim.log_event("Invalid or incompatible development save deleted. Start a new casino." if removal == OK else "Save is invalid or incompatible and could not be deleted. Start a new casino.")
 	else:
 		play_context.clear()
 		milestone_notice.reset()
@@ -2045,12 +2063,17 @@ func render_guest_directory() -> void:
 func render_desktop_build() -> void:
 	add_label(inspector, "BUILD YOUR FLOOR", 20, GOLD)
 	var tabs := row(inspector)
-	for category in ["slots", "tables"]:
+	for category in ["slots", "tables", "amenities"]:
 		var tab := add_button(tabs, category.capitalize(), func(): desktop_build_category = category; refresh())
 		tab.button_pressed = desktop_build_category == category
 		tab.toggle_mode = true
 	if desktop_build_category == "slots":
 		for id in CasinoTuning.SLOT_PROFILES: render_build_card("slots", id)
+	elif desktop_build_category == "amenities":
+		if sim.bar_owned:
+			add_label(inspector, "Bar owned", 20, GOLD)
+			add_button(inspector, "Manage drink menu", func(): open_page("bar"))
+		else: render_bar_purchase()
 	else:
 		for kind in Games.COSTS:
 			if kind != "slots": render_build_card(kind)

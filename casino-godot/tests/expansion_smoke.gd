@@ -68,7 +68,7 @@ func run() -> void:
 		ui.visitor = true
 		ui.selected = id
 		ui.refresh()
-		ui.game_view.render(table)
+		ui.game_view.render_current()
 		for i in range(3): await process_frame
 		check(ui.game_view.is_visible_in_tree(), "Playable view appears: " + kind)
 		sim.leave_table()
@@ -78,6 +78,7 @@ func run() -> void:
 	# changing the money that was already settled at their game.
 	sim.opened = true
 	sim.set_drink_menu("basic", true)
+	sim.purchase_bar()
 	sim.hire("Service", -1)
 	sim.spawn_guest()
 	var guest: Dictionary = sim.guests[-1]

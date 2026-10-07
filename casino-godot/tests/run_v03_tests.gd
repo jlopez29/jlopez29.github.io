@@ -52,10 +52,12 @@ func run() -> void:
 	shooter_tests()
 	milestones_and_wear()
 	settlements()
+	bar_service_checks()
 	hospitality_and_departure()
 	traffic_and_saves()
 	construction_and_navigation()
 	if "--quick" not in OS.get_cmdline_user_args(): long_runs()
+	await bar_ui_checks()
 	await ui_checks()
 	print("V0.3 REGRESSION: %d checks, %d failures" % [checks, failures])
 	var report := {"checks": checks, "failures": failures, "failed_checks": results}
@@ -185,8 +187,171 @@ func settlements() -> void:
 		check(near(sum_before, sim.cash+sim.owner_bankroll), "Owner/treasury conservation: " + kind)
 		check(sim.development_cash() <= sim.cash - sim.live_stakes() + 0.001, "Visitor losses cannot inflate readiness: " + kind)
 
+func service_fixture(owned: bool) -> CasinoSimulation:
+	var sim := CasinoSimulation.new()
+	sim.rng.seed = 72020
+	sim.blackjack_unlocked = true
+	sim.tables.append(sim.new_table(Vector2(350, 180), false, "slots", "standard"))
+	sim.tables.append(sim.new_table(Vector2(450, 350), false, "blackjack"))
+	sim.guest_handle = 100000
+	sim.guests_served = 100
+	sim.refresh_progression()
+	check(sim.unlocked("service"), "Normal fixture earns service access")
+	if owned: check(sim.purchase_bar(), "Normal fixture purchases bar")
+	sim.opened = true
+	sim.arrival_in = 10000
+	sim.spawn_guest()
+	var guest: Dictionary = sim.guests.back()
+	# Isolate drink consequences from gambling variance, traffic and movement.
+	guest.state = "Walking"
+	guest.patience = 10000
+	guest.satisfaction = 65.0
+	guest.thirst = 0.0
+	return sim
+
+func bar_service_checks() -> void:
+	var locked := CasinoSimulation.new()
+	var cash_before := locked.cash
+	check(not locked.purchase_bar() and locked.cash == cash_before, "Locked bar cannot be purchased")
+	var sim := service_fixture(false)
+	check(not sim.bar_owned and not sim.bar_available() and sim.drink_access.is_empty(), "Unlock creates no amenity or drink access")
+	check(not sim.hire("Service", -1) and sim.staff.is_empty(), "Service hire requires ownership")
+	var rep_before := sim.reputation
+	var thoughts: Array = []
+	sim.guest_thought.connect(func(event): thoughts.append(event.text))
+	var guest: Dictionary = sim.guests[0]
+	for minute_index in range(240): sim.step()
+	check(guest.thirst == 0 and guest.satisfaction == 65 and sim.reputation == rep_before, "Unlock without purchase causes no thirst, service decay or reputation loss")
+	check(not sim.incidents.any(func(i): return i.type == "service") and int(sim.traffic_totals.departures.service) == 0, "Unlock without purchase creates no service incident or departure")
+	check(not thoughts.any(func(thought): return "drink" in str(thought).to_lower() or "thirst" in str(thought).to_lower()), "Unowned bar creates no drink complaints")
+	var before := sim.cash
+	var wallet := sim.owner_bankroll
+	sim.cash = CasinoTuning.BAR_PURCHASE_COST - 1
+	check(not sim.purchase_bar() and not sim.bar_owned, "Insufficient Casino Cash blocks bar purchase")
+	sim.cash = before
+	check(sim.purchase_bar() and near(before - sim.cash, CasinoTuning.BAR_PURCHASE_COST), "Bar charges Casino Cash exactly once")
+	check(sim.owner_bankroll == wallet and sim.expense_totals.construction == CasinoTuning.BAR_PURCHASE_COST and sim.staff.is_empty(), "Purchase records capital, preserves owner wallet and hires nobody")
+	check(sim.drink_menu == ["basic", "water"] and "lager" not in sim.drink_menu, "Purchase supplies two basic products only")
+	before = sim.cash
+	check(not sim.purchase_bar() and sim.cash == before, "Duplicate purchase rejected")
+	for minute_index in range(140): sim.step()
+	check(guest.thirst > sim.thirst_discomfort() and guest.satisfaction < 25, "Purchased unstaffed bar develops thirst and dissatisfaction")
+	check(sim.incidents.any(func(i): return i.type == "service"), "Purchased unstaffed bar creates real service complaint")
+	check(sim.reputation < rep_before and int(sim.traffic_totals.departures.service) > 0, "Unserved drink departure naturally damages reputation")
+	sim = CasinoSimulation.new("easy", ["slots"])
+	check(sim.unlocked("service") and not sim.bar_owned, "Easy grants purchase access only")
+	check(sim.purchase_bar(), "Easy bar purchased")
+	check(sim.relief_targets.Service == 1, "Default Service relief target is one")
+	for hire_index in range(3): check(sim.hire("Service", -1), "Immediate closed Service hire %d" % hire_index)
+	var coverage := sim.staffing_summary("Service")
+	check(sim.elapsed == 0 and coverage.employed == 3 and coverage.active == 1 and coverage.relief == 1 and coverage.off_duty == 1, "Three immediate hires establish Active, Relief and unpaid next shift")
+	check(sim.payroll_rate() == 2 * CasinoTuning.SERVICE_WAGE, "Off Duty employee adds no wages")
+	var restored := CasinoSimulation.new()
+	check(restored.restore(json_save(sim)) and restored.bar_owned and restored.drink_menu == sim.drink_menu, "Current JSON save preserves bar/menu/roster")
+	var bad := json_save(sim)
+	bad.bar_owned = "true"
+	var snapshot_before := JSON.stringify(restored.snapshot())
+	check(not restored.restore(bad) and JSON.stringify(restored.snapshot()) == snapshot_before, "Invalid ownership load rejected atomically")
+	bad = json_save(sim)
+	bad.bar_owned = false
+	check(not restored.restore(bad), "Unowned bar with service roster rejected")
+	bad = json_save(sim)
+	bad.erase("bar_owned")
+	check(not restored.restore(bad), "Missing ownership rejected")
+	bad = json_save(sim)
+	bad.version = 16
+	check(not restored.restore(bad), "Old development schema rejected")
+	sim.opened = true
+	var first: Dictionary = sim.staff[0]
+	var relief: Dictionary = sim.staff[1]
+	var reserve: Dictionary = sim.staff[2]
+	first.energy = CasinoTuning.STAFF_BREAK_ENERGY
+	sim.elapsed += 1
+	sim.Staffing.tick(sim)
+	check(first.duty == "Break" and relief.duty == "Active", "Fatigue automatically promotes relief")
+	for minute_index in range(CasinoTuning.STAFF_BREAK_MINUTES + 20):
+		sim.elapsed += 1
+		sim.Staffing.tick(sim)
+	check(first.duty == "Relief", "Recovered employee returns as relief")
+	# Advance across an actual shift deadline and through rested next coverage.
+	var saw_reserve := false
+	for minute_index in range(CasinoTuning.STAFF_SHIFT_MINUTES * 3):
+		sim.elapsed += 1
+		sim.Staffing.tick(sim)
+		if reserve.duty == "Active": saw_reserve = true
+	check(saw_reserve and sim.staff.size() == 3, "Next shift reserve becomes active without another hire")
+	check(int(sim.staffing_summary("Service").active) == 1, "Automatic rotation maintains service coverage")
+
+func find_button(node: Node, prefix: String) -> Button:
+	if node is Button and node.text.begins_with(prefix): return node
+	for child in node.get_children():
+		var found := find_button(child, prefix)
+		if found != null: return found
+	return null
+
+func bar_ui_checks() -> void:
+	var ui = load("res://main.tscn").instantiate()
+	root.add_child(ui)
+	await process_frame
+	ui.close_modal()
+	ui.set_process(false)
+	ui.start_casino("easy", ["slots"])
+	ui.close_modal()
+	ui.set_process(false)
+	for dimensions in [Vector2i(1440, 900), Vector2i(844, 390), Vector2i(390, 844), Vector2i(320, 568)]:
+		root.size = dimensions
+		await process_frame
+		ui.open_page("build")
+		ui.desktop_build_category = "amenities"
+		ui.refresh()
+		await process_frame
+		if ui.mobile:
+			ui.presentation_shell.mobile_management.category = "amenities"
+			ui.presentation_shell.mobile_management.update_state()
+			await process_frame
+			await process_frame
+			for category_button in ui.presentation_shell.mobile_management.categories.get_children():
+				check(preload("res://scripts/responsive_row.gd").content_width(category_button) <= category_button.size.x + 1, "Build category text fits at " + str(dimensions))
+			var review := find_button(ui.presentation_shell.mobile_management.catalog, "Bar service")
+			check(review != null and review.visible, "Mobile amenities expose bar review at " + str(dimensions))
+		ui.open_page("bar")
+		ui.refresh()
+		await process_frame
+		await process_frame
+		var purchase := find_button(ui.inspector, "Purchase Bar")
+		check(purchase != null and not purchase.disabled, "Bar purchase available at " + str(dimensions))
+		inspect_money(ui.inspector, dimensions)
+		ui.sim.cash = CasinoTuning.BAR_PURCHASE_COST - 1
+		ui.refresh()
+		check(find_button(ui.inspector, "Purchase Bar").disabled, "Bar button blocks insufficient cash at " + str(dimensions))
+		ui.sim.cash = 5000
+		ui.floor_view.queue_redraw()
+		await process_frame
+		await process_frame
+		check(not ui.floor_view.get_node("World/Bar").visible, "Unowned bar hidden at " + str(dimensions))
+	check(ui.sim.purchase_bar(), "UI fixture purchases bar")
+	for hire_index in range(3): ui.sim.hire("Service", -1)
+	for dimensions in [Vector2i(1440, 900), Vector2i(844, 390), Vector2i(390, 844), Vector2i(320, 568)]:
+		root.size = dimensions
+		await process_frame
+		ui.open_page("staff")
+		ui.refresh()
+		await process_frame
+		await process_frame
+		check(ui.staff_details_role == "", "Coverage shown without employee expansion")
+		inspect_money(ui.inspector, dimensions)
+		ui.floor_view.queue_redraw()
+		await process_frame
+		await process_frame
+		check(ui.floor_view.get_node("World/Bar").visible, "Purchased bar visible at " + str(dimensions))
+	ui.queue_free()
+	await process_frame
+
 func hospitality_and_departure() -> void:
 	var sim := CasinoSimulation.new()
+	sim.blackjack_unlocked = true
+	sim.casino_rating = 20
+	check(sim.purchase_bar(), "Hospitality fixture purchases bar")
 	sim.opened = true
 	observe(sim)
 	var guest := seat(sim, sim.tables[0])
@@ -374,6 +539,7 @@ func ui_checks() -> void:
 		check(ui.game_view.visible if table.kind != "craps" else ui.felt.visible, "Game presentation: " + str(table.kind))
 		ui.sim.leave_table()
 		ui.visitor = false
+	ui.sim.purchase_bar()
 	ui.sim.hire("Service", -1)
 	# Presentation fixture exercises every money section at realistic multi-digit widths.
 	ui.sim.cash = 24934
@@ -550,6 +716,7 @@ func bettor(kind: String, amount: float) -> Dictionary:
 func ready_casino() -> CasinoSimulation:
 	var sim := CasinoSimulation.new("easy", ["craps"])
 	sim.rng.seed = 281
+	sim.purchase_bar()
 	sim.hire("Service", -1)
 	sim.opened = true
 	return sim

@@ -89,6 +89,7 @@ static func slot_profile(id: String) -> Dictionary:
 	return profile
 
 const GAME_COSTS := {"slots": SLOT_PROFILES.starter.cost, "blackjack": 1800, "roulette": 2500, "craps": 6000, "holdem": 8000}
+const BAR_PURCHASE_COST := 1000.0
 const HIRING_COST := 150.0
 const EXPANSION_COST := 3000.0
 const VIP_COST := 2500.0
@@ -97,7 +98,7 @@ const HIGH_LIMIT_COST := 3500.0
 const MILESTONES := [
 	{"id": "slots", "name": "Slot Machine", "rating": 0.0},
 	{"id": "blackjack", "name": "Blackjack", "rating": 14.0},
-	{"id": "service", "name": "Bar / drink service", "rating": 20.0},
+	{"id": "service", "name": "Bar purchase", "rating": 20.0},
 	{"id": "roulette", "name": "Roulette", "rating": 28.0},
 	{"id": "expansion", "name": "Floor expansion", "rating": 35.0},
 	{"id": "craps", "name": "Craps", "rating": 45.0},
@@ -242,7 +243,7 @@ const TABLE_REPAIR_COST := 120.0
 const ROLL_SECONDS := 0.3 # NPC dice cadence in game minutes; pass bets resolve over several rolls.
 const NPC_ROLL_FATIGUE := 0.002 # Up to 0.17 extra game minutes at minimum crew energy.
 const VISITOR_ROLL_FATIGUE := 0.04 # Preserve the existing manually played rail cadence.
-const SAVE_VERSION := 16 # One current schema; pre-alpha saves are disposable.
+const SAVE_VERSION := 17 # One current schema; pre-alpha saves are disposable.
 const SAVE_PATH := "user://pit-boss.json"
 const VISITOR_ROLL_SECONDS := 15.0
 const REPAIR_GRACE_MINUTES := 4320 # Three days of operation before any wear check.

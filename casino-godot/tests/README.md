@@ -118,3 +118,21 @@ checkpoint rollback/retry and retained desktop/mobile Log controls. Core checks
 also run through the normal regression entry point. Browser save/load checks
 pause while sampling saved state so telemetry timing cannot masquerade as a
 failed load, then advance past it before verifying restoration.
+
+## Purchased bar / service roster
+
+```sh
+godot --headless --path casino-godot --script tests/bar_service_smoke.gd
+```
+
+The focused checks also run through `run_tests.gd` and `run_v03_tests.gd`.
+They cover earned access without ownership (no thirst, service satisfaction loss,
+complaints or reputation loss), real capital purchase and starter menu, unstaffed
+ownership consequences, three immediate closed hires, paid/on-duty distinctions,
+automatic fatigue relief and shift handovers, current JSON persistence and invalid
+ownership rejection. Purchase/menu/staffing views and floor visibility are checked
+at desktop, landscape, portrait and 320px. Schema 17 rejects old development saves;
+the Load action deletes invalid/incompatible files, without changing live state.
+Continuous staffing uses the existing shift/rest formula: one active + one relief
+recommends four total employees. Manual gameplay remains needed for real touch
+interaction and long-term operating decisions.

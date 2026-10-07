@@ -41,7 +41,7 @@ static func set_price(sim, id: String, price: float) -> void:
 	# Existing orders retain their quoted price; new orders see the changed price.
 
 static func eligible_state(sim, guest: Dictionary) -> bool:
-	return sim.opened and guest.state in ["Playing", "Watching", "Waiting", "At bar"] and guest.thirst >= CasinoTuning.DRINK_THIRST_TRIGGER
+	return sim.bar_available() and sim.opened and guest.state in ["Playing", "Watching", "Waiting", "At bar"] and guest.thirst >= CasinoTuning.DRINK_THIRST_TRIGGER
 
 static func price_for(sim, guest: Dictionary, id: String, quote: float = -1) -> float:
 	if sim.gambling_comp_eligible(guest, CasinoTuning.DRINK_PROFILES[id]): return 0.0

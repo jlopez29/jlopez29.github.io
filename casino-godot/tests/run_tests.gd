@@ -123,7 +123,7 @@ func ui_checks() -> void:
 		await process_frame
 		check(ui.hud_summary.get_line_count() == 1 and ui.hud_summary.get_minimum_size().x <= ui.hud_summary.size.x, "Owner HUD remains atomic " + str(dimensions))
 		if ui.mobile:
-			check(not ui.events_panel.visible and ui.floor_view.visible and ui.event_nav.text == "Log (1)", "Mobile event stays off targeting surface " + str(dimensions))
+			check(not ui.events_panel.visible and ui.floor_view.visible and ui.event_nav.text == "More" and ui.sim.optional_events.active.size() == 1, "Mobile event stays off targeting surface " + str(dimensions))
 		ui.transition_pane("log")
 		ui.refresh()
 		await process_frame
@@ -147,10 +147,10 @@ func ui_checks() -> void:
 		root.size = dimensions
 		await process_frame
 		ui.layout_ui()
-		ui.game_view._process(0)
+		ui.game_view.render_current()
 		await process_frame
 		check(ui.game_view.visible and not ui.events_panel.visible and not ui.inspector_panel.visible, "Event notifications do not overlay playable controls " + str(dimensions))
-		check(ui.game_view.art.options.has("Spin"), "Existing slot play control retained " + str(dimensions))
+		check(find_button(ui.game_view.actions, "Spin") != null, "Existing slot play control retained " + str(dimensions))
 	ui.leave_table()
 	check(ui.sim.owner_play.is_empty() and ui.floor_view.visible, "Owner result returns cleanly to casino management")
 	saved = JSON.parse_string(FileAccess.get_file_as_string(ui.owner_checkpoint_path))
@@ -170,10 +170,14 @@ func ui_checks() -> void:
 		root.size = dimensions
 		await process_frame
 		ui.layout_ui()
-		ui.game_view._process(0)
+		ui.game_view.render_current()
 		await process_frame
 		check(ui.game_view.visible and not ui.events_panel.visible and not ui.inspector_panel.visible, "Blackjack event keeps controls visible " + str(dimensions))
-		if ui.sim.owner_play.status == "playing": check(not ui.game_view.art.options.is_empty(), "Actual blackjack actions available " + str(dimensions))
+		if ui.sim.owner_play.status == "playing":
+			var legal_actions := Games.actions(ui.sim.owner_event_table().round, ui.sim.owner_bankroll)
+			check(not legal_actions.is_empty(), "Actual blackjack actions available " + str(dimensions))
+			for action in legal_actions:
+				check(find_button(ui.game_view.actions, action) != null, "Legal blackjack action rendered " + action + str(dimensions))
 	ui.leave_table()
 	check(ui.sim.owner_play.is_empty() and ui.floor_view.visible, "Blackjack event exit returns to management")
 	ui.queue_free()
@@ -289,6 +293,7 @@ func floor_event_catalog() -> void:
 	check(sim.optional_events.resolve(sim, id, "dismissed") and sim.reputation == rep_before, "Production fatigue event adds no artificial penalty")
 	sim.staff[0].energy = 100
 	check(not sim.optional_events.eligible(sim, "staff_fatigue"), "Rested staff do not request fatigue relief")
+	sim.purchase_bar()
 	sim.hire("Service", -1)
 	sim.set_drink_menu("basic", true)
 	for i in range(3):
@@ -584,6 +589,7 @@ func objective_checks() -> void:
 	# Paid delivery and owner challenges use existing game/service settlement paths.
 	var drinks := CasinoSimulation.new("easy", ["slots"])
 	drinks.opened = true
+	drinks.purchase_bar()
 	drinks.hire("Service", -1)
 	drinks.set_drink_menu("basic", true)
 	drinks.spawn_guest()

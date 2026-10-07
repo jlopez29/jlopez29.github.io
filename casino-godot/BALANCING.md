@@ -90,7 +90,11 @@ recovering 0.20/minute. Closing never resets energy, shift deadlines or rest gat
 Rested off-duty roster employees stagger handovers in the final 90 minutes of a
 shift, at most once per 20 minutes. Extra employees beyond the coverage/relief
 target wait unpaid for later shifts. This is a rolling-shift abstraction, not a
-calendar. Continuous operation needs both break cover and a rested shift roster.
+calendar. Both roles default to one Relief target. Hiring immediately fills
+Active and Relief positions even while paused or closed; extra hires wait unpaid.
+Continuous operation needs both break cover and a rested shift roster. One bar
+position with one relief recommends four employed through the existing shift/rest
+calculation (480-minute shifts / 360-minute rest), rather than a hardcoded three.
 
 Coverage allocates complete crews by High/Normal/Low priority, retaining existing
 assignments within a priority. Committed games retain their real crew until bets
@@ -113,8 +117,10 @@ Recent real wagers (within 12 game minutes) plus active play qualify soda, water
 and coffee for basic comps at their actual product cost, with no sale revenue.
 Lager/cocktails/premium products always remain paid. Waiting/watching/bar-break
 guests pay on physical delivery. No costs/revenue/units are booked at order time.
-Access does not add products: both Normal and Easy start with an empty menu.
-Normal basics require service access/Rating 20; later options require Rating
+Service access (Rating 20, after Blackjack access) unlocks a $1,000 bar purchase
+using Casino Cash. Easy makes purchase immediately available, without free ownership.
+Purchase activates the bar and adds House Soda and Sparkling Water to the menu.
+Later unlocks never add menu entries automatically. Normal basics require bar ownership; later options require Rating
 24/32/45/65 and 20/60/150/300 actual deliveries; reserve also needs existing VIP
 access. Easy exposes every product as an option, still requiring explicit addition.
 
@@ -132,13 +138,15 @@ Product gross contribution subtracts paid/comp ingredients. Product net further
 subtracts real preparation/delivery/return payroll attributed to that product;
 idle/relief/break payroll stays shared. Sum of product net minus shared service
 payroll reconciles to bar net. Accounting/price quotes/menu/queues persist in
-schema 15; disposable older development saves are not migrated.
+schema 17, including explicit bar ownership; older development saves are rejected
+and deleted on load.
 
 Slot players can attract bounded spectators like table players; observers
 do not reserve a gambling position or qualify for comps, and move on when play
 ends. Watching never changes payouts or odds.
-Before service access, thirst does not accumulate or reduce satisfaction. After
-access it grows normally, with discomfort at 25. Waiting guests and session
+Before bar ownership, thirst does not accumulate or reduce satisfaction; no
+missing-service complaints or drink-service reputation penalties apply. After
+purchase it grows normally, with discomfort at 25. Waiting guests and session
 breaks can reserve one of five bar spots, walk there, buy a drink through existing
 physical service staff and linger for 4-8 game minutes after delivery. Visits
 without a delivery last 8-16 minutes; bar waiting preserves the demand budget.

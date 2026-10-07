@@ -3,6 +3,7 @@ extends Control
 signal table_clicked(id: int)
 signal floor_clicked(at: Vector2)
 signal guest_clicked(id: int)
+signal bar_clicked()
 
 const PitBoss = preload("res://scripts/pit_boss_theme.gd")
 var selected_guest := -1
@@ -244,10 +245,10 @@ func _draw() -> void:
 	text_at(Vector2(65, 43), "THE CAGE", GOLD, 12)
 	for x in [65, 100, 135, 170]:
 		draw_circle(Vector2(x, 65), 5, Color("536379"))
-	if sim.guest_feature_relevant("service"):
+	if sim.bar_available():
 		var bar := sim.bar_bounds()
 		draw_texture_rect(PitBoss.texture("casino/amenities/bar.png"), bar, false)
-		text_at(bar.position + Vector2(15, 25), "COCKTAILS" if sim.bar_available() else "BAR COMING SOON", GOLD, 12)
+		text_at(bar.position + Vector2(15, 25), "COCKTAILS", GOLD, 12)
 		for offset in CasinoTuning.BAR_GUEST_OFFSETS:
 			draw_circle(bar.position + Vector2(offset.x, 49), 6, Color("985b60"))
 			if sim.bar_available(): draw_circle(bar.position + offset, 10, Color(0.6, 0.4, 0.45, 0.15))

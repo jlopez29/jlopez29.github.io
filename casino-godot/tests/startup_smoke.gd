@@ -33,7 +33,7 @@ func check_startup() -> void:
 		return
 	ui.call("close_modal")
 	for i in range(3): await process_frame
-	for key in ["brand", "doors_button", "walk_button", "floor_view"]:
+	for key in ["brand", "doors_button", "floor_walk_button", "floor_view"]:
 		var control: Control = ui.get(key)
 		if not control.is_visible_in_tree() or control.size.x <= 0 or control.size.y <= 0:
 			fail("Startup control is hidden or has no size: " + key)

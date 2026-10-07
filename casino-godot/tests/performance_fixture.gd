@@ -14,6 +14,7 @@ static func create(scale: String) -> CasinoSimulation:
 		sim.tables.append(table)
 		for j in range(sim.required_crew(table)):
 			sim.staff.append(CasinoSimulation.Staffing.new_employee(sim, "Dealer", int(table.id)))
+	if scale != "small": sim.purchase_bar()
 	sim.service_positions = 4 if scale != "small" else 0
 	for i in range(sim.service_positions * 2): sim.staff.append(CasinoSimulation.Staffing.new_employee(sim, "Service"))
 	sim.opened = true

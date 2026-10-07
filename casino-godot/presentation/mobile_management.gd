@@ -23,8 +23,8 @@ func mount(ui: Control) -> void:
 	palette.add_child(body)
 	categories = HBoxContainer.new()
 	body.add_child(categories)
-	for kind in ["slots", "tables"]:
-		var button: Button = ui.add_button(categories, kind.capitalize(), func():
+	for kind in ["slots", "tables", "amenities"]:
+		var button: Button = ui.add_button(categories, "Bar" if kind == "amenities" else kind.capitalize(), func():
 			category = kind
 			update_state())
 		button.toggle_mode = true
@@ -41,6 +41,7 @@ func mount(ui: Control) -> void:
 		add_purchase("slots", profile_id, str(CasinoTuning.SLOT_PROFILES[profile_id].short_name))
 	for kind in ["blackjack", "roulette", "craps", "holdem"]:
 		add_purchase(kind, "starter", CasinoGames.NAMES[kind].replace("’", "'"))
+	add_purchase("bar", "starter", "Bar service")
 	more = PopupMenu.new()
 	add_child(more)
 	more.add_theme_constant_override("v_separation", 26)
@@ -62,6 +63,9 @@ func mount(ui: Control) -> void:
 func add_purchase(kind: String, profile_id: String, title: String) -> void:
 	var ui := controller
 	var button: Button = ui.add_button(catalog, title, func():
+		if kind == "bar":
+			ui.open_page("bar")
+			return
 		ui.build_kind = kind
 		ui.build_slot_profile = profile_id
 		ui.context_expanded = false
@@ -91,7 +95,12 @@ func update_state() -> void:
 	for purchase in purchases:
 		var kind: String = purchase.kind
 		var button: Button = purchase.button
-		button.visible = (kind == "slots") == (category == "slots")
+		button.visible = (category == "amenities" if kind == "bar" else category == "slots" if kind == "slots" else category == "tables")
+		if kind == "bar":
+			button.text = "Bar service\n" + ("Manage" if ui.sim.bar_owned else "Review purchase")
+			button.disabled = false
+			button.tooltip_text = "Review purchase, hiring and payroll costs."
+			continue
 		var unlocked: bool = ui.sim.slot_unlocked(purchase.profile) if kind == "slots" else ui.sim.unlocked(kind)
 		var revealed: bool = kind == "slots" or ui.sim.revealed(kind)
 		var price: float = ui.sim.purchase_cost(kind, purchase.profile)
@@ -127,6 +136,13 @@ func layout(ui: Control, dimensions: Vector2) -> void:
 	body.vertical = not landscape
 	for button in categories.get_children():
 		button.add_theme_font_size_override("font_size", 14)
+	# Clipped buttons otherwise report tiny minimums and lose their labels when
+	# the landscape palette shares a horizontal row with the scrolling catalog.
+	var category_width := float(maxi(0, categories.get_child_count() - 1) * categories.get_theme_constant("separation"))
+	for button in categories.get_children():
+		button.custom_minimum_size.x = ceilf(preload("res://scripts/responsive_row.gd").content_width(button))
+		category_width += button.custom_minimum_size.x
+	categories.custom_minimum_size.x = category_width
 	var actions_y := h - edge.w - 44
 	ui.brand.hide()
 	ui.subtitle.hide()

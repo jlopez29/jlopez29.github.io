@@ -110,6 +110,7 @@ func mount(ui: Control) -> void:
 	ui.floor_view.table_clicked.connect(ui.select_table)
 	ui.floor_view.floor_clicked.connect(ui.click_floor)
 	ui.floor_view.guest_clicked.connect(ui.select_guest)
+	ui.floor_view.bar_clicked.connect(func(): ui.open_page("bar"))
 
 	ui.felt = ui.FeltScript.new()
 	ui.felt.sim = ui.sim
