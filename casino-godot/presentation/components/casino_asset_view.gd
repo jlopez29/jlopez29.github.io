@@ -40,7 +40,7 @@ func update_view(sim: CasinoSimulation, table: Dictionary, index: Dictionary, se
 		sprite.texture = Catalog.texture_for(kind, int(table.id))
 		shadow.texture = sprite.texture
 	var extent := Vector2(simulation_bounds.size.y, simulation_bounds.size.x) if table.rotated else simulation_bounds.size
-	var ratio := minf(extent.x / sprite.texture.get_width(), extent.y / sprite.texture.get_height()) * 1.08
+	var ratio := Catalog.visual_scale(sprite.texture, extent)
 	visual_size = sprite.texture.get_size() * ratio
 	sprite.scale = Vector2.ONE * ratio
 	sprite.rotation = PI / 2 if table.rotated else 0.0
@@ -66,16 +66,6 @@ func update_view(sim: CasinoSimulation, table: Dictionary, index: Dictionary, se
 	$Rug.position = -simulation_bounds.size / 2 - Vector2.ONE * 8
 	$Rug.scale = Vector2.ONE * 0.25
 	$Rug.size = (simulation_bounds.size + Vector2.ONE * 16) / 0.25
-	$TableRug.visible = kind != "slots"
-	$RugEdge.visible = kind != "slots"
-	if kind != "slots":
-		var points := PackedVector2Array()
-		for i in range(40):
-			var angle := TAU * i / 40
-			points.append((Vector2(cos(angle), sin(angle)) * (visual_size / 2 + Vector2(9, 9))).rotated(sprite.rotation))
-		$TableRug.polygon = points
-		points.append(points[0])
-		$RugEdge.points = points
 	caption.text = "%s %02d" % [sim.slot_profile(table).short_name if kind == "slots" else str(CasinoGames.NAMES[kind]).replace("’", "'"), table.id]
 	caption.visible = is_selected or table.broken
 	state_label.text = "Repair needed" if table.broken else "Open" if operating else "Closed" if not sim.opened else "Staffing paused" if not table.staff_enabled else "Needs coverage"

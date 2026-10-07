@@ -14,6 +14,7 @@ var pinch_distance := 0.0
 var inspector_occlusion := Rect2()
 var framing_signature: Array = []
 var room_signature := Rect2()
+var amenity_signature: Array = []
 var asset_views := {}
 var guest_views := {}
 var staff_views := {}
@@ -21,6 +22,8 @@ var staff_views := {}
 
 func _ready() -> void:
 	super._ready()
+	$World/Bar.texture = Catalog.amenity_texture("bar")
+	$World/Cage.texture = Catalog.amenity_texture("cashier_cage")
 	world.show_behind_parent = true # Existing feedback draws above world nodes.
 	$World/Player.texture = PitBoss.texture("guests/base/guest_gold.svg")
 	$World/Player.scale = Vector2.ONE * 28 / $World/Player.texture.get_width()
@@ -205,18 +208,19 @@ func sync_world() -> void:
 		$World/Walkway.size = Vector2(room.size.x - 24, 18) / 0.3
 		$World/RoomTrim.points = PackedVector2Array([room.position + Vector2(3, 112), Vector2(room.end.x - 3, room.position.y + 112), room.end - Vector2(3, 3), Vector2(room.position.x + 3, room.end.y - 3), room.position + Vector2(3, 112)])
 		$World/LobbyTrim.points = PackedVector2Array([room.position + Vector2(0, 110), Vector2(room.end.x, room.position.y + 110)])
-		$World/Lounge.position = Vector2(room.end.x - 150, room.position.y + 53)
-		$World/LoungeShadow.position = $World/Lounge.position + Vector2(3, 5)
-		$World/LoungeFloor.position = Vector2(room.end.x - 209, room.position.y + 6)
-		$World/LoungeFloor.size = Vector2(118, 98) / 0.25
-		$World/PlantLeft.position = room.position + Vector2(18, 53)
-		$World/PlantRight.position = Vector2(room.end.x - 22, room.position.y + 53)
-	$World/Entrance.position = CasinoTuning.ENTRY + Vector2(-42, -11)
+	# Retain logical counter/pickup positions; only the artwork has separate bounds.
+	var amenities := [sim.bar_bounds(), CasinoSimulation.CAGE_PICKUP]
+	if amenity_signature != amenities:
+		amenity_signature = amenities
+		var bar_art := Catalog.amenity_visual_bounds("bar", sim.bar_guest_position(2))
+		$World/Bar.position = bar_art.position
+		$World/Bar.size = bar_art.size
+		var cage_art := Catalog.amenity_visual_bounds("cashier_cage", CasinoSimulation.CAGE_PICKUP)
+		$World/Cage.position = cage_art.position
+		$World/Cage.size = cage_art.size
 	$World/Bar.visible = sim.guest_feature_relevant("service")
-	$World/Bar.position = sim.bar_bounds().position
-	$World/Bar.size = sim.bar_bounds().size
 	$World/BarLabel.visible = $World/Bar.visible and not sim.bar_available()
-	$World/BarLabel.position = sim.bar_bounds().position + Vector2(6, -13)
+	$World/BarLabel.position = $World/Bar.position + Vector2(6, -13)
 	$World/BarLabel.text = "COCKTAIL BAR" if sim.bar_available() else "BAR / NO SERVICE"
 	prune(asset_views, presentation.tables)
 	for id in presentation.tables:
@@ -301,7 +305,7 @@ func _draw() -> void:
 		draw_rect(rect.grow(CasinoTuning.ASSET_AISLE_CLEARANCE), Color(color, 0.08))
 		var image := Catalog.texture_for(build_kind, moving_id if moving_id > 0 else sim.next_id)
 		var extent := Vector2(rect.size.y, rect.size.x) if rotated else rect.size
-		var ratio := minf(extent.x / image.get_width(), extent.y / image.get_height()) * 1.08
+		var ratio := Catalog.visual_scale(image, extent)
 		draw_set_transform(screen_at(rect.get_center()), PI / 2 if rotated else 0.0, Vector2.ONE * zoom)
 		draw_texture_rect(image, Rect2(-image.get_size() * ratio / 2, image.get_size() * ratio), false, Color(1, 1, 1, 0.7))
 		draw_set_transform(camera, 0, Vector2.ONE * zoom)

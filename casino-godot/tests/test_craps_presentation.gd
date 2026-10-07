@@ -2,9 +2,12 @@ extends SceneTree
 # Presentation and current rules/accounting integration, using existing forced-roll hooks.
 var ui: Control
 var checks := 0
+var failures := 0
 func check(value: bool, message: String) -> void:
-	assert(value, message)
-	checks += 1
+	if value: checks += 1
+	else:
+		failures += 1
+		push_error(message)
 func _initialize() -> void: call_deferred("run")
 func settle() -> void:
 	for i in range(8): await process_frame
@@ -33,8 +36,11 @@ func run() -> void:
 		var at: Vector2 = ui.felt.endpoint(key, -1)
 		check(not positions.has(at), "Distinct stack " + key)
 		positions[at] = key
-	for at in [Vector2(180, 690), Vector2(1114, 600), Vector2(1340, 719), Vector2(1420, 450)]:
+	for at in [Vector2(180, 690), Vector2(1114, 600), Vector2(1340, 719)]:
 		for target in ui.felt.targets: check(not target.rect.has_point(at), "Unsupported region inactive")
+	for key in ["hard_4", "hard_6", "hard_8", "hard_10"]:
+		var center: Vector2 = ui.felt.spots[key]
+		check(ui.felt.targets.filter(func(t): return t.kind == key and t.rect.has_point(center)).size() == 1, "Hardway cell clickable " + key)
 	# Actual placement, stake rounding and refunds use the unchanged simulation entry points.
 	for key in ["pass", "dont_pass", "field", "four", "five", "six", "eight", "nine", "ten", "hard_4", "hard_6", "hard_8", "hard_10", "any_craps", "any_seven", "yo", "aces", "ace_deuce", "boxcars"]:
 		var wallet: float = ui.sim.owner_bankroll
@@ -101,7 +107,74 @@ func run() -> void:
 	ui.rolling = 0
 	ui.game_view.signature.clear()
 	ui.game_view.render_current()
-	check(ui.game_view.wallet.text.contains(str(int(ui.sim.owner_bankroll))), "Wallet label updates")
+	check(ui.game_view.wallet.text.ends_with(preload("res://scripts/financial_text.gd").cash(ui.sim.owner_bankroll, 0)), "Wallet label updates")
+	# Seven out: real owner and guest losses rake, real Don't payouts retain player colors.
+	table = join()
+	ui.felt.prepare_roll(table)
+	table.point = 6
+	check(ui.sim.take_bet(table, {"bets": table.owner}, "pass", 25, true), "Animation owner stake")
+	check(ui.sim.take_bet(table, {"bets": table.owner}, "dont_pass", 25, true), "Animation Don't stake")
+	var colors := {ui.felt.player_color(-1): true}
+	for seat in range(7):
+		ui.sim.spawn_guest()
+		var guest: Dictionary = ui.sim.guests[-1]
+		guest.table = table.id
+		guest.seat = seat
+		guest.state = "Playing"
+		check(ui.sim.take_bet(table, guest, "pass", 10, false), "Guest fixture wager")
+		var color: Color = ui.felt.player_color(seat)
+		check(not colors.has(color), "Unique player chip color")
+		colors[color] = true
+	ui.felt.prepare_roll(table)
+	ui.sim.roll(int(table.id), [1, 6])
+	var after_wallet: float = ui.sim.owner_bankroll
+	var after_cash: float = ui.sim.cash
+	var after_rng: int = ui.sim.rng.state
+	ui.felt.capture_roll(table)
+	check(ui.felt.flights.filter(func(f): return f.to == "bank").size() == 8, "Owner and seven guest losses rake")
+	var payments: Array = ui.felt.flights.filter(func(f): return f.pay)
+	check(payments.size() == 1 and payments[0].amount == 50 and payments[0].seat == -1, "Actual owner credit animated")
+	ui.felt.capture_roll(table)
+	check(ui.felt.flights.size() == 9, "Duplicate capture does not repeat settlement")
+	ui.felt.animation = 0
+	ui.felt.locked = false
+	ui.felt._process(0.81)
+	check(ui.felt.delivery > 0 and not ui.felt.dice_ready, "Dice pulled from landing")
+	check(ui.felt.return_from == ui.felt.landing, "Return begins at rolled location")
+	check(ui.felt.return_to == ui.felt.shooter_pocket(), "Return targets actual new shooter")
+	ui.felt._process(0.6)
+	check(ui.felt.dice_center() != ui.felt.return_from and ui.felt.dice_center() != ui.felt.return_to, "Visible dealer handoff movement")
+	ui.felt._process(0.8)
+	check(ui.felt.dice_ready and ui.felt.dice_center() == ui.felt.return_to, "Dice pushed to shooter")
+	check(ui.sim.owner_bankroll == after_wallet and ui.sim.cash == after_cash and ui.sim.rng.state == after_rng, "All animation leaves accounting/RNG unchanged")
+	# Native touch hold/flick drives exactly one real roll; a canceled grab does not roll.
+	table = join()
+	ui.speed = 1
+	ui.felt.prepare_roll(table)
+	ui.sim.bet(int(table.id), "pass", 25)
+	ui.felt.locked = false
+	ui.felt.animation = 0
+	ui.felt.delivery = 0
+	ui.felt.dice_ready = true
+	var touch := InputEventScreenTouch.new()
+	touch.index = 0
+	touch.pressed = true
+	var pocket: Vector2 = ui.felt.shooter_pocket()
+	touch.position = ui.felt.get_global_transform_with_canvas() * (ui.felt.offset + pocket * ui.felt.factor)
+	ui.felt._input(touch)
+	check(ui.felt.dice_held, "Touch grabs shooter dice")
+	var drag := InputEventScreenDrag.new()
+	drag.index = 0
+	drag.position = touch.position + Vector2(150, 0) * ui.felt.factor
+	ui.felt.clock += 0.1
+	ui.felt._input(drag)
+	touch.position = drag.position
+	touch.pressed = false
+	ui.felt._input(touch)
+	check(table.rolls == 1 and ui.felt.animation > 0, "Touch flick rolls once")
+	check(ui.felt.launch != pocket and ui.felt.impact != ui.felt.landing, "Release location / wall bounce preserved")
+	ui.felt.animation = 0
+	ui.rolling = 0
 	# Natural RNG: presentation capture never consumes RNG or performs extra settlement.
 	table = join()
 	check(ui.sim.bet(int(table.id), "pass", 25), "Natural roll line")
@@ -143,5 +216,5 @@ func run() -> void:
 			press.pressed = false
 			ui.felt._gui_input(press)
 			check(CrapsRules.exposure(table.owner) == 0, "Panning does not place a wager")
-	print("PASS: ", checks, " Craps presentation/integration checks")
-	quit()
+	print("Craps presentation/integration: ", checks, " passed; ", failures, " failed")
+	quit(1 if failures > 0 else 0)

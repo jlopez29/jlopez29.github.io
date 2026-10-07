@@ -1401,6 +1401,7 @@ func begin_player_roll() -> void:
 	var table := sim.get_table(sim.joined)
 	if rolling > 0 or speed == 0 or not felt.can_throw() or table.is_empty() or int(table.shooter) != 0 or not sim.ready_for_play(table): return
 	active_roll_table = sim.joined
+	felt.prepare_roll(table)
 	if not sim.shoot_player(active_roll_table):
 		active_roll_table = -1
 		refresh()

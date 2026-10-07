@@ -204,7 +204,7 @@ func layout_play() -> void:
 	put(game_title, Vector2(200 if landscape else 10 if compact else 420, 62 if compact and not landscape else 32), Vector2(size.x - 36 if compact else 260, 18))
 	return_button.text = "Floor" if compact else "Return to Floor"
 	put(return_button, Vector2(header.size.x - (80 if compact else 146), 5), Vector2(72 if compact else 138, 44))
-	put(pause_button, Vector2(header.size.x - (144 if compact else 210), 5), Vector2(58, 44))
+	put(pause_button, Vector2(header.size.x - (166 if compact else 232), 5), Vector2(80, 44))
 	pause_button.add_theme_font_size_override("font_size", 12)
 	if landscape:
 		put(surface_scroll, Vector2(8, top), Vector2(maxf(180, size.x - 236), size.y - top - 8))
@@ -331,6 +331,16 @@ func render_current() -> void:
 			chip_button.expand_icon = true
 			chip_button.add_theme_constant_override("icon_max_width", 32)
 			chip_button.custom_minimum_size = Vector2(84, 48)
+			if kind == "craps":
+				chip_button.set_drag_forwarding(func(_at: Vector2):
+					if chip_button.disabled or craps.busy(): return null
+					var preview := TextureRect.new()
+					preview.texture = chip_button.icon
+					preview.custom_minimum_size = Vector2(44, 44)
+					chip_button.set_drag_preview(preview)
+					return {"type": "craps_chip", "amount": denomination}, Callable(), Callable())
+			else:
+				chip_button.set_drag_forwarding(Callable(), Callable(), Callable())
 			chip_button.toggle_mode = true
 			chip_button.button_pressed = bet == denomination
 	if event: render_event_actions(table)

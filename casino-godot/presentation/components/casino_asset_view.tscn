@@ -11,14 +11,6 @@ texture_repeat = 2
 expand_mode = 1
 stretch_mode = 1
 modulate = Color(0.6, 0.55, 0.6, 1)
-[node name="TableRug" type="Polygon2D" parent="."]
-texture = ExtResource("2")
-texture_repeat = 2
-texture_scale = Vector2(0.25, 0.25)
-color = Color(0.25, 0.28, 0.25, 1)
-[node name="RugEdge" type="Line2D" parent="."]
-width = 1.0
-default_color = Color(0.65, 0.48, 0.22, 0.4)
 [node name="Outline" type="Panel" parent="."]
 mouse_filter = 2
 [node name="Shadow" type="Sprite2D" parent="."]
