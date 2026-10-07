@@ -4,6 +4,7 @@ signal table_clicked(id: int)
 signal floor_clicked(at: Vector2)
 signal guest_clicked(id: int)
 signal bar_clicked()
+signal back_room_clicked()
 
 const PitBoss = preload("res://scripts/pit_boss_theme.gd")
 var selected_guest := -1
@@ -115,7 +116,7 @@ func _process(delta: float) -> void:
 	for effect in floating_results: effect.age += delta
 	floating_results = floating_results.filter(func(effect): return float(effect.age) < float(effect.lifetime))
 	update_camera(delta)
-	if visitor_mode and sim.joined < 0:
+	if visitor_mode and sim.joined < 0 and is_visible_in_tree():
 		var dir := Vector2.ZERO
 		if not get_viewport().gui_get_focus_owner() is LineEdit:
 			dir.x = float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT)) - float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT))
@@ -188,6 +189,9 @@ func _gui_input(event: InputEvent) -> void:
 
 func select_at(screen: Vector2) -> void:
 	var at := world_at(screen)
+	if not building and Rect2(330,19,150,38).grow(6).has_point(at):
+		back_room_clicked.emit()
+		return
 	if building:
 		floor_clicked.emit((at / 10).floor() * 10)
 		return
@@ -240,6 +244,8 @@ func _draw() -> void:
 	draw_rect(Rect2(room.position + Vector2(14, 12), Vector2(room.size.x - 28, 62)), Color("101b26"))
 	draw_line(Vector2(room.position.x + 24, 75), Vector2(room.end.x - 24, 75), GOLD, 2)
 	text_at(Vector2(205, 35), "PIT BOSS", GOLD, 14)
+	draw_rect(Rect2(330,19,150,38),Color("652b38"))
+	text_at(Vector2(341,43),"BACK ROOM >",GOLD,12)
 	# Back-of-house furniture lives outside the editable floor rectangle.
 	draw_rect(Rect2(35, 19, 160, 38), Color("344055"))
 	text_at(Vector2(65, 43), "THE CAGE", GOLD, 12)

@@ -93,6 +93,7 @@ func mount(ui: Control) -> void:
 		if ui.building: ui.toggle_build()
 		else: ui.open_page("build"))
 	ui.walk_button = ui.add_button(left, "Walk the floor", ui.toggle_walk)
+	ui.add_button(left, "Back Room", ui.enter_back_room)
 	ui.add_gap(left, 6)
 	ui.objective = VBoxContainer.new()
 	ui.objective.add_theme_constant_override("separation", 6)
@@ -221,7 +222,7 @@ func layout(ui: Control, dimensions: Vector2) -> void:
 	var w := dimensions.x
 	var h := dimensions.y
 	var mobile: bool = ui.mobile
-	var playing: bool = ui.sim.joined >= 0 or not ui.sim.owner_play.is_empty()
+	var playing: bool = ui.sim.joined >= 0 or not ui.sim.owner_play.is_empty() or ui.in_back_room
 	$TopHUD.visible = not playing
 	if playing:
 		ui.backdrop.size = dimensions

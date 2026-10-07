@@ -139,7 +139,8 @@ static func actions(state: Dictionary, funds: float) -> Dictionary:
 	if state.kind == "blackjack":
 		if state.phase == "insurance":
 			result["Decline insurance"] = 0.0
-			if funds >= state.base / 2: result["Insurance"] = state.base / 2
+			var insurance_cost := snappedf(float(state.base)/2,float(state.currency_step)) if state.has("currency_step") else float(state.base)/2
+			if funds >= insurance_cost: result["Insurance"] = insurance_cost
 		else:
 			var hand: Dictionary = state.hands[int(state.active)]
 			result["Hit"] = 0.0
@@ -163,7 +164,7 @@ static func act(state: Dictionary, action: String) -> void:
 		else: state.phase = "flop" if state.phase == "preflop" else "river"
 		return
 	if state.phase == "insurance":
-		if action == "Insurance": state.insurance = state.base / 2
+		if action == "Insurance": state.insurance = snappedf(float(state.base)/2,float(state.currency_step)) if state.has("currency_step") else state.base / 2
 		state.phase = "play"
 		if total(state.dealer) == 21 or total(state.hands[0].cards) == 21: finish_blackjack(state)
 		else: state.message = "Dealer has no blackjack. Choose your action."

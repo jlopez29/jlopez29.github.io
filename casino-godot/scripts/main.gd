@@ -43,6 +43,8 @@ var building := false
 var desktop_build_category := "slots"
 var build_kind := "slots"
 var build_slot_profile := "starter"
+var back_room_view: Control
+var in_back_room := false
 var game_view: Control
 var moving := -1
 var speed := 1
@@ -134,6 +136,16 @@ func _ready() -> void:
 	displayed_cash = sim.cash
 	treasury_target = sim.cash
 	presentation_shell.mount(self)
+	back_room_view = preload("res://scripts/back_room_view.gd").new()
+	back_room_view.sim = sim
+	back_room_view.z_index = 30
+	add_child(back_room_view)
+	back_room_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	back_room_view.hide()
+	back_room_view.leave_requested.connect(func(): in_back_room=false; back_room_view.hide(); transition_pane("floor"); layout_ui(); refresh())
+	back_room_view.changed.connect(refresh)
+	floor_view.back_room_clicked.connect(enter_back_room)
+	mobile_menu.get_popup().add_item("Back Room", 5)
 	get_viewport().size_changed.connect(queue_viewport_sync)
 	visible_viewport.connect_web(queue_viewport_sync)
 	queue_viewport_sync()
@@ -228,20 +240,24 @@ func cancel_placement() -> void:
 
 func apply_visibility() -> void:
 	normalize_interaction_ui()
+	if is_instance_valid(back_room_view):
+		back_room_view.visible = in_back_room
+		back_room_view.sim = sim
 	var at_table := sim.joined >= 0 or not sim.owner_play.is_empty()
+	var management_hidden := at_table or in_back_room
 	var is_craps := at_table and sim.owner_play.is_empty() and sim.table_kind(sim.get_table(sim.joined)) == "craps"
 	if at_table and play_context.is_empty(): remember_management_context()
 	game_view.visible = at_table
 	table_scroll.visible = false
 	felt.visible = is_craps
 	play_return.visible = false
-	floor_view.visible = not at_table
-	nav_rail.visible = not mobile and not at_table
-	bottom_nav.visible = mobile and not at_table and not requires_floor_targeting()
-	side_panel.visible = not at_table and mobile_pane == "manage"
-	events_panel.visible = not at_table and mobile_pane == "log"
-	inspector_panel.visible = not at_table and inspector_open and mobile_pane == "table"
-	floor_actions.visible = not at_table and mobile_pane == "floor"
+	floor_view.visible = not at_table and not in_back_room
+	nav_rail.visible = not mobile and not management_hidden
+	bottom_nav.visible = mobile and not management_hidden and not requires_floor_targeting()
+	side_panel.visible = not management_hidden and mobile_pane == "manage"
+	events_panel.visible = not management_hidden and mobile_pane == "log"
+	inspector_panel.visible = not management_hidden and inspector_open and mobile_pane == "table"
+	floor_actions.visible = not management_hidden and mobile_pane == "floor"
 	floor_fit.visible = not visitor and not building
 	floor_fit.text = "Fit" if floor_view.close_view else "Closer"
 	floor_walk_button.visible = not building
@@ -464,6 +480,7 @@ func global_action(id: int) -> void:
 		2: show_help()
 		3: confirm_reset()
 		4: toggle_dev_panel()
+		5: enter_back_room()
 
 func toggle_dev_panel() -> void:
 	if not OS.is_debug_build() or not is_instance_valid(developer_panel) or modal != null: return
@@ -590,7 +607,7 @@ func refresh(structural: bool = true) -> void:
 	floor_view.selected = selected
 	floor_view.selected_guest = selected_guest
 	mode_hint.text = "Click to place | R to rotate | Esc to cancel" if building else ("Tap to walk | tap a table to approach | E or Join to play" if visitor else "Select a table or guest to inspect | build and staff to expand")
-	var layout_key := [page, mobile_pane, visitor, building, moving, sim.joined, modal, inspector_open, context_expanded, table_options, not sim.optional_events.active.is_empty(), not sim.owner_play.is_empty(), not sim.staff.is_empty()]
+	var layout_key := [page, mobile_pane, visitor, building, moving, sim.joined, modal, inspector_open, context_expanded, table_options, not sim.optional_events.active.is_empty(), not sim.owner_play.is_empty(), not sim.staff.is_empty(), in_back_room]
 	if layout_key != layout_identity:
 		layout_identity = layout_key
 		layout_ui()
@@ -1251,7 +1268,7 @@ func render_finance_advanced(parent: Node) -> void:
 	finance_row(parent, "Owner floor house result", sim.visitor_house_result())
 	finance_row(parent, "Drink sales", float(sim.bar_totals.revenue))
 	finance_row(parent, "All costs incl. investment", -sim.operating_costs())
-	finance_row(parent, "Owner event profit transfers", sim.owner_account.profit_transferred)
+	finance_row(parent, "Owner / Back Room profit transfers", sim.owner_account.profit_transferred)
 	if sim.sponsored_income > 0: finance_row(parent, "Sponsored promotions", sim.sponsored_income)
 	finance_row(parent, "Owner Bankroll (personal)", sim.owner_bankroll)
 	finance_row(parent, "Recorded net cash flow", sim.net_profit(), false)
@@ -1860,6 +1877,8 @@ func show_new_game_setup(initial: bool = false) -> void:
 	layout_ui()
 
 func start_casino(mode: String, preferred: Array) -> void:
+	in_back_room = false
+	back_room_view.hide()
 	play_context.clear()
 	event_focus_staff = -1
 	sim = CasinoSimulation.new(mode, preferred)
@@ -2009,10 +2028,14 @@ func checkpoint_owner_play() -> bool:
 	if file == null:
 		sim.log_event("Owner event unavailable: local save storage cannot be written.")
 		return false
-	file.store_string(JSON.stringify(sim.snapshot()))
+	var checkpoint_text := JSON.stringify(sim.snapshot())
+	file.store_string(checkpoint_text)
 	file.flush()
 	var ok := file.get_error() == OK
 	file.close()
+	if ok:
+		var verified = JSON.parse_string(FileAccess.get_file_as_string(temporary))
+		ok = verified is Dictionary and verified == JSON.parse_string(checkpoint_text)
 	if ok: ok = DirAccess.rename_absolute(ProjectSettings.globalize_path(temporary), ProjectSettings.globalize_path(owner_checkpoint_path)) == OK
 	if not ok: sim.log_event("Owner event checkpoint failed. Local storage is unavailable.")
 	return ok
@@ -2133,3 +2156,15 @@ func render_build_card(kind: String, profile_id: String = "starter") -> void:
 	button.custom_minimum_size.y = 34
 	button.add_theme_font_size_override("font_size", 13)
 	button.tooltip_text = table_purchase_tooltip(kind) if kind != "slots" else "Purchase this machine profile using casino cash."
+
+func enter_back_room() -> void:
+	if sim.joined >= 0 or not sim.owner_play.is_empty():
+		sim.log_event("Finish public play or the owner event before entering the Back Room.")
+		refresh()
+		return
+	cancel_placement()
+	in_back_room = true
+	back_room_view.sim = sim
+	back_room_view.open()
+	layout_ui()
+	refresh()
