@@ -18,6 +18,10 @@ const DrinkService = preload("res://scripts/drink_service.gd")
 var cash := CasinoTuning.STARTING_CASH
 const OwnerAccount = preload("res://scripts/owner_bankroll.gd")
 const OwnerPlay = preload("res://scripts/owner_event_play.gd")
+const BackRoom = preload("res://scripts/back_room_session.gd")
+const Recovery = preload("res://scripts/recovery_system.gd")
+var back_room := BackRoom.new()
+var recovery := Recovery.new()
 var owner_play := {}
 var owner_checkpoint := Callable() # Controller supplies local persistence; tests can remain in memory.
 const OptionalEvents = preload("res://scripts/optional_events.gd")
@@ -1924,6 +1928,7 @@ func shooter_name(table: Dictionary) -> String:
 	return "CPU shooter"
 
 func join_table(id: int) -> bool:
+	if back_room.busy(): return false
 	if not owner_play.is_empty(): return false
 	Staffing.rebalance(self, true)
 	var table := get_table(id)
@@ -2247,7 +2252,7 @@ func satisfaction() -> float:
 	return total / guests.size()
 
 func snapshot() -> Dictionary:
-	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_owned": bar_owned, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "owner_bankroll": owner_account.snapshot(), "optional_events": optional_events.snapshot(), "momentum": momentum.snapshot(), "optional_objectives": optional_objectives.snapshot(), "owner_play": owner_play.duplicate(true), "sponsored_income": sponsored_income, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
+	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_owned": bar_owned, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "owner_bankroll": owner_account.snapshot(), "optional_events": optional_events.snapshot(), "momentum": momentum.snapshot(), "optional_objectives": optional_objectives.snapshot(), "owner_play": owner_play.duplicate(true), "back_room": back_room.snapshot(), "recovery": recovery.snapshot(), "sponsored_income": sponsored_income, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
 
 func restore(data: Dictionary) -> bool:
 	if not valid_number(data.get("version")) or data.version != CasinoTuning.SAVE_VERSION:
@@ -2255,8 +2260,10 @@ func restore(data: Dictionary) -> bool:
 	if not data.get("bar_owned") is bool: return false
 	data = data.duplicate(true)
 	var restored_owner := OwnerAccount.new()
-	if data.has("owner_bankroll"):
-		if not restored_owner.restore(data.owner_bankroll): return false
+	if not restored_owner.restore(data.get("owner_bankroll")): return false
+	var restored_room := BackRoom.new()
+	var restored_recovery := Recovery.new()
+	if not restored_room.restore(data.get("back_room"), restored_owner) or not restored_recovery.restore(data.get("recovery")): return false
 	var restored_events := OptionalEvents.new()
 	if not valid_number(data.get("elapsed")): return false
 	var restored_objectives := Objectives.new()
@@ -2492,6 +2499,9 @@ func restore(data: Dictionary) -> bool:
 		if float(data.bar_totals.sold) + float(data.bar_totals.comped) > 0: return false
 	var restored_play = data.get("owner_play", {})
 	if not OwnerPlay.valid(restored_play, restored_owner, restored_events, data.tables) or (not restored_play.is_empty() and int(data.joined) >= 0): return false
+	if restored_room.busy() and (not restored_play.is_empty() or int(data.joined) >= 0): return false
+	back_room = restored_room
+	recovery = restored_recovery
 	owner_play = restored_play.duplicate(true)
 	owner_account = restored_owner
 	optional_events = restored_events
@@ -2787,6 +2797,7 @@ func owner_play_transaction(action: Callable) -> bool:
 	return true
 
 func start_owner_event(event_id: int, stake: float) -> bool:
+	if back_room.busy(): return false
 	return owner_play_transaction(func(): return OwnerPlay.start(self, event_id, stake))
 
 func owner_event_action(action: String, sequence: int) -> bool:
@@ -2797,3 +2808,39 @@ func exit_owner_event() -> bool:
 
 func owner_event_table() -> Dictionary:
 	return OwnerPlay.view_table(self)
+
+# Private transactions snapshot only their owned state. Public simulation/RNG timing is untouched.
+func private_transaction(action: Callable) -> bool:
+	if joined >= 0 or not owner_play.is_empty(): return false
+	if owner_checkpoint.is_valid() and not owner_checkpoint.call(): return false
+	var account_before := owner_account.snapshot()
+	var room_before := back_room.snapshot()
+	var recovery_before := recovery.snapshot()
+	var cash_before := cash
+	var profit_before := owner_account.profit_transferred
+	var accepted: bool = action.call()
+	if not accepted or (owner_checkpoint.is_valid() and not owner_checkpoint.call()):
+		owner_account.restore(account_before)
+		back_room.restore(room_before, owner_account)
+		recovery.restore(recovery_before)
+		cash = cash_before
+		return false
+	var profit := owner_account.profit_transferred - profit_before
+	if profit > 0: emit_financial_event(profit, "back_room_profit", {}, -1, {"actor": "owner"})
+	return true
+
+func private_action(sequence: int, action: String, args: Dictionary = {}) -> bool:
+	if sequence != int(back_room.state.sequence): return false
+	return private_transaction(func():
+		match action:
+			"choose": return back_room.choose(str(args.get("kind", "")))
+			"start": return back_room.start(self, float(args.get("stake", 0)), int(args.get("lines", 1)), float(args.get("trips", 0)))
+			"act": return back_room.act(self, str(args.get("action", "")))
+			"add": return back_room.add(self, str(args.get("key", "")), float(args.get("stake", 0)))
+			"remove": return back_room.remove(self, str(args.get("key", "")))
+			"roll": return back_room.roll(self)
+			"working":
+				back_room.state.working = not back_room.state.working
+				back_room.state.sequence += 1
+				return true
+		return false)

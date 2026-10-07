@@ -376,3 +376,37 @@ panes and replaces navigation with Rotate, Place/Move and Cancel. Mobile camera
 framing reserves the unobscured floor rectangle; touch drags and pinches share
 that camera and never mutate simulation geometry. Native touch handling ignores
 emulated mouse events and retains gesture capture across overlay boundaries.
+
+## Back Room and real-time recovery (save schema 20)
+
+`back_room_session.gd` owns a persistent BACK_ROOM context and independent game RNG.
+It calls shared CasinoGames/CrapsRules, never public tables or optional-event IDs.
+`recovery_system.gd` owns one cycle, three validated scenarios, monotonic session
+clock, offline UTC anchor, dedicated persisted promotion RNG and issued tickets.
+`back_room_view.gd` retains its balance/navigation header and scrolls contextual
+content; it reuses CasinoSurface and the existing slot presentation/audio chain.
+The floor's burgundy entrance plaque is outside editable property space; Menu and
+Overview provide explicit Back Room navigation. Hidden floor movement ignores keys.
+
+Private actions use a persisted pre-action checkpoint, owned-state rollback, and a
+verified temporary post-action snapshot renamed over the last good save. Signals
+publish only after the successful post-action checkpoint. Sequence IDs reject
+replayed game actions; escrow IDs reject repeated settlement; cycle/contract/ticket
+IDs reject repeated recovery progress and claims. Leaving preserves committed
+hands and craps contracts. Public play and owner events cannot overlap them.
+
+Wallet stakes and private returns quantize to cents (nearest, ties up). Slots divide
+the whole-cent total into equal line shares without independently rounding lines;
+only combined return rounds. Private blackjack insurance also uses a whole-cent
+stake. The existing dollar-valued owner account is reused; private wallet boundaries
+are quantized to prevent accumulating subtraction drift. Public game accounting
+and RNG calls retain their prior behavior. Roulette resolves the whole portfolio,
+while craps preserves distinct contract escrows and immediately transfers standing
+bet profit with the principal still committed. Profit transfers enter existing owner
+transfer accounting; recovery never enters cash, guest handle, RTP or visitor results.
+
+Current saves require Back Room and recovery state. Schema 20 rejects older
+disposable development saves; there are no migrations. Read-back/rename protects
+local file checkpoints, not trusted remote storage or cross-device synchronization.
+Browser IDB persistence still depends on the normal Godot filesystem/browser lifecycle.
+Device clocks and user-editable local saves cannot provide server-grade anti-cheat.

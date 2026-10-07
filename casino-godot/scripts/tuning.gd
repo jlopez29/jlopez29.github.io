@@ -332,7 +332,7 @@ const TABLE_REPAIR_COST := 120.0
 const ROLL_SECONDS := 0.3 # NPC dice cadence in game minutes; pass bets resolve over several rolls.
 const NPC_ROLL_FATIGUE := 0.002 # Up to 0.17 extra game minutes at minimum crew energy.
 const VISITOR_ROLL_FATIGUE := 0.04 # Preserve the existing manually played rail cadence.
-const SAVE_VERSION := 19 # One current schema; pre-alpha saves are disposable.
+const SAVE_VERSION := 20 # One current schema; pre-alpha saves are disposable.
 const SAVE_PATH := "user://pit-boss.json"
 const VISITOR_ROLL_SECONDS := 15.0
 const REPAIR_GRACE_MINUTES := 4320 # Three days of operation before any wear check.
@@ -478,3 +478,12 @@ const OBJECTIVE_REWARD_MAX := 85.0
 const OBJECTIVE_DAILY_REWARD := 300.0
 const OBJECTIVE_BANKROLL_CAP := 2000.0 # Includes pending event stakes.
 const OBJECTIVE_MOMENTUM_REWARD := 2.0
+
+# Private wallet support uses real seconds, never simulation minutes.
+const RECOVERY_SECONDS := {"Early": 1800, "Mid": 2700, "Late": 3600}
+const RECOVERY_WORK_MIN_SECONDS := 600
+const RECOVERY_RETRY_SECONDS := 30
+const RECOVERY_RAFFLE_SECONDS := 600
+const RECOVERY_EARLY_CYCLES := 6
+const RECOVERY_MID_RATING := 16
+const RECOVERY_LATE_RATING := 55

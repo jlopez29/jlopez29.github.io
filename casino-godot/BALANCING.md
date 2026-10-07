@@ -287,3 +287,44 @@ committed stakes. Partial claims consume the goal and only spend actual budget;
 full caps leave the reward unclaimed. Ready IDs, cooldowns, recent samples and
 budget persist; claims checkpoint the consumed ID and account together. Closed
 or offline time never replays outcomes or generates a backlog of rewards.
+
+## Back Room recovery
+
+Starting personal wallet / refill target: $1,000. No public floor minima, maxima,
+unlock or staffing checks. A positive whole-cent total stake can use all spendable
+funds. Hold'em requires 6x ante + optional Trips available before dealing and debits
+matching Ante/Blind initially; subsequent raises are funded from the remaining wallet.
+Net winnings transfer to Casino Cash; returned principal stays personal. The external
+private counterparty never credits the casino for personal losses.
+
+Offers lock their stage/duration when a cycle starts. Early: rating below 16 and
+fewer than six full recoveries, 30 real minutes. Mid: rating 16-54 or six recoveries,
+45 minutes. Late: rating 55+, 60 minutes. Each cycle has three distinct categories
+sampled from four, with 12 parameter variants per category and three difficulty tiers.
+Three verified answers permit the missing-wallet top-up after 10 real minutes from
+the last full refill (new games anchor that interval at creation). Wrong answers
+persist failure and impose a 30-real-second retry cooldown. No in-game ticks count.
+Timer readiness remains available while full. Every full refill, including a chance
+award that fills the gap, advances one cycle. Partial awards preserve work/timer progress.
+
+Early effort issues at most one scratch after the first successful contract and one
+raffle after the second. Current stage must still be Early; old issued tickets remain
+claimable across stage/cycle boundaries, with no expiration. Raffle draws after ten
+real minutes from issuance. Scratch/reveal uses one committed result; presentation
+cannot change it. New Mid/Late offers issue neither. Dedicated recovery RNG selects:
+
+| Maximum top-up | Scratch | Raffle |
+| --- | --- | --- |
+| $0 | 50% | 65% |
+| $100 | 25% | 22% |
+| $250 | 15% | 10% |
+| $500 | 8% | 0% |
+| $1,000 | 2% | 3% |
+
+Before gap caps, mean awards are $122.50 and $77.00 ($199.50 for an earned pair).
+Maximum face value is $2,000 per issued pair / $12,000 across six Early offers;
+these are ceilings on possible deferred awards, not an additive bonus. Each claim
+is bounded by its current gap. No chance source can be farmed beyond twelve issued
+tickets; private gambling can convert their legitimately won net returns into capital,
+which is the intended finite startup subsidy. Work/time support continues afterwards.
+Guaranteed recovery grants the actual gap ($0-$1,000), independent of Casino Cash.
