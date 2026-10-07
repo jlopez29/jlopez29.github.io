@@ -44,11 +44,11 @@ func update_view(sim: CasinoSimulation, table: Dictionary, index: Dictionary, se
 	visual_size = sprite.texture.get_size() * ratio
 	sprite.scale = Vector2.ONE * ratio
 	sprite.rotation = PI / 2 if table.rotated else 0.0
-	seat_anchors = Catalog.local_seat_anchors(kind, visual_size)
-	approach_anchors = Catalog.local_approach_anchors(kind, seat_anchors)
-	for i in range(seat_anchors.size()):
-		seat_anchors[i] = seat_anchors[i].rotated(sprite.rotation)
-		approach_anchors[i] = approach_anchors[i].rotated(sprite.rotation)
+	seat_anchors.clear()
+	approach_anchors.clear()
+	for i in range(Catalog.SEAT_ANCHORS.get(kind, []).size()):
+		seat_anchors.append(Catalog.seat_position_for(kind, i, simulation_bounds, table.rotated, int(table.id)) - position)
+		approach_anchors.append(Catalog.approach_position_for(kind, i, simulation_bounds, table.rotated, int(table.id)) - position)
 	sprite.modulate = Color("b97979") if table.broken else Color.WHITE
 	shadow.scale = sprite.scale
 	shadow.rotation = sprite.rotation

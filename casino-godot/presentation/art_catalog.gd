@@ -3,9 +3,14 @@ const Art = preload("res://scripts/pit_boss_theme.gd")
 static var furniture := {}
 
 # Coordinates are normalized within the cropped artwork, before rotation.
-# Seat order follows guest.seat; approach points are presentation metadata only.
+# Seat order follows guest.seat; simulation and presentation share this geometry.
 # Transparent extraction margins are excluded; the canonical PNGs remain untouched.
 const CONTENT_REGIONS := {
+	"casino/slots/slot_01.png": Rect2(1, 3, 78, 286),
+	"casino/slots/slot_02.png": Rect2(1, 3, 78, 286),
+	"casino/slots/slot_03.png": Rect2(1, 3, 76, 286),
+	"casino/slots/slot_04.png": Rect2(1, 3, 74, 284),
+	"casino/slots/slot_05.png": Rect2(1, 3, 74, 282),
 	"casino/tables/blackjack.png": Rect2(20, 126, 1409, 837),
 	"casino/tables/roulette.png": Rect2(16, 170, 1419, 723),
 	"casino/tables/craps.png": Rect2(20, 109, 1631, 741),
@@ -32,13 +37,29 @@ static func local_seat_anchors(kind: String, artwork_size: Vector2) -> PackedVec
 		result.append((anchor - Vector2(0.5, 0.5)) * artwork_size)
 	return result
 
-static func local_approach_anchors(kind: String, seats: PackedVector2Array) -> PackedVector2Array:
-	var result := PackedVector2Array()
-	for seat in seats:
-		# Stand beyond the chair/rail, away from the artwork center.
-		var direction := Vector2.DOWN if kind == "slots" else seat.normalized()
-		result.append(seat + direction * 24)
-	return result
+static func visual_size_for(kind: String, bounds: Rect2, rotated: bool, id: int = 0) -> Vector2:
+	var artwork_size: Vector2 = CONTENT_REGIONS[path_for(kind, id)].size
+	var footprint := Vector2(bounds.size.y, bounds.size.x) if rotated else bounds.size
+	return artwork_size * visual_scale_for(artwork_size, footprint)
+
+static func seat_position_for(kind: String, seat_index: int, bounds: Rect2, rotated: bool, id: int = 0) -> Vector2:
+	var anchors: Array = SEAT_ANCHORS.get(kind, [])
+	if seat_index < 0 or seat_index >= anchors.size(): return bounds.get_center()
+	var local: Vector2 = (anchors[seat_index] - Vector2(0.5, 0.5)) * visual_size_for(kind, bounds, rotated, id)
+	return bounds.get_center() + local.rotated(PI / 2 if rotated else 0.0)
+
+static func approach_position_for(kind: String, seat_index: int, bounds: Rect2, rotated: bool, id: int = 0) -> Vector2:
+	var seat := seat_position_for(kind, seat_index, bounds, rotated, id)
+	var direction := Vector2.DOWN.rotated(PI / 2 if rotated else 0.0) if kind == "slots" else (seat - bounds.get_center()).normalized()
+	# Navigation stops beyond the footprint and its rounded grid-cell clearance.
+	# Only the controlled final entry travels from this point to the authored chair.
+	var clearance := bounds.grow(9 + CasinoTuning.FLOOR_NAV_CELL / 2 + 1)
+	var exit_distance := INF
+	if not is_zero_approx(direction.x):
+		exit_distance = minf(exit_distance, ((clearance.end.x if direction.x > 0 else clearance.position.x) - seat.x) / direction.x)
+	if not is_zero_approx(direction.y):
+		exit_distance = minf(exit_distance, ((clearance.end.y if direction.y > 0 else clearance.position.y) - seat.y) / direction.y)
+	return seat + direction * maxf(24, exit_distance)
 
 static func path_for(kind: String, id: int = 0) -> String:
 	return "casino/slots/slot_%02d.png" % (1 + id % 5) if kind == "slots" else "casino/tables/" + ("ultimate_texas" if kind == "holdem" else kind) + ".png"
@@ -60,7 +81,10 @@ static func cropped_texture(path: String) -> Texture2D:
 
 static func visual_scale(texture: Texture2D, footprint: Vector2) -> float:
 	# One scalar shared by retained furniture and the placement/move preview.
-	return minf(footprint.x / texture.get_width(), footprint.y / texture.get_height()) * 1.08
+	return visual_scale_for(texture.get_size(), footprint)
+
+static func visual_scale_for(artwork_size: Vector2, footprint: Vector2) -> float:
+	return minf(footprint.x / artwork_size.x, footprint.y / artwork_size.y) * 1.08
 
 static func amenity_texture(kind: String) -> Texture2D:
 	return cropped_texture("casino/amenities/" + kind + ".png")

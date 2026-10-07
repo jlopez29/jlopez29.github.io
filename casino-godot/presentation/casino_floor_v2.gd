@@ -267,10 +267,9 @@ func sync_world() -> void:
 func guest_visual_position(guest: Dictionary) -> Vector2:
 	var raw := Vector2(float(guest.x), float(guest.y))
 	if str(guest.state) != "Playing": return raw
-	var view = asset_views.get(int(guest.table))
-	var seat := int(guest.get("seat", -1))
-	if view == null or seat < 0 or seat >= view.seat_anchors.size(): return raw
-	return world.to_local(view.to_global(view.seat_anchors[seat]))
+	var table: Dictionary = presentation.tables.get(int(guest.table), {})
+	if table.is_empty(): return raw
+	return sim.guest_seat_position(table, int(guest.seat))
 
 func select_at(screen: Vector2) -> void:
 	# Seated markers now sit inside furniture art. Keep their visible targets

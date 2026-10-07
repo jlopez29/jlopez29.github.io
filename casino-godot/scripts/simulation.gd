@@ -9,6 +9,7 @@ signal owner_event_completed(result: Dictionary)
 const Games = preload("res://scripts/casino_games.gd")
 const Staffing = preload("res://scripts/staffing.gd")
 const Property = preload("res://scripts/floor_property.gd")
+const Seating = preload("res://presentation/art_catalog.gd")
 const Bar = preload("res://scripts/drink_economy.gd")
 
 var cash := CasinoTuning.STARTING_CASH
@@ -484,7 +485,7 @@ func seated(id: int) -> Array:
 
 func reserved_guests(id: int, except_guest_id: int = -1) -> Array:
 	# Walking guests already own a position; presentation must show that reservation.
-	return guests.filter(func(g): return int(g.table) == id and int(g.id) != except_guest_id and int(g.seat) >= 0 and g.state in ["Walking", "Playing"])
+	return guests.filter(func(g): return int(g.table) == id and int(g.id) != except_guest_id and int(g.seat) >= 0 and g.state in ["Walking", "Entering seat", "Playing"])
 
 func table_kind(table: Dictionary) -> String:
 	return str(table.get("kind", ""))
@@ -528,7 +529,7 @@ func floor_presentation() -> Dictionary:
 		if guest.state == "Playing":
 			if not result.seated.has(id): result.seated[id] = []
 			result.seated[id].append(guest)
-		if int(guest.seat) >= 0 and guest.state in ["Walking", "Playing"]:
+		if int(guest.seat) >= 0 and guest.state in ["Walking", "Entering seat", "Playing"]:
 			if not result.reserved.has(id): result.reserved[id] = []
 			result.reserved[id].append(guest)
 	for employee in staff:
@@ -603,8 +604,14 @@ func bounds(table: Dictionary) -> Rect2:
 	return Rect2(Vector2(table.x, table.y), size)
 
 func approach_position(table: Dictionary) -> Vector2:
-	var rect := bounds(table)
-	return Vector2(rect.get_center().x, rect.position.y - 22 if table_kind(table) == "slots" else rect.end.y + 24)
+	# Owners use the reserved rail position on table games, or the slot chair.
+	return guest_approach_position(table, capacity(table) - 1)
+
+func guest_seat_position(table: Dictionary, seat: int) -> Vector2:
+	return Seating.seat_position_for(table_kind(table), seat, bounds(table), bool(table.rotated), int(table.id))
+
+func guest_approach_position(table: Dictionary, seat: int) -> Vector2:
+	return Seating.approach_position_for(table_kind(table), seat, bounds(table), bool(table.rotated), int(table.id))
 
 func furniture_size(kind: String, rotated: bool) -> Vector2:
 	var dimensions := Vector2(60, 70) if kind == "slots" else (CasinoTuning.CRAPS_SIZE if kind == "craps" else CasinoTuning.TABLE_SIZE)
@@ -992,7 +999,7 @@ func guest_lifecycle_step(guest: Dictionary) -> void:
 		return
 	if guest.state == "Watching":
 		watching_step(guest)
-	elif guest.state == "Walking" and elapsed - int(guest.activity_since) > guest.patience:
+	elif guest.state in ["Walking", "Entering seat"] and elapsed - int(guest.activity_since) > guest.patience:
 		leave(guest, "Could not reach that game.")
 	elif guest.state == "Browsing" and elapsed - int(guest.activity_since) > guest.patience:
 		start_guest_exploration(guest)
@@ -1023,7 +1030,7 @@ func choose_table(guest: Dictionary, allow_watch: bool = true) -> void:
 	var reservations := {}
 	# Compute once per decision instead of scanning the crowd for every asset.
 	for other in guests:
-		if int(other.id) != int(guest.id) and int(other.seat) >= 0 and other.state in ["Walking", "Playing"]:
+		if int(other.id) != int(guest.id) and int(other.seat) >= 0 and other.state in ["Walking", "Entering seat", "Playing"]:
 			reservations[int(other.table)] = int(reservations.get(int(other.table), 0)) + 1
 	for table in tables:
 		# Include guests still walking to their reserved seats.
@@ -1099,9 +1106,9 @@ func choose_table(guest: Dictionary, allow_watch: bool = true) -> void:
 	while slot in used_seats:
 		slot += 1
 	guest.seat = slot
-	var rect := bounds(best)
-	guest.tx = rect.position.x + 22 + (slot % 4) * (rect.size.x - 44) / 3.0
-	guest.ty = rect.position.y - 22 if slot < 4 else rect.end.y + 22
+	var approach := guest_approach_position(best, slot)
+	guest.tx = approach.x
+	guest.ty = approach.y
 	if table_hot(best):
 		think(guest, "This table is drawing a crowd.", 2)
 	elif table_kind(best) == "slots" and guest.archetype in ["slots", "vip"]:
@@ -1174,13 +1181,29 @@ func route(guest: Dictionary) -> void:
 	var grid := floor_navigation()
 	var origin := Vector2i(roundi(guest.x / CasinoTuning.FLOOR_NAV_CELL), roundi(guest.y / CasinoTuning.FLOOR_NAV_CELL))
 	var destination := Vector2i(roundi(guest.tx / CasinoTuning.FLOOR_NAV_CELL), roundi(guest.ty / CasinoTuning.FLOOR_NAV_CELL))
+	var exit_point := Vector2(INF, INF)
+	if grid.is_in_boundsv(origin) and grid.is_point_solid(origin):
+		for table in tables:
+			if not bounds(table).grow(9 + CasinoTuning.FLOOR_NAV_CELL / 2).has_point(Vector2(guest.x, guest.y)): continue
+			var nearest := INF
+			for seat in range(capacity(table)):
+				var distance := Vector2(guest.x, guest.y).distance_squared_to(guest_seat_position(table, seat))
+				if distance < nearest:
+					nearest = distance
+					exit_point = guest_approach_position(table, seat)
+			break
+		if exit_point.is_finite():
+			# Reverse the short seat-entry motion before routing over walkable cells.
+			origin = Vector2i(roundi(exit_point.x / CasinoTuning.FLOOR_NAV_CELL), roundi(exit_point.y / CasinoTuning.FLOOR_NAV_CELL))
 	origin = origin.clamp(grid.region.position, grid.region.end - Vector2i.ONE)
 	destination = destination.clamp(grid.region.position, grid.region.end - Vector2i.ONE)
 	var path: Array = []
 	if grid.is_in_boundsv(origin) and grid.is_in_boundsv(destination):
 		for at in grid.get_point_path(origin, destination):
 			path.append([at.x, at.y])
-	if not path.is_empty(): path.append([guest.tx, guest.ty])
+	if not path.is_empty():
+		if exit_point.is_finite(): path.push_front([exit_point.x, exit_point.y])
+		path.append([guest.tx, guest.ty])
 	guest.path = path
 
 func reroute() -> void:
@@ -1188,6 +1211,15 @@ func reroute() -> void:
 	for employee in staff:
 		if employee.role == "Service" and employee.has("service_state"): route(employee)
 	for guest in guests:
+		if guest.state in ["Walking", "Playing"]:
+			var table := get_table(int(guest.table))
+			var target := guest_approach_position(table, int(guest.seat)) if guest.state == "Walking" else guest_seat_position(table, int(guest.seat))
+			if guest.state == "Walking":
+				guest.tx = target.x
+				guest.ty = target.y
+			else:
+				guest.x = target.x
+				guest.y = target.y
 		if guest.state in ["To bar", "At bar"]:
 			var target := bar_guest_position(int(guest.bar_slot))
 			if Vector2(guest.tx, guest.ty).distance_to(target) > 1:
@@ -1244,6 +1276,21 @@ func move_guests(delta: float) -> void:
 				think(guest, "Cashed out. Heading home.")
 				route(guest)
 			continue
+		if guest.state == "Entering seat":
+			var table := get_table(int(guest.table))
+			if not operating(table):
+				leave(guest, "That game is no longer available.")
+				continue
+			var seat := guest_seat_position(table, int(guest.seat))
+			# This short movement bypasses obstacle routing into the chair itself.
+			var at := Vector2(guest.x, guest.y).move_toward(seat, maxf(0, delta) * CasinoTuning.ENTITY_WALK_SPEED)
+			guest.x = at.x
+			guest.y = at.y
+			if at.is_equal_approx(seat):
+				guest.state = "Playing"
+				presentation_revision += 1
+				think(guest, "Ready to play %s!" % Games.NAMES[table_kind(table)])
+			continue
 		if guest.state not in ["Arriving", "Walking", "Browsing", "Exploring", "To bar", "To cage", "Leaving"]:
 			continue
 		if guest.state == "Exploring" and Vector2(guest.x, guest.y).distance_to(Vector2(guest.tx, guest.ty)) < 3: continue
@@ -1263,8 +1310,7 @@ func move_guests(delta: float) -> void:
 				guest.cage_wait = 2.0
 			elif guest.state == "Walking":
 				presentation_revision += 1
-				guest.state = "Playing"
-				think(guest, "Ready to play %s!" % Games.NAMES[table_kind(get_table(int(guest.table)))])
+				guest.state = "Entering seat"
 			elif guest.state == "Browsing":
 				presentation_revision += 1
 				guest.state = "Watching"
@@ -2165,12 +2211,12 @@ func restore(data: Dictionary) -> bool:
 			return false
 		if int(guest.table) != -1 and int(guest.table) not in ids:
 			return false
-		if guest.state in ["Walking", "Playing"]:
+		if guest.state in ["Walking", "Entering seat", "Playing"]:
 			if int(guest.table) < 1: return false
 			var assigned: Dictionary = data.tables.filter(func(table): return int(table.id) == int(guest.table))[0]
 			var seats := 1 if table_kind(assigned) == "slots" else CasinoTuning.TABLE_CAPACITY - 1
 			if int(guest.seat) not in range(seats): return false
-		if guest.state not in ["Arriving", "Waiting", "Walking", "Playing", "Browsing", "Watching", "Exploring", "To bar", "At bar", "To cage", "Cashing out", "Leaving"] or not guest.name is String or not guest.thought is String:
+		if guest.state not in ["Arriving", "Waiting", "Walking", "Entering seat", "Playing", "Browsing", "Watching", "Exploring", "To bar", "At bar", "To cage", "Cashing out", "Leaving"] or not guest.name is String or not guest.thought is String:
 			return false
 		if guest.state in ["Browsing", "Watching"] and (int(guest.table) < 1 or int(guest.seat) != -1): return false
 		if guest.bar_slot != int(guest.bar_slot) or int(guest.bar_slot) < -1 or int(guest.bar_slot) >= CasinoTuning.BAR_GUEST_OFFSETS.size(): return false
@@ -2289,7 +2335,7 @@ func restore(data: Dictionary) -> bool:
 	opened = bool(data.opened)
 	for key in ["tables", "guests", "staff", "alerts", "incidents"]:
 		set(key, data[key].duplicate(true))
-	navigation_grid = null
+	reroute()
 	player = Vector2(data.player[0], data.player[1])
 	rng.state = int(data.rng_state)
 	milestone_initializing = true
