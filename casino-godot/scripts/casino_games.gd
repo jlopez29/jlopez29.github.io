@@ -66,15 +66,58 @@ static func spin_roulette(bets: Dictionary, rng: RandomNumberGenerator, forced: 
 		if options.has(name) and number in options[name].numbers: credit += float(bets[name]) * (1 + int(options[name].pay))
 	return {"phase": "done", "kind": "roulette", "number": number, "credit": credit, "message": "%d %s · returned $%.2f" % [number, "GREEN" if number == 0 else ("RED" if number in RED else "BLACK"), credit]}
 
-static func spin_slots(bet: float, rng: RandomNumberGenerator, profile: Dictionary) -> Dictionary:
-	# Total returns include stake. Outcome probabilities never depend on treasury.
-	var reel: Array = profile.reel
-	var reels := [reel[rng.randi_range(0, reel.size() - 1)], reel[rng.randi_range(0, reel.size() - 1)], reel[rng.randi_range(0, reel.size() - 1)]]
-	var award := 0
-	if reels[0] == reels[1] and reels[1] == reels[2]: award = profile.pays[reels[0]]
-	elif reels.count(0) == 2: award = profile.cherry_return
-	elif reels.count(0) == 1 and reels[0] == 0: award = profile.cherry_return
-	return {"phase": "done", "kind": "slots", "reels": reels, "credit": bet * award, "message": "%s / %s / %s · %s" % [SYMBOLS[reels[0]], SYMBOLS[reels[1]], SYMBOLS[reels[2]], "Returned $%.2f" % (bet * award) if award else "No win"]}
+static func spin_slots(bet: float, rng: RandomNumberGenerator, profile: Dictionary, active_lines: int = 1) -> Dictionary:
+	# Exactly three authoritative draws; presentation never touches this RNG.
+	var stops := []
+	for i in range(3): stops.append(rng.randi_range(0, profile.reel.size() - 1))
+	return slots_at_stops(bet, stops, profile, active_lines)
+
+static func slots_at_stops(bet: float, stops: Array, profile: Dictionary, active_lines: int = 1) -> Dictionary:
+	assert(active_lines in CasinoTuning.SLOT_LINE_COUNTS)
+	var grid := CasinoTuning.slot_grid(stops, profile.reel)
+	var wins := []
+	var credit := 0.0
+	var line_bet := bet / active_lines
+	for index in range(active_lines):
+		var path: Array = CasinoTuning.SLOT_LINES[index]
+		var symbols := [grid[path[0]][0], grid[path[1]][1], grid[path[2]][2]]
+		var multiplier := CasinoTuning.slot_award(symbols, profile)
+		if multiplier <= 0: continue
+		var returned := line_bet * multiplier
+		credit += returned
+		wins.append({"index": index, "path": path.duplicate(), "symbol": int(symbols[0]) if symbols[0] == symbols[1] and symbols[1] == symbols[2] else 0, "reason": "three" if symbols[0] == symbols[1] and symbols[1] == symbols[2] else "cherry", "multiplier": multiplier, "line_bet": line_bet, "returned": returned})
+	return {"kind": "slots", "phase": "done", "profile": profile.id, "stops": stops.duplicate(), "grid": grid, "active_lines": active_lines, "total_wager": bet, "winning_lines": wins, "credit": credit, "message": "Returned $%.2f on %d line%s" % [credit, wins.size(), "" if wins.size() == 1 else "s"] if credit > 0 else "No win"}
+
+static func valid_slot_round(state: Dictionary) -> bool:
+	if state.get("phase") != "done" or not CasinoTuning.SLOT_PROFILES.has(state.get("profile")): return false
+	if not numeric(state.get("active_lines")) or state.active_lines != int(state.active_lines) or int(state.active_lines) not in CasinoTuning.SLOT_LINE_COUNTS: return false
+	if not numeric(state.get("total_wager")) or state.total_wager <= 0: return false
+	var profile := CasinoTuning.slot_profile(state.profile)
+	if not state.get("stops") is Array or state.stops.size() != 3: return false
+	for stop in state.stops:
+		if not numeric(stop) or stop != int(stop) or stop >= profile.reel.size(): return false
+	if not state.get("grid") is Array or state.grid.size() != 3: return false
+	for row in state.grid:
+		if not row is Array or row.size() != 3: return false
+		for symbol in row:
+			if not numeric(symbol) or symbol != int(symbol) or symbol > 4: return false
+	var expected := slots_at_stops(float(state.total_wager), state.stops, profile, int(state.active_lines))
+	for row in range(3):
+		for col in range(3):
+			if int(state.grid[row][col]) != int(expected.grid[row][col]): return false
+	if not state.get("winning_lines") is Array or state.winning_lines.size() != expected.winning_lines.size(): return false
+	for i in range(expected.winning_lines.size()):
+		var win = state.winning_lines[i]
+		if not win is Dictionary: return false
+		var correct: Dictionary = expected.winning_lines[i]
+		if win.get("reason") != correct.reason or not win.get("path") is Array or win.path.size() != 3: return false
+		for col in range(3):
+			if not numeric(win.path[col]) or float(win.path[col]) != int(win.path[col]) or int(win.path[col]) != int(correct.path[col]): return false
+		for field in ["index", "symbol", "multiplier"]:
+			if not numeric(win.get(field)) or float(win[field]) != float(correct[field]): return false
+		for field in ["line_bet", "returned"]:
+			if not numeric(win.get(field)) or not is_equal_approx(float(win[field]), float(correct[field])): return false
+	return numeric(state.get("credit")) and is_equal_approx(float(state.credit), float(expected.credit))
 
 static func blackjack(bet: float, rng: RandomNumberGenerator, participants: Array = []) -> Dictionary:
 	var shoe := deck(rng, 6)
@@ -287,9 +330,7 @@ static func valid_round(state: Dictionary, kind: String) -> bool:
 	if not numeric(state.get("staked", 0)) or not state.get("paid", false) is bool: return false
 	match kind:
 		"slots":
-			if state.get("phase") != "done" or not state.get("reels") is Array or state.reels.size() != 3: return false
-			for symbol in state.reels:
-				if not numeric(symbol) or int(symbol) > 4 or int(symbol) != float(symbol): return false
+			if not valid_slot_round(state): return false
 		"roulette":
 			if state.get("phase") != "done" or not numeric(state.get("number")) or int(state.number) > 36 or int(state.number) != float(state.number): return false
 		"blackjack":

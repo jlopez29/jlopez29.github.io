@@ -29,6 +29,7 @@ const Objectives = preload("res://scripts/optional_objectives.gd")
 var optional_objectives := Objectives.new()
 var owner_bankroll: float:
 	get: return owner_account.balance
+var sponsored_income := 0.0
 var revenue := 0.0
 var payouts := 0.0
 var payroll := 0.0
@@ -2235,7 +2236,7 @@ func operating_costs() -> float:
 	return payroll + overhead
 
 func net_profit() -> float:
-	return revenue - payouts + float(bar_totals.revenue) - payroll - overhead + owner_account.profit_transferred
+	return revenue - payouts + float(bar_totals.revenue) - payroll - overhead + owner_account.profit_transferred + sponsored_income
 
 func satisfaction() -> float:
 	if guests.is_empty():
@@ -2246,7 +2247,7 @@ func satisfaction() -> float:
 	return total / guests.size()
 
 func snapshot() -> Dictionary:
-	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_owned": bar_owned, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "owner_bankroll": owner_account.snapshot(), "optional_events": optional_events.snapshot(), "momentum": momentum.snapshot(), "optional_objectives": optional_objectives.snapshot(), "owner_play": owner_play.duplicate(true), "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
+	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_owned": bar_owned, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "owner_bankroll": owner_account.snapshot(), "optional_events": optional_events.snapshot(), "momentum": momentum.snapshot(), "optional_objectives": optional_objectives.snapshot(), "owner_play": owner_play.duplicate(true), "sponsored_income": sponsored_income, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
 
 func restore(data: Dictionary) -> bool:
 	if not valid_number(data.get("version")) or data.version != CasinoTuning.SAVE_VERSION:
@@ -2256,12 +2257,6 @@ func restore(data: Dictionary) -> bool:
 	var restored_owner := OwnerAccount.new()
 	if data.has("owner_bankroll"):
 		if not restored_owner.restore(data.owner_bankroll): return false
-	else:
-		# Additive migration of the previous personal wallet; treasury is untouched.
-		var old_balance = data.get("wallet", CasinoTuning.OWNER_STARTING_BANKROLL)
-		if not OwnerAccount.money(old_balance): return false
-		restored_owner.balance = float(old_balance)
-	data.wallet = restored_owner.balance
 	var restored_events := OptionalEvents.new()
 	if not valid_number(data.get("elapsed")): return false
 	var restored_objectives := Objectives.new()
@@ -2305,7 +2300,7 @@ func restore(data: Dictionary) -> bool:
 			if key != "sales" and float(data[field][key]) < 0: return false
 	if not Bar.valid_snapshot(self, data): return false
 	# Validate the current schema before applying any state.
-	for key in ["difficulty", "starting_games", "casino_rating", "guest_rounds", "guest_revenue", "guest_handle", "guests_served", "blackjack_unlocked", "ever_opened", "floor_chunks", "vip_enabled", "high_limit_enabled", "arrival_in", "cash", "wallet", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation", "minute", "day", "elapsed", "opened", "tables", "guests", "staff", "alerts", "incidents", "next_id", "joined", "player", "rng_state"]:
+	for key in ["difficulty", "starting_games", "casino_rating", "guest_rounds", "guest_revenue", "guest_handle", "guests_served", "blackjack_unlocked", "ever_opened", "floor_chunks", "vip_enabled", "high_limit_enabled", "arrival_in", "cash", "sponsored_income", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation", "minute", "day", "elapsed", "opened", "tables", "guests", "staff", "alerts", "incidents", "next_id", "joined", "player", "rng_state"]:
 		if not data.has(key): return false
 	if not data.difficulty is String or not CasinoTuning.DIFFICULTIES.has(data.difficulty): return false
 	if not data.starting_games is Array or data.starting_games.size() > Games.NAMES.size(): return false
@@ -2323,10 +2318,10 @@ func restore(data: Dictionary) -> bool:
 			return false
 	if data.player.size() != 2 or data.tables.size() > CasinoTuning.MAX_ASSETS or data.guests.size() > CasinoTuning.MAX_GUESTS or data.staff.size() > CasinoTuning.MAX_STAFF:
 		return false
-	for key in ["cash", "wallet", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation", "minute", "day", "elapsed", "next_id", "joined"]:
+	for key in ["cash", "sponsored_income", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation", "minute", "day", "elapsed", "next_id", "joined"]:
 		if not valid_number(data[key]):
 			return false
-	if float(data.wallet) < 0 or not data.opened is bool or not data.rng_state is String:
+	if data.sponsored_income < 0 or not data.opened is bool or not data.rng_state is String:
 		return false
 	if not data.rng_state.is_valid_int():
 		return false
@@ -2345,6 +2340,7 @@ func restore(data: Dictionary) -> bool:
 		if not table.slot_profile is String or (table.kind == "slots" and not CasinoTuning.SLOT_PROFILES.has(table.slot_profile)): return false
 		if not table.round is Dictionary or not table.roulette_bets is Dictionary: return false
 		if not Games.valid_round(table.round, str(table.kind)): return false
+		if table.kind == "slots" and not table.round.is_empty() and table.round.profile != table.slot_profile: return false
 		var roulette_options := Games.roulette_bets()
 		for name in table.roulette_bets:
 			if not roulette_options.has(name) or not valid_number(table.roulette_bets[name]) or float(table.roulette_bets[name]) < 0: return false
@@ -2502,7 +2498,7 @@ func restore(data: Dictionary) -> bool:
 	momentum = restored_momentum
 	optional_objectives = restored_objectives
 	debug_forced_unlocks.clear()
-	for key in ["cash", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation"]:
+	for key in ["cash", "sponsored_income", "revenue", "payouts", "payroll", "overhead", "visitor_net", "reputation"]:
 		set(key, float(data[key]))
 	for key in ["minute", "day", "elapsed", "next_id", "joined"]:
 		set(key, int(data[key]))
@@ -2605,11 +2601,13 @@ func settle_game(table: Dictionary) -> void:
 	refresh_progression() # Evaluate readiness only after all shared payouts are credited.
 	log_event("%s: %s" % [Games.NAMES[table_kind(table)], round.message], false)
 
-func start_game(id: int, bet: float, trips: float = 0) -> bool:
+func start_game(id: int, bet: float, trips: float = 0, slot_lines: int = 1) -> bool:
 	var table := get_table(id)
 	if joined != id or not ready_for_play(table) or game_pending(table): return false
 	if not accepting_new_play(table) and table.get("roulette_bets", {}).is_empty(): return false
 	var kind := table_kind(table)
+	if slot_lines not in CasinoTuning.SLOT_LINE_COUNTS: return false
+	if kind == "slots" and bet not in slot_profile(table).denominations: return false
 	if kind == "craps" or not is_finite(bet) or not is_finite(trips) or bet < table.minimum or bet > maximum_wager(table) or trips < 0 or trips > maximum_wager(table): return false
 	var cost := bet * 2 + trips if kind == "holdem" else bet
 	if kind == "roulette":
@@ -2627,7 +2625,7 @@ func start_game(id: int, bet: float, trips: float = 0) -> bool:
 			var stake := guest_wager(table, guest)
 			if stake >= float(table.minimum) and guest.wallet >= stake * (3 if kind == "holdem" else 1): participants.append({"id": guest.id, "name": guest.name, "bet": stake})
 	match kind:
-		"slots": table.round = Games.spin_slots(bet, rng, slot_profile(table))
+		"slots": table.round = Games.spin_slots(bet, rng, slot_profile(table), slot_lines)
 		"roulette":
 			table.round = Games.spin_roulette(table.roulette_bets, rng)
 			table.round.bets = table.roulette_bets.duplicate(true)
@@ -2773,14 +2771,17 @@ func owner_play_transaction(action: Callable) -> bool:
 	if owner_checkpoint.is_valid() and not owner_checkpoint.call(): return false
 	var before: Dictionary = snapshot() if owner_checkpoint.is_valid() else {}
 	var already_done: bool = owner_play.get("status") == "done"
+	var promotion_before := sponsored_income
 	if not action.call(): return false
 	if owner_checkpoint.is_valid() and not owner_checkpoint.call():
 		restore(before)
 		log_event("Owner event action canceled because its save checkpoint failed.")
 		return false
+	if sponsored_income > promotion_before:
+		emit_financial_event(sponsored_income - promotion_before, "sponsored_promotion", {}, -1, {"actor": "sponsor", "event_id": owner_play.event_id, "virtual_stake": float(owner_play.base), "revealed": int(owner_play.revealed)})
 	if not already_done and owner_play.get("status") == "done":
 		var result: Dictionary = owner_play.result
-		if float(result.casino_profit) > 0:
+		if float(result.casino_profit) > 0 and owner_play.funding == "owner":
 			emit_financial_event(float(result.casino_profit), "owner_event_profit", {}, -1, {"actor": "owner", "event_id": owner_play.event_id})
 		owner_event_completed.emit(result.duplicate(true))
 	return true

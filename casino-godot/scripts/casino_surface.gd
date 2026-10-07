@@ -1,9 +1,6 @@
-extends "res://scripts/game_art.gd"
+extends "res://scripts/slot_presentation.gd"
 const Card = preload("res://presentation/play/playing_card.gd")
-const SYMBOL_ASSETS := ["cherry", "lemon", "bell", "bar", "seven"]
-var wager := 10.0
 var pending := false
-var machine_profile := {}
 var card_nodes: Array[TextureRect] = []
 var captions: Array[Dictionary] = []
 var card_cursor := 0
@@ -73,7 +70,7 @@ func configure() -> void:
 			captions.append({"at": Vector2(center, 345), "text": "YOUR HAND", "size": 16})
 			hand(round.get("player", [0, 0]), Vector2(center, 356), size.x - 32, 0 if round.is_empty() else 99)
 	else:
-		custom_minimum_size.y = 240 if kind == "roulette" else 300
+		custom_minimum_size.y = 240 if kind == "roulette" else 0
 	for i in range(card_cursor, card_nodes.size()): card_nodes[i].hide()
 	queue_redraw()
 
@@ -103,35 +100,6 @@ func _draw() -> void:
 			if caption.has("chip"): stack(caption.at + Vector2(70, -7), float(caption.chip), 18)
 	elif kind == "slots": draw_slots()
 	elif kind == "roulette": draw_wheel()
-
-func draw_slots() -> void:
-	var extent := minf(size.x, size.y)
-	var rect := Rect2((size - Vector2.ONE * extent) / 2, Vector2.ONE * extent)
-	image("slots/slot_cabinet_frame.svg", rect)
-	centered(rect.position + Vector2(extent / 2, extent * 0.09), str(machine_profile.get("short_name", "PIT BOSS REELS")).to_upper(), 22)
-	var reels: Array = round.get("reels", [])
-	for i in range(3):
-		var window := Rect2(rect.position + Vector2((0.127 + i * 0.258) * extent, 0.186 * extent), Vector2(0.23, 0.38) * extent)
-		if reels.is_empty():
-			centered(window.get_center(), "READY", 14)
-			continue
-		var moving: bool = spinning > i * 0.18
-		var travel := fmod((duration - spinning) * 2.5, 1.0) if moving else 0.0
-		# Temporary motion cycles deterministically around the committed reel result.
-		for row in range(-1, 2):
-			var symbol_id: int = int(reels[i]) if row == 0 else posmod(int(reels[i]) + row, 5)
-			var symbol_size := minf(window.size.x * 0.86, window.size.y * 0.45)
-			var y := window.get_center().y + (row + travel) * window.size.y * 0.42
-			var symbol_rect := Rect2(Vector2(window.get_center().x - symbol_size / 2, y - symbol_size / 2), Vector2.ONE * symbol_size)
-			# Only show symbols contained in their real reel windows.
-			var visible_rect := symbol_rect.intersection(window)
-			if visible_rect.size.x > 0 and visible_rect.size.y > 0:
-				var source := Rect2((visible_rect.position - symbol_rect.position) / symbol_size * 128, visible_rect.size / symbol_size * 128)
-				draw_texture_rect_region(PitBoss.texture("casino_play/slots/symbols/" + SYMBOL_ASSETS[symbol_id] + ".svg"), visible_rect, source)
-		var payline_y := window.get_center().y
-		draw_line(Vector2(window.position.x, payline_y), Vector2(window.end.x, payline_y), Color(0.7, 0.5, 0.12, 0.45), 1)
-	centered(rect.position + Vector2(extent / 2, extent * 0.76), "BET " + FinancialText.cash(wager, 0), 18)
-	centered(rect.position + Vector2(extent / 2, extent * 0.81), "CENTER ROW PAYS", 12)
 
 func draw_wheel() -> void:
 	image("roulette/roulette_felt_base.png", Rect2(Vector2.ZERO, size))

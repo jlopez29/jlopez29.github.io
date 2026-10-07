@@ -135,7 +135,7 @@ func refresh(simulation: CasinoSimulation) -> void:
 				stakes.set_item_metadata(stakes.item_count - 1, option)
 			stakes.select(maxi(0, options.find(previous)))
 		update_terms()
-	engage.text = "Review stake" if owner_game and event.state == "pending" else engage.text
+	engage.text = ("5 FREE SPINS" if definition.get("funding", "owner") == "sponsor" else "Review stake") if owner_game and event.state == "pending" else engage.text
 
 func update_terms() -> void:
 	if sim == null or stakes.selected < 0: return
@@ -143,6 +143,12 @@ func update_terms() -> void:
 	if event.is_empty(): return
 	var definition: Dictionary = Events.DEFINITIONS[event.type]
 	var stake := float(stakes.get_item_metadata(stakes.selected))
+	if definition.get("funding", "owner") == "sponsor":
+		stakes.hide()
+		wager_terms.text = "5 FREE SPINS | No personal or casino stake. Normal odds. Promotional returns enter Casino Cash. Starting saves committed outcomes."
+		commit.text = "Start 5 FREE SPINS"
+		commit.disabled = not sim.owner_play.is_empty() or sim.joined >= 0 or not sim.optional_events.target_valid(sim, event)
+		return
 	var total := stake * int(definition.rounds)
 	wager_terms.text = "Owner Bankroll $%.2f | Commit $%.2f | %s. " % [sim.owner_bankroll, total, "Play %d spins" % definition.rounds if definition.game == "slots" else "Play 1 hand"]
 	wager_terms.text += "Only NET winnings go to casino cash; pushes return stake. Committing autosaves your current casino. "
@@ -150,7 +156,7 @@ func update_terms() -> void:
 	else:
 		var table: Dictionary = sim.get_table(int(event.target))
 		var profile: Dictionary = sim.slot_profile(table)
-		wager_terms.text += "Per spin: $0 to $%.2f total return, RTP %.2f%%. All 3 spins settle together." % [stake * float(profile.pays.max()), float(profile.rtp) * 100]
+		wager_terms.text += "Per spin: $0 to $%.2f total return, RTP %.2f%%. All committed spins settle together." % [stake * float(profile.pays.max()), float(profile.rtp) * 100]
 	commit.text = "Commit $%.2f and play" % total
 	commit.disabled = sim.owner_bankroll < total or not sim.owner_play.is_empty() or sim.joined >= 0 or not sim.optional_events.target_valid(sim, event)
 

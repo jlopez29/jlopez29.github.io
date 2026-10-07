@@ -85,11 +85,60 @@ const SLOT_PROFILES := {
 		"color": "8b7135", "screen": "video",
 	},
 }
+# Rows by reel, center/top/bottom/V/inverted V. Total wager is shared equally.
+const SLOT_LINES := [[1,1,1], [0,0,0], [2,2,2], [0,1,0], [2,1,2]]
+const SLOT_LINE_COUNTS := [1,3,5]
+static var _slot_line_metrics := {}
+
+static func slot_award(symbols: Array, profile: Dictionary) -> int:
+	if symbols[0] == symbols[1] and symbols[1] == symbols[2]: return int(profile.pays[int(symbols[0])])
+	if symbols.count(0) == 2 or (symbols.count(0) == 1 and symbols[0] == 0): return int(profile.cherry_return)
+	return 0
+
+static func slot_grid(stops: Array, reel: Array) -> Array:
+	var grid := [[], [], []]
+	for row in range(3):
+		for stop in stops: grid[row].append(reel[posmod(int(stop) + row - 1, reel.size())])
+	return grid
+
+static func slot_line_metrics(id: String, lines: int) -> Dictionary:
+	var key := id + str(lines)
+	if _slot_line_metrics.has(key): return _slot_line_metrics[key]
+	var profile := slot_profile(id)
+	var sum := 0.0
+	var squares := 0.0
+	var top := 0.0
+	var hits := 0
+	var sevens := 0
+	var n: int = profile.reel.size()
+	for a in range(n):
+		for b in range(n):
+			for c in range(n):
+				var grid := slot_grid([a,b,c], profile.reel)
+				var returned := 0.0
+				var seven := false
+				for line in range(lines):
+					var path: Array = SLOT_LINES[line]
+					var symbols := [grid[path[0]][0],grid[path[1]][1],grid[path[2]][2]]
+					returned += float(slot_award(symbols, profile)) / lines
+					seven = seven or symbols == [4,4,4]
+				sum += returned
+				squares += returned * returned
+				top = maxf(top, returned)
+				if returned > 0: hits += 1
+				if seven: sevens += 1
+	var outcomes := float(n * n * n)
+	var mean := sum / outcomes
+	var result := {"rtp": mean, "stddev": sqrt(maxf(0, squares / outcomes - mean * mean)), "top_return": top, "hit_probability": hits / outcomes, "seven_probability": sevens / outcomes}
+	_slot_line_metrics[key] = result
+	return result
+
 static var _slot_profiles: Dictionary = {}
 
 static func slot_profile(id: String) -> Dictionary:
 	if _slot_profiles.has(id): return _slot_profiles[id]
 	var profile: Dictionary = SLOT_PROFILES[id].duplicate(true)
+	profile.id = id
 	var counts := [0, 0, 0, 0, 0]
 	for symbol in profile.reel: counts[int(symbol)] += 1
 	var expected := 0.0
@@ -283,7 +332,7 @@ const TABLE_REPAIR_COST := 120.0
 const ROLL_SECONDS := 0.3 # NPC dice cadence in game minutes; pass bets resolve over several rolls.
 const NPC_ROLL_FATIGUE := 0.002 # Up to 0.17 extra game minutes at minimum crew energy.
 const VISITOR_ROLL_FATIGUE := 0.04 # Preserve the existing manually played rail cadence.
-const SAVE_VERSION := 18 # One current schema; pre-alpha saves are disposable.
+const SAVE_VERSION := 19 # One current schema; pre-alpha saves are disposable.
 const SAVE_PATH := "user://pit-boss.json"
 const VISITOR_ROLL_SECONDS := 15.0
 const REPAIR_GRACE_MINUTES := 4320 # Three days of operation before any wear check.

@@ -1252,10 +1252,11 @@ func render_finance_advanced(parent: Node) -> void:
 	finance_row(parent, "Drink sales", float(sim.bar_totals.revenue))
 	finance_row(parent, "All costs incl. investment", -sim.operating_costs())
 	finance_row(parent, "Owner event profit transfers", sim.owner_account.profit_transferred)
+	if sim.sponsored_income > 0: finance_row(parent, "Sponsored promotions", sim.sponsored_income)
 	finance_row(parent, "Owner Bankroll (personal)", sim.owner_bankroll)
 	finance_row(parent, "Recorded net cash flow", sim.net_profit(), false)
 	finance_row(parent, "Pending stakes", sim.live_stakes())
-	var note := add_label(parent, "Cash flow includes owner floor transfers, event net winnings and pending floor stakes.", 12, MUTED)
+	var note := add_label(parent, "Cash flow includes owner floor transfers, event net winnings, sponsored promotions and pending floor stakes.", 12, MUTED)
 	note.tooltip_text = "Starting cash and developer funding are outside recorded flow. Operating profit excludes capital, hiring and owner gambling; gaming win excludes unresolved stakes."
 	if not sim.owner_account.history.is_empty():
 		add_label(parent, "Recent owner transactions", 12, GOLD)
@@ -1366,7 +1367,7 @@ func render_finance() -> void:
 		detail = finance_card("investment", "Investment / setup", -investment)
 		if detail != null: render_finance_investment(detail)
 	finance_row(inspector, "Net cash flow", sim.net_profit(), false)
-	if not finance_advanced: add_label(inspector, "Cash flow includes owner floor transfers, event net winnings and pending floor stakes.", 12, MUTED)
+	if not finance_advanced: add_label(inspector, "Cash flow includes owner floor transfers, event net winnings, sponsored promotions and pending floor stakes.", 12, MUTED)
 	var advanced := add_button(inspector, "Advanced accounting -" if finance_advanced else "Advanced accounting >", func(): finance_advanced = not finance_advanced; refresh())
 	advanced.tooltip_text = "Reconciliation and payroll diagnostics"
 	if finance_advanced: render_finance_advanced(inspector)
@@ -1678,6 +1679,7 @@ func join_table() -> void:
 	refresh()
 
 func leave_table() -> void:
+	if is_instance_valid(game_view) and game_view.visible and game_view.art.spinning > 0: return
 	if not sim.owner_play.is_empty():
 		if not sim.exit_owner_event(): return
 		sim.owner_play.clear()

@@ -38,13 +38,9 @@ func owner_foundation() -> void:
 	check(restored.owner_bankroll == 950 and restored.cash == initial_cash + 150, "Net profit API accounting")
 	check(restored.owner_wager_debit(6, 100) and restored.owner_wager_settle(6, 60), "Partial loss accepts a total return")
 	check(restored.owner_bankroll == 910 and restored.cash == initial_cash + 150, "Partial loss stays personal")
-	var legacy := json_save(sim)
-	legacy.erase("owner_bankroll")
-	legacy.erase("optional_events")
-	legacy.wallet = 735.0
-	check(restored.restore(legacy) and restored.owner_bankroll == 735 and restored.cash == initial_cash, "Previous wallet migrated without resetting casino cash")
-	legacy.erase("wallet")
-	check(restored.restore(legacy) and restored.owner_bankroll == 1000, "Missing personal balance defaults safely")
+	var missing := json_save(sim)
+	missing.erase("owner_bankroll")
+	check(restored.restore(missing) and restored.owner_bankroll == 1000, "Missing current personal account defaults safely")
 	var bad := json_save(restored)
 	bad.owner_bankroll.balance = -10
 	var before := JSON.stringify(restored.snapshot())
@@ -200,7 +196,7 @@ func owner_gambling_events() -> void:
 		while seed_value < 2000:
 			control.seed = seed_value
 			returned = 0
-			for i in range(3): returned += float(Games.spin_slots(5, control, sim.slot_profile(sim.tables[0])).credit)
+			for i in range(3): returned += float(Games.spin_slots(5, control, sim.slot_profile(sim.tables[0]), 5).credit)
 			if (desired == "Loss" and returned < 15) or (desired == "Push" and returned == 15) or (desired == "Win" and returned > 15): break
 			seed_value += 1
 		check(seed_value < 2000, "Find actual seeded slot outcome " + desired)
