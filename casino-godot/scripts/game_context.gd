@@ -103,3 +103,7 @@ func shoot_player(id: int) -> bool:
 	return execute("roll") if is_private else source.shoot_player(id)
 func working() -> void:
 	if is_private: execute("working")
+
+func roulette_committed() -> Array:
+	if is_private or int(source.roulette_presentation.get("table_id", -1)) != joined: return []
+	return source.roulette_presentation.get("wagers", [])

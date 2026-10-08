@@ -92,6 +92,7 @@ var step_tables := {}
 var step_crew := {}
 var indexed_step := false
 var thought_last := {} # Transient emission cooldowns, not saved guest history.
+var roulette_presentation := {} # Last actual shared spin only; transient, never saved.
 var table_interest := {} # Bounded recent actual guest wagers, never an odds input.
 const CAGE_PICKUP := Vector2(120, 90)
 var staff: Array = []
@@ -665,9 +666,6 @@ func placement_report(at: Vector2, rotated: bool, ignore_id: int = -1, kind: Str
 	access.append(Property.private_approach(floor_chunks))
 	placement_result = Placement.validate(floor_chunks, assets, access)
 	placement_result.candidate = candidate
-	if candidate.furniture.merge(candidate.art).intersects(Property.private_clearance(floor_chunks)):
-		placement_result.valid = false
-		placement_result.errors.append({"message": "Keep the private doorway clear. Move overlapping assets to restore access.", "position": Property.private_approach(floor_chunks)})
 	if ignore_id < 0 and tables.size() >= CasinoTuning.MAX_ASSETS:
 		placement_result.valid = false
 		placement_result.errors.append({"message": "Asset limit reached", "position": at})
@@ -1789,6 +1787,7 @@ func step() -> void:
 
 	momentum_step()
 	optional_objectives.tick(self)
+	recover_wallet_daily()
 	refresh_progression()
 	update_reserve_warning()
 	check_profit_milestone()
@@ -2261,13 +2260,13 @@ func restore(data: Dictionary) -> bool:
 		return false
 	if not data.get("bar_owned") is bool: return false
 	data = data.duplicate(true)
+	if not valid_number(data.get("elapsed")) or data.elapsed < 0 or data.elapsed != int(data.elapsed): return false
 	var restored_owner := OwnerAccount.new()
 	if not restored_owner.restore(data.get("owner_bankroll")): return false
 	var restored_room := BackRoom.new()
 	var restored_recovery := Recovery.new()
-	if not restored_room.restore(data.get("back_room"), restored_owner) or not restored_recovery.restore(data.get("recovery")): return false
+	if not restored_room.restore(data.get("back_room"), restored_owner) or not restored_recovery.restore(data.get("recovery"), int(data.elapsed)): return false
 	var restored_events := OptionalEvents.new()
-	if not valid_number(data.get("elapsed")): return false
 	var restored_objectives := Objectives.new()
 	if data.has("optional_objectives"):
 		if not restored_objectives.restore(data.optional_objectives, int(data.elapsed)): return false
@@ -2552,6 +2551,7 @@ func restore(data: Dictionary) -> bool:
 	for key in ["blackjack_unlocked", "ever_opened", "vip_enabled", "high_limit_enabled"]: set(key, bool(data[key]))
 	thought_last.clear()
 	table_interest.clear()
+	roulette_presentation.clear()
 	cashout_effects.clear()
 	recent_financial_events.clear()
 	house_activity.clear()
@@ -2648,6 +2648,7 @@ func start_game(id: int, bet: float, trips: float = 0, slot_lines: int = 1) -> b
 	match kind:
 		"slots": table.round = Games.spin_slots(bet, rng, slot_profile(table), slot_lines)
 		"roulette":
+			roulette_presentation.clear()
 			table.round = Games.spin_roulette(table.roulette_bets, rng)
 			table.round.bets = table.roulette_bets.duplicate(true)
 			table.roulette_bets.clear()
@@ -2749,14 +2750,18 @@ func game_liability(table: Dictionary) -> float:
 	return amount
 
 func shared_roulette(table: Dictionary, number: int) -> void:
+	var committed: Array = []
 	for guest in seated(int(table.id)):
 		var stake := guest_wager(table, guest)
 		if stake < float(table.minimum) or not game_debit(table, stake, guest): continue
 		var result := Games.spin_roulette({"Red" if int(guest.id) % 2 else "Black": stake}, rng, number)
+		committed.append({"id": guest.id, "seat": guest.seat, "name": guest.name, "key": "Red" if int(guest.id) % 2 else "Black", "stake": stake, "returned": result.credit})
 		game_credit(table, result.credit, guest)
 		emit_gaming_result(table, stake, float(result.credit), int(guest.id))
 		record_guest_round(guest, stake)
 		think(guest, "Our wheel hit %d!" % number)
+
+	roulette_presentation = {"table_id": table.id, "number": number, "wagers": committed}
 
 # Event wagering is a separate counterparty from play at the owner's own tables.
 # total_return includes original stake; only positive net profit enters casino cash.
@@ -2777,6 +2782,20 @@ func owner_wager_refund(operation_id: int) -> bool:
 
 func owner_wager_loss(operation_id: int) -> bool:
 	return owner_wager_settle(operation_id, 0)
+
+func recover_wallet_daily() -> void:
+	if not recovery.passive_due(elapsed): return
+	# A durable account credit and its paid-day marker must succeed together.
+	# This additive allowance is safe during live wagers, unlike a full top-up.
+	if owner_checkpoint.is_valid() and not owner_checkpoint.call(): return
+	var account_before := owner_account.snapshot()
+	var period_before: int = recovery.passive_period
+	if not recovery.grant_daily(self): return
+	if owner_checkpoint.is_valid() and not owner_checkpoint.call():
+		owner_account.restore(account_before)
+		recovery.passive_period = period_before
+		return
+	log_event("Daily wallet recovery: +$%.0f to your personal wallet." % CasinoTuning.OWNER_DAILY_RECOVERY)
 
 func reward_owner_bankroll(operation_id: int, amount: float, reason: String) -> bool:
 	return owner_account.reward(operation_id, amount, reason, elapsed)
@@ -2840,7 +2859,7 @@ func private_transaction(action: Callable) -> bool:
 	if not accepted or (owner_checkpoint.is_valid() and not owner_checkpoint.call()):
 		owner_account.restore(account_before)
 		back_room.restore(room_before, owner_account)
-		recovery.restore(recovery_before)
+		recovery.restore(recovery_before, elapsed)
 		# A rejected action must not re-anchor against a changed device wall clock.
 		recovery.anchor_utc = recovery_anchor_utc
 		recovery.anchor_ticks = recovery_anchor_ticks

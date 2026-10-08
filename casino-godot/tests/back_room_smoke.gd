@@ -30,6 +30,10 @@ func run() -> void:
 	ui.set_process(false)
 	ui.floor_view.set_process(false)
 	ui.back_room_floor.set_process(false)
+	check(CasinoTuning.ENTRANCE_CLEARANCE.has_point(ui.floor_view.sim.door_approach()), "Private approach uses existing entrance clearance")
+	check(not Property.public_door().intersects(ui.floor_view.sim.door_bounds()), "Front door targets are separate")
+	check(ui.sim.can_place(Vector2(420, 480), false, -1, "slots"), "Old south doorway reservation accepts ordinary slot placement")
+	ui.sim.player = CasinoTuning.ENTRY + Vector2(0, 300)
 	var public_counts := [ui.sim.tables.size(), ui.sim.staff.size()]
 	ui.floor_view.select_at(ui.floor_view.screen_at(ui.floor_view.sim.door_bounds().get_center()))
 	check(not ui.in_back_room and ui.floor_view.move_target.is_finite(), "Door routes owner without teleport")
@@ -76,8 +80,8 @@ func run() -> void:
 	walk(ui.back_room_floor)
 	check(not ui.in_back_room and ui.floor_view.visible and not ui.floor_view.blocked(ui.sim.player), "Physical exit returns safely")
 	var original := Property.private_door(ui.sim.floor_chunks)
-	check(Property.private_door({"left": 1, "right": 0, "bottom": 0}).get_center().is_equal_approx(original.get_center()), "Left expansion retains bottom-right edge")
-	check(Property.private_door({"left": 0, "right": 1, "bottom": 1}).position.x > original.position.x and Property.private_door({"left": 0, "right": 1, "bottom": 1}).position.y > original.position.y, "Right/bottom expansion moves door")
+	check(Property.private_door({"left": 1, "right": 0, "bottom": 0}).get_center().is_equal_approx(original.get_center()), "Left expansion retains fixed frontage")
+	check(Property.private_door({"left": 0, "right": 1, "bottom": 1}) == original, "Right/bottom expansion retains fixed frontage")
 	# One deterministic money example supplements the random shared spin above.
 	var money_sim := Sim.new()
 	var initial_cash: float = money_sim.cash

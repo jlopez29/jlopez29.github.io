@@ -1,5 +1,8 @@
 extends "res://scripts/craps_layout.gd"
 # Source-art coordinates. A single uniform transform drives felt, chips and input.
+const Chips = preload("res://presentation/play/chip_stack.gd")
+const DragChip = preload("res://presentation/play/chip_drag.gd")
+var drag_overlay: Control
 const FELT_SIZE := Vector2(1536, 1024)
 const PLAY_SIZE := Vector2(1536, 1120)
 const PRINTED_REGIONS := {
@@ -26,7 +29,6 @@ var display_signature: Array = []
 const ROLL_SECONDS := 1.2
 const SETTLE_SECONDS := 1.0
 const RETURN_SECONDS := 1.3
-const PLAYER_COLORS := [Color("edcf78"), Color("72aaff"), Color("ee88be"), Color("82d890"), Color("ba96ec"), Color("ed9974"), Color("77d6d9"), Color("e5e8ef")]
 var animation_duration := ROLL_SECONDS + SETTLE_SECONDS
 var observed_sim: PitBossGameContext
 var resting_dice := Vector2(1130, 920)
@@ -40,10 +42,29 @@ var reference_dice: Array = []
 var rebound := Vector2.ZERO
 const DICE_BOUNDS := Rect2(110, 95, 990, 785)
 
+func _ready() -> void:
+	super._ready()
+	var drag_layer := CanvasLayer.new()
+	drag_layer.layer = 100
+	add_child(drag_layer)
+	drag_overlay = DragChip.new()
+	drag_layer.add_child(drag_overlay)
+
+func update_drag_overlay() -> void:
+	if dragging.is_empty() or not mouse_down or not is_visible_in_tree():
+		drag_overlay.hide()
+		return
+	var table := sim.get_table(sim.joined)
+	var amount := float(table.owner.get(dragging, chip)) if drag_stack else chip
+	drag_overlay.update_chip(get_viewport().get_mouse_position(), amount)
+
 func _process(delta: float) -> void:
 	if not is_visible_in_tree() or sim == null or sim.joined < 0:
 		if dice_held: cancel_throw()
+		drag_overlay.hide()
 		return
+	if mouse_down and not dragging.is_empty() and pan_distance > 10: scroll_chip_drag(delta)
+	update_drag_overlay()
 	var mobile := get_viewport_rect().size.x < 1000
 	var minimum := Vector2(1300, 948) if mobile else Vector2.ZERO
 	if custom_minimum_size != minimum:
@@ -269,10 +290,16 @@ func _draw() -> void:
 	# Supported wagers without a printed area get explicit labeled regions.
 	supplemental(Rect2(285, 875, 790, 42), "odds")
 	supplemental(Rect2(110, 718, 168, 62), "lay_odds")
+	# One continuous wooden apron and upholstered edge beneath the original felt.
+	box(Rect2(16, 1024, 1504, 88), Color("593723"), 14, Color("ba8853"), 4)
+	box(Rect2(24, 1026, 1488, 15), Color("26312d"), 6, Color("c4a773"), 2)
 	for i in range(6):
-		var denomination: int = [1, 5, 25, 100, 500, 1000][i]
+		var denomination: int = Chips.DENOMINATIONS[i]
 		var at := Vector2(64 + i * 106, 1062)
-		chip_at(at, denomination, 25)
+		box(Rect2(at - Vector2(38, 21), Vector2(76, 54)), Color("221b16"), 12, Color("9d764b"), 3)
+		Chips.draw_stack(self, at - Vector2(0, 2), denomination, 21, Color.TRANSPARENT, false, true)
+		centered(Rect2(at + Vector2(-40, 27), Vector2(80, 20)), "$%d" % denomination, 17)
+		if denomination < float(table.minimum) or denomination > sim.maximum_wager(table) or denomination > sim.owner_bankroll or locked or busy(): draw_circle(at, 29, Color(0, 0, 0, 0.55))
 		if chip == denomination: draw_arc(at, 29, 0, TAU, 36, GOLD, 2)
 		targets.append({"rect": Rect2(at - Vector2(32, 32), Vector2(64, 64)), "kind": "#%d" % denomination, "enabled": true})
 	tray = Rect2(730, 1030, 780, 64)
@@ -306,16 +333,13 @@ func _draw() -> void:
 			if flight.pay and int(flight.seat) == -1: owner_returned += float(flight.amount)
 		if owner_returned > 0:
 			centered(Rect2(70, 923, 220, 28), "$%d returned" % owner_returned, 20, player_color(-1))
-	if dragging != "":
-		var amount := float(table.owner.get(dragging, chip)) if drag_stack else chip
-		chip_at(pointer, amount, 22)
 	draw_set_transform(Vector2.ZERO)
 
 func player_at(seat: int) -> Vector2:
 	return Vector2(180 if seat < 0 else 330 + seat * 125, 968)
 
 func player_color(seat: int) -> Color:
-	return PLAYER_COLORS[clampi(seat + 1, 0, PLAYER_COLORS.size() - 1)]
+	return Chips.seat_color(seat)
 
 func draw_players(table: Dictionary) -> void:
 	var players: Array = [{"seat": -1, "name": "YOU", "id": 0}]
@@ -323,8 +347,8 @@ func draw_players(table: Dictionary) -> void:
 	for player in players:
 		var seat := int(player.seat)
 		var at := player_at(seat)
-		chip_at(at, 0, 16, player_color(seat))
-		if int(player.id) == int(table.shooter): draw_arc(at, 23, 0, TAU, 36, GOLD, 3)
+		Chips.avatar(self, at, seat, 22)
+		if int(player.id) == int(table.shooter): draw_arc(at, 28, 0, TAU, 36, GOLD, 3)
 		centered(Rect2(at + Vector2(-58, 20), Vector2(116, 28)), str(player.name).get_slice(" |", 0).left(11), 18, player_color(seat))
 	centered(Rect2(1050, 945, 160, 28), "DEALER", 18, GOLD)
 	var phase := "Hold dice, flick UP" if portrait else "Hold dice, flick RIGHT"
@@ -376,18 +400,10 @@ func draw_wagers(bets: Dictionary, seat: int) -> void:
 		if amount <= 0 or not spots.has(kind): continue
 		var small: bool = layouts[kind].size.y < 60 or layouts[kind].size.x < 100
 		var radius := float((8 if small else 13) if seat >= 0 else (10 if small else 20))
-		var layers := mini(7, maxi(1, ceili(amount / maxf(1, float(sim.get_table(sim.joined).minimum)))))
-		for layer in range(layers):
-			chip_at(endpoint(kind, seat) - Vector2(0, layer * 3), amount if layer == layers - 1 else 0, radius, player_color(seat))
+		chip_at(endpoint(kind, seat), amount, radius, player_color(seat))
 
 func chip_at(at: Vector2, value: float, radius: float = 17, tint: Color = Color.TRANSPARENT) -> void:
-	var color := player_color(-1) if tint == Color.TRANSPARENT else tint
-	draw_texture_rect(PitBoss.texture("casino_play/shared/chips/chip_1.svg"), Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2), false, color)
-	draw_circle(at, radius * 0.65, Color("162025"))
-	if value <= 0: return
-	var text := str(int(value))
-	var fs := 10 if radius < 14 else 14
-	label(at + Vector2(-font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x / 2, fs * 0.35), text, fs)
+	Chips.draw_stack(self, at, value, radius, player_color(-1) if tint == Color.TRANSPARENT else tint)
 
 func shooter_pocket(shooter: int = -99) -> Vector2:
 	if shooter == -99: shooter = int(sim.get_table(sim.joined).shooter)
@@ -432,15 +448,6 @@ func place_chip(kind: String, at: Vector2) -> void:
 	else: message = error
 	queue_redraw()
 
-func _can_drop_data(at: Vector2, data: Variant) -> bool:
-	return data is Dictionary and data.get("type", "") == "craps_chip" and not locked and not busy() and not target_at((at - offset) / factor).is_empty()
-
-func _drop_data(at: Vector2, data: Variant) -> void:
-	chip = float(data.amount)
-	action_requested.emit("chip:%d" % int(chip))
-	var felt_at := (at - offset) / factor
-	place_chip(target_at(felt_at), felt_at)
-
 func _gui_input(event: InputEvent) -> void:
 	if dice_held or factor <= 0 or sim == null or sim.joined < 0: return
 	if event is InputEventMouseMotion:
@@ -463,7 +470,12 @@ func _gui_input(event: InputEvent) -> void:
 			drag_stack = false
 			var target := target_at(pointer)
 			if target.begins_with("#"):
-				chip = float(target.substr(1))
+				var denomination := float(target.substr(1))
+				var table := sim.get_table(sim.joined)
+				if locked or busy() or denomination < float(table.minimum) or denomination > sim.maximum_wager(table) or denomination > sim.owner_bankroll:
+					mouse_down = false
+					return
+				chip = denomination
 				action_requested.emit("chip:%d" % int(chip))
 				dragging = "chip"
 			elif not locked and not busy():
@@ -486,6 +498,7 @@ func _gui_input(event: InputEvent) -> void:
 					place_chip(target, pointer)
 			dragging = ""
 			drag_stack = false
+		update_drag_overlay()
 		queue_redraw()
 		accept_event()
 
@@ -499,6 +512,20 @@ func focus_line() -> void:
 		scroll.scroll_vertical = maxi(0, int(830 * factor - scroll.size.y / 2))
 
 func _input(event: InputEvent) -> void:
+	if not is_visible_in_tree(): return
+	# Capture an active rail/contract drag even outside the clipped scroll area.
+	# make_input_local uses the same canvas transform as the drop target geometry.
+	if mouse_down and not dice_held and (event is InputEventMouseMotion or (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed)):
+		var active_scroll := play_scroll()
+		if event is InputEventMouseButton and active_scroll != null and not active_scroll.get_global_rect().has_point(event.position):
+			mouse_down = false
+			dragging = ""
+			drag_stack = false
+		else:
+			_gui_input(make_input_local(event))
+		update_drag_overlay()
+		get_viewport().set_input_as_handled()
+		return
 	# The inherited dice gesture must respect the actual clipped play viewport.
 	if not dice_held and (event is InputEventMouseButton or event is InputEventScreenTouch):
 		var scroll := play_scroll()
@@ -508,6 +535,22 @@ func _input(event: InputEvent) -> void:
 		mouse_down = false
 		dragging = ""
 		drag_stack = false
+		drag_overlay.hide()
+
+func scroll_chip_drag(delta: float) -> void:
+	var scroll := play_scroll()
+	if scroll == null: return
+	var at := get_viewport().get_mouse_position()
+	var viewport := scroll.get_global_rect()
+	if not viewport.grow(32).has_point(at): return
+	var motion := Vector2.ZERO
+	if at.x < viewport.position.x + 32: motion.x = -1
+	elif at.x > viewport.end.x - 32: motion.x = 1
+	if at.y < viewport.position.y + 32: motion.y = -1
+	elif at.y > viewport.end.y - 32: motion.y = 1
+	scroll.scroll_horizontal += roundi(motion.x * delta * 360)
+	scroll.scroll_vertical += roundi(motion.y * delta * 360)
+	pointer = (get_global_transform_with_canvas().affine_inverse() * at - offset) / factor
 
 func follow_dice(delta: float) -> void:
 	var scroll := play_scroll()

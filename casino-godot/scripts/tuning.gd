@@ -415,6 +415,8 @@ const GUEST_VISIT_FATIGUE_SPAN := 600.0
 
 # Owner account and optional happenings (game minutes, not wall-clock timers).
 const OWNER_STARTING_BANKROLL := 1000.0
+const OWNER_DAILY_RECOVERY := 50.0
+const OWNER_RECOVERY_DAY_MINUTES := 1440
 const OWNER_MAX_REWARD := 1000.0
 const OWNER_MONEY_LIMIT := 1.0e12
 const OWNER_HISTORY_LIMIT := 64

@@ -28,8 +28,6 @@ func panel(rect: Rect2, color: Color, radius: int = 12) -> void:
 	draw_style_box(PitBoss.box(color, Color("92743b"), 0), rect)
 func image(path: String, rect: Rect2) -> void:
 	draw_texture_rect(PitBoss.texture("casino_play/" + path), rect, false)
+const Chips = preload("res://presentation/play/chip_stack.gd")
 func stack(at: Vector2, amount: float, radius: float = 24) -> void:
-	var denomination := 1
-	for value in [1, 5, 25, 100, 500, 1000]:
-		if amount >= value: denomination = value
-	image("shared/chips/chip_%d.svg" % denomination, Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2))
+	Chips.draw_stack(self, at, amount, radius, Chips.seat_color(-1))
