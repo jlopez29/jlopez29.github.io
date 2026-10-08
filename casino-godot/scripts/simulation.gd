@@ -21,6 +21,7 @@ const OwnerPlay = preload("res://scripts/owner_event_play.gd")
 const BackRoom = preload("res://scripts/back_room_session.gd")
 const Recovery = preload("res://scripts/recovery_system.gd")
 var back_room := BackRoom.new()
+var location := {"area": "public", "private_position": [820.0, 650.0], "station": -1}
 var recovery := Recovery.new()
 var owner_play := {}
 var owner_checkpoint := Callable() # Controller supplies local persistence; tests can remain in memory.
@@ -660,8 +661,13 @@ func placement_report(at: Vector2, rotated: bool, ignore_id: int = -1, kind: Str
 	for asset in placement_geometry():
 		if int(asset.id) != ignore_id: assets.append(asset)
 	assets.append(candidate)
-	placement_result = Placement.validate(floor_chunks, assets, placement_access_points(bar_owned))
+	var access := placement_access_points(bar_owned)
+	access.append(Property.private_approach(floor_chunks))
+	placement_result = Placement.validate(floor_chunks, assets, access)
 	placement_result.candidate = candidate
+	if candidate.furniture.merge(candidate.art).intersects(Property.private_clearance(floor_chunks)):
+		placement_result.valid = false
+		placement_result.errors.append({"message": "Keep the private doorway clear. Move overlapping assets to restore access.", "position": Property.private_approach(floor_chunks)})
 	if ignore_id < 0 and tables.size() >= CasinoTuning.MAX_ASSETS:
 		placement_result.valid = false
 		placement_result.errors.append({"message": "Asset limit reached", "position": at})
@@ -1360,7 +1366,6 @@ func floor_navigation() -> AStarGrid2D:
 func route(guest: Dictionary) -> void:
 	var grid := floor_navigation()
 	var origin := Vector2i(roundi(guest.x / CasinoTuning.FLOOR_NAV_CELL), roundi(guest.y / CasinoTuning.FLOOR_NAV_CELL))
-	var destination := Vector2i(roundi(guest.tx / CasinoTuning.FLOOR_NAV_CELL), roundi(guest.ty / CasinoTuning.FLOOR_NAV_CELL))
 	var exit_point := Vector2(INF, INF)
 	if grid.is_in_boundsv(origin) and grid.is_point_solid(origin):
 		for table in tables:
@@ -1376,15 +1381,10 @@ func route(guest: Dictionary) -> void:
 			# Reverse the short seat-entry motion before routing over walkable cells.
 			origin = Vector2i(roundi(exit_point.x / CasinoTuning.FLOOR_NAV_CELL), roundi(exit_point.y / CasinoTuning.FLOOR_NAV_CELL))
 	origin = origin.clamp(grid.region.position, grid.region.end - Vector2i.ONE)
-	destination = destination.clamp(grid.region.position, grid.region.end - Vector2i.ONE)
-	var path: Array = []
-	if grid.is_in_boundsv(origin) and grid.is_in_boundsv(destination):
-		for at in grid.get_point_path(origin, destination):
-			path.append([at.x, at.y])
-	if not path.is_empty():
-		if exit_point.is_finite(): path.push_front([exit_point.x, exit_point.y])
-		path.append([guest.tx, guest.ty])
-	guest.path = path
+	var request := {"x": origin.x * CasinoTuning.FLOOR_NAV_CELL, "y": origin.y * CasinoTuning.FLOOR_NAV_CELL, "tx": guest.tx, "ty": guest.ty}
+	Placement.route_grid(request, grid)
+	if not request.path.is_empty() and exit_point.is_finite(): request.path.push_front([exit_point.x, exit_point.y])
+	guest.path = request.path
 
 func reroute() -> void:
 	navigation_grid = null
@@ -2254,7 +2254,7 @@ func satisfaction() -> float:
 	return total / guests.size()
 
 func snapshot() -> Dictionary:
-	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_owned": bar_owned, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "owner_bankroll": owner_account.snapshot(), "optional_events": optional_events.snapshot(), "momentum": momentum.snapshot(), "optional_objectives": optional_objectives.snapshot(), "owner_play": owner_play.duplicate(true), "back_room": back_room.snapshot(), "recovery": recovery.snapshot(), "sponsored_income": sponsored_income, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
+	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_owned": bar_owned, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "owner_bankroll": owner_account.snapshot(), "optional_events": optional_events.snapshot(), "momentum": momentum.snapshot(), "optional_objectives": optional_objectives.snapshot(), "owner_play": owner_play.duplicate(true), "back_room": back_room.snapshot(), "location": location.duplicate(true), "recovery": recovery.snapshot(), "sponsored_income": sponsored_income, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
 
 func restore(data: Dictionary) -> bool:
 	if not valid_number(data.get("version")) or data.version != CasinoTuning.SAVE_VERSION:
@@ -2502,6 +2502,15 @@ func restore(data: Dictionary) -> bool:
 	var restored_play = data.get("owner_play", {})
 	if not OwnerPlay.valid(restored_play, restored_owner, restored_events, data.tables) or (not restored_play.is_empty() and int(data.joined) >= 0): return false
 	if restored_room.busy() and (not restored_play.is_empty() or int(data.joined) >= 0): return false
+	# Older 0.4.2.6 saves have no physical location; preserve all money/game state.
+	var restored_location = data.get("location", {"area": "public", "private_position": [820.0, 650.0], "station": -1})
+	if not restored_location is Dictionary or restored_location.get("area") not in ["public", "private"]: return false
+	var position_data = restored_location.get("private_position")
+	if not position_data is Array or position_data.size() != 2: return false
+	if not valid_number(position_data[0]) or not valid_number(position_data[1]): return false
+	if not Rect2(22, 22, 856, 716).has_point(Vector2(position_data[0], position_data[1])): return false
+	if not valid_number(restored_location.get("station")) or restored_location.station != int(restored_location.station) or int(restored_location.station) not in range(-1, 8): return false
+	location = restored_location.duplicate(true)
 	back_room = restored_room
 	recovery = restored_recovery
 	owner_play = restored_play.duplicate(true)

@@ -28,7 +28,7 @@ const SETTLE_SECONDS := 1.0
 const RETURN_SECONDS := 1.3
 const PLAYER_COLORS := [Color("edcf78"), Color("72aaff"), Color("ee88be"), Color("82d890"), Color("ba96ec"), Color("ed9974"), Color("77d6d9"), Color("e5e8ef")]
 var animation_duration := ROLL_SECONDS + SETTLE_SECONDS
-var observed_sim: CasinoSimulation
+var observed_sim: PitBossGameContext
 var resting_dice := Vector2(1130, 920)
 var return_from := Vector2.ZERO
 var return_to := Vector2.ZERO

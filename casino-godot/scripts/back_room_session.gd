@@ -176,7 +176,7 @@ func roll(sim) -> bool:
 		state.contracts = remaining
 		state.point = result.point
 		state.result = "Dice %d + %d | %s | CASINO CASH +$%.2f" % [a,b,result.message,state.profit]
-		state.round = {"dice": [a,b], "phase": "done"}
+		state.round = {"dice": [a,b], "phase": "done", "rolls": int(state.round.get("rolls", 0)) + 1, "credit": result.credit}
 	else: return false
 	state.sequence += 1
 	return true

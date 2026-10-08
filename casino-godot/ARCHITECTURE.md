@@ -383,10 +383,27 @@ emulated mouse events and retains gesture capture across overlay boundaries.
 It calls shared CasinoGames/CrapsRules, never public tables or optional-event IDs.
 `recovery_system.gd` owns one cycle, three validated scenarios, monotonic session
 clock, offline UTC anchor, dedicated persisted promotion RNG and issued tickets.
-`back_room_view.gd` retains its balance/navigation header and scrolls contextual
-content; it reuses CasinoSurface and the existing slot presentation/audio chain.
-The floor's burgundy entrance plaque is outside editable property space; Menu and
-Overview provide explicit Back Room navigation. Hidden floor movement ignores keys.
+`game_context.gd` adapts public simulation or private station state to the single
+`game_view.gd` play shell. Both use `casino_surface.gd` (slots/cards/wheel),
+`roulette_layout.gd`, and `presentation/play/craps_surface.gd` plus its
+`craps_layout.gd` base. The same slot timeline, audio, reel reveal, assets and
+controls run in both contexts: changing the normal slot animation changes private
+play automatically. Only provider constraints, actions, money and exit destination differ.
+
+`floor_context.gd` supplies the public or fixed private location dataset to the
+same `CasinoFloorV2` scene, asset/marker components and inherited `floor.gd`
+movement/camera. `asset_placement.gd` supplies shared grid creation/routing.
+Private stations and decorative dealer records exist only in the presentation
+provider, never public simulation tables/staff. `back_room_floor.gd` adds arrival
+interactions; `recovery_view.gd` preserves the recovery desk's business-rule UI.
+The public owner-only door follows property walking bounds. Placement reserves
+its approach and connected path; overlapping saved assets are retained with
+relocation guidance. Only owner arrival emits entry/exit, including while closed.
+
+The optional physical `location` save field preserves area, private owner position
+and open station. Existing schema-20/0.4.2.6 saves without it default to the public
+floor without altering their casino, wallet, escrow or private RNG. Unfinished
+private play can return to the room; Resume routes physically to its station.
 
 Private actions use a persisted pre-action checkpoint, owned-state rollback, and a
 verified temporary post-action snapshot renamed over the last good save. Signals

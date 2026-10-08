@@ -77,7 +77,7 @@ func view_checks(even: Dictionary) -> void:
 	sim.join_table(int(sim.tables[0].id))
 	sim.tables[0].round = even
 	var view := View.new()
-	view.sim = sim
+	view.sim = PitBossGameContext.new(sim)
 	root.add_child(view)
 	view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	view.render_current()

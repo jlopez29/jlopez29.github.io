@@ -11,7 +11,7 @@ const PitBoss = preload("res://scripts/pit_boss_theme.gd")
 const SlotResult = preload("res://scripts/slot_result.gd")
 const Surface = preload("res://scripts/casino_surface.gd")
 const RouletteLayout = preload("res://scripts/roulette_layout.gd")
-var sim: CasinoSimulation:
+var sim: PitBossGameContext:
 	set(value):
 		if sim == value: return
 		sim = value
@@ -231,7 +231,7 @@ func layout_play() -> void:
 	put(wallet_value, Vector2(10, 20), Vector2(maxf(120, size.x - 200), 24))
 	put(casino_cash, Vector2(10 if compact else 420, 44 if compact and not landscape else 32 if landscape else 7), Vector2(maxf(140, size.x - 180) if compact else 220, 20))
 	put(game_title, Vector2(200 if landscape else 10 if compact else 420, 62 if compact and not landscape else 32), Vector2(size.x - 36 if compact else 260, 18))
-	return_button.text = "Floor" if compact else "Return to Floor"
+	return_button.text = "Room" if sim != null and sim.is_private else "Floor" if compact else "Return to Floor"
 	put(return_button, Vector2(header.size.x - (80 if compact else 146), 5), Vector2(72 if compact else 138, 44))
 	put(pause_button, Vector2(header.size.x - (166 if compact else 232), 5), Vector2(80, 44))
 	pause_button.add_theme_font_size_override("font_size", 12)
@@ -301,8 +301,8 @@ func render_current() -> void:
 	var id := -int(sim.owner_play.event_id) - 2 if event else sim.joined
 	if current_id != id:
 		current_id = id
-		player_round = table.round if not event and (sim.game_pending(table) or kind == "slots") else {}
-		bet = float(sim.owner_play.base) if event else float(table.minimum)
+		player_round = table.round if sim.is_private or (not event and (sim.game_pending(table) or kind == "slots")) else {}
+		bet = float(sim.owner_play.base) if event else minf(10, sim.owner_bankroll) if sim.is_private else float(table.minimum)
 		trips = false
 		feedback = ""
 		show_details = false
@@ -326,8 +326,8 @@ func render_current() -> void:
 	game_title.text = ("PIT BOSS / " if compact else "") + (str(sim.optional_events.DEFINITIONS[sim.owner_play.type].title) if event else Games.NAMES[kind].replace("’", "'") + " #%d" % table.id)
 	game_title.clip_text = true
 	pause_button.text = "Resume" if paused else "Pause"
-	return_button.disabled = art.spinning > 0 or (pending and not event) or (kind == "craps" and craps.busy())
-	return_button.tooltip_text = "Finish this hand before leaving" if pending and not event else "Return to Floor"
+	return_button.disabled = art.spinning > 0 or (pending and not event and not sim.is_private) or (kind == "craps" and craps.busy())
+	return_button.tooltip_text = "Return to Back Room" if sim.is_private else "Finish this hand before leaving" if pending and not event else "Return to Floor"
 	art.kind = kind
 	art.z_index = 9 if kind == "slots" else 0
 	slot_dimmer.visible = kind == "slots" and art.timeline.strong_result()
@@ -368,7 +368,7 @@ func render_current() -> void:
 		amount = sum_bets(table.roulette_bets)
 	elif kind == "craps": amount = CrapsRules.exposure(table.owner)
 	elif pending: amount = float(table.round.get("staked", bet))
-	wager_label.text = ("Event committed " + FinancialText.cash(float(sim.owner_play.staked), 0)) if event else ("On felt " if kind in ["roulette", "craps"] else "Wager ") + FinancialText.cash(amount, 0)
+	wager_label.text = ("Event committed " + FinancialText.cash(float(sim.owner_play.staked), 0)) if event else ("On felt " if kind in ["roulette", "craps"] else "Wager ") + FinancialText.cash(amount, 2)
 	chips.get_parent().visible = not event and kind != "slots" and not pending
 	if chips.get_parent().visible:
 		for denomination in [1, 5, 25, 100, 500, 1000]:
@@ -394,6 +394,8 @@ func render_current() -> void:
 				chip_button.set_drag_forwarding(Callable(), Callable(), Callable())
 			chip_button.toggle_mode = true
 			chip_button.button_pressed = bet == denomination
+	if not event and not pending and (sim.is_private or kind != "slots"):
+		render_exact_wager(table, disabled)
 	if kind == "slots":
 		render_slot_controls(table, event, disabled)
 	elif event: render_event_actions(table)
@@ -438,7 +440,11 @@ func render_craps_actions(table: Dictionary, disabled: bool) -> void:
 		button("Roll", func(): craps_action_requested.emit("shoot"), actions, disabled or not craps.can_throw(), true)
 	else:
 		button("Resume rolls" if table.betting_hold else "Hold rolls", func(): craps_action_requested.emit("shoot"), actions, disabled)
-	button("Pass dice" if table.shooter == 0 else "Skip turn" if table.owner_queued else "Queue dice", func(): craps_action_requested.emit("pass"), actions, craps.busy())
+	if not sim.is_private: button("Pass dice" if table.shooter == 0 else "Skip turn" if table.owner_queued else "Queue dice", func(): craps_action_requested.emit("pass"), actions, craps.busy())
+	button("Working ON" if table.owner_working else "Working OFF", func():
+		if sim.is_private: sim.working()
+		else: table.owner_working = not table.owner_working
+		notify_change(), actions, disabled)
 	button("Take down", func(): sim.reclaim(sim.joined); notify_change(), actions, disabled or CrapsRules.exposure(table.owner) <= 0)
 
 func render_event_actions(table: Dictionary) -> void:
@@ -493,7 +499,7 @@ func render_details(table: Dictionary, event: bool, disabled: bool) -> void:
 			lines.append((key.replace("–", "-") if kind == "roulette" else CrapsRules.name_for(key)) + ": " + FinancialText.cash(float(bets[key]), 0))
 		summary.text = ("Chip " + FinancialText.cash(bet, 0) + (" / Stake " + FinancialText.cash(stake, 0) if kind == "craps" else "")) + ("\n" + error if not error.is_empty() else "") + "\n" + "\n".join(lines)
 	else:
-		summary.text = "Min %s / Max %s. Personal wagers use the same table, dealer and casino treasury as other guests." % [FinancialText.cash(table.minimum, 0), FinancialText.cash(sim.maximum_wager(table), 0)]
+		summary.text = ("Min %s / Max %s. Only net winnings transfer to Casino Cash; losses spend the personal wallet." if sim.is_private else "Min %s / Max %s. Personal wagers use the same table, dealer and casino treasury as other guests.") % [FinancialText.cash(table.minimum, 0), FinancialText.cash(sim.maximum_wager(table), 0)]
 
 func result_text(table: Dictionary, event: bool) -> String:
 	if feedback != "": return feedback
@@ -518,6 +524,7 @@ func result_text(table: Dictionary, event: bool) -> String:
 	if sim.table_kind(table) == "blackjack":
 		outcome = " / ".join(round.hands.map(func(hand_data): return Surface.hand_result(hand_data)))
 	elif sim.table_kind(table) == "roulette": outcome = "%d %s" % [round.number, "GREEN" if int(round.number) == 0 else "RED" if int(round.number) in Games.RED else "BLACK"]
+	if sim.is_private: return outcome + " | Personal " + FinancialText.house_result(minf(0, net)) + " | Casino " + FinancialText.house_result(maxf(0, net))
 	return outcome + " | Personal " + FinancialText.house_result(net) + " | Returned " + FinancialText.cash(float(round.credit), 0)
 
 func result_color(table: Dictionary, event: bool) -> Color:
@@ -579,7 +586,7 @@ func render_slot_controls(table: Dictionary, event: bool, disabled: bool) -> voi
 	if event: rendered_sequence = int(session.sequence)
 	var denominations: Array = sim.slot_profile(table).denominations.filter(func(value): return value >= table.minimum and value <= sim.maximum_wager(table))
 	if not event and denominations.size() > 1:
-		button("BET $%.0f" % bet, func():
+		button("BET $%.2f" % bet, func():
 			var index := denominations.find(bet)
 			bet = denominations[(index+1) % denominations.size()]
 			notify_change(), actions, locked())
@@ -607,3 +614,22 @@ func press_slot_spin() -> void:
 		return
 	if not sim.owner_play.is_empty(): transact(false,"Spin")
 	else: transact(true)
+
+func render_exact_wager(table: Dictionary, disabled: bool) -> void:
+	var value: SpinBox = retained(actions, "amount", func():
+		var node := SpinBox.new()
+		node.custom_minimum_size = Vector2(120, 44)
+		node.size_flags_horizontal = SIZE_EXPAND_FILL
+		node.prefix = "$"
+		return node)
+	for connection in value.get_signal_connection_list("value_changed"): value.disconnect("value_changed", connection.callable)
+	value.min_value = table.minimum
+	value.max_value = maxf(table.minimum, sim.maximum_wager(table))
+	value.step = 0.01 if sim.is_private else table.minimum
+	value.value = bet
+	value.editable = not disabled
+	value.tooltip_text = "Total wager / selected chip"
+	value.value_changed.connect(func(amount: float):
+		bet = amount
+		if is_instance_valid(craps): craps.chip = amount
+		notify_change())
