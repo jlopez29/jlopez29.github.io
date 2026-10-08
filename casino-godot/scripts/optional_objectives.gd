@@ -44,7 +44,7 @@ func eligible(sim, kind: String) -> bool:
 	match kind:
 		"happy_visits": return stats.happy_visits > 0
 		"gaming_profit": return stats.gaming_profit > 0 and stats.handle >= CasinoTuning.OBJECTIVE_PROFIT_MIN_HANDLE
-		"paid_drinks": return stats.paid_drinks > 0 and sim.bar_available() and not sim.drink_menu.is_empty() and sim.staff.any(func(employee): return employee.role == "Service" and employee.duty == "Active")
+		"paid_drinks": return stats.paid_drinks > 0 and sim.bar_available() and not sim.drink_menu.is_empty()
 		"occupied_games": return occupied_games(sim) > 0
 		"momentum": return sim.momentum.value >= CasinoTuning.MOMENTUM_BASELINE and occupied_games(sim) > 0
 		"owner_win":

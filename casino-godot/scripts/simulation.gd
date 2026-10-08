@@ -2268,15 +2268,10 @@ func restore(data: Dictionary) -> bool:
 	if not restored_room.restore(data.get("back_room"), restored_owner) or not restored_recovery.restore(data.get("recovery"), int(data.elapsed)): return false
 	var restored_events := OptionalEvents.new()
 	var restored_objectives := Objectives.new()
-	if data.has("optional_objectives"):
-		if not restored_objectives.restore(data.optional_objectives, int(data.elapsed)): return false
-	else: restored_objectives.next_check = int(data.elapsed) + CasinoTuning.OBJECTIVE_INTERVAL
+	if not restored_objectives.restore(data.get("optional_objectives"), int(data.elapsed)): return false
 	var restored_momentum := Momentum.new()
-	if data.has("momentum") and not restored_momentum.restore(data.momentum, int(data.elapsed)): return false
-	if data.has("optional_events"):
-		if not restored_events.restore(data.optional_events, int(data.elapsed)): return false
-	else:
-		restored_events.next_check = int(data.elapsed) + CasinoTuning.EVENT_INTERVAL_MINUTES
+	if not restored_momentum.restore(data.get("momentum"), int(data.elapsed)): return false
+	if not restored_events.restore(data.get("optional_events"), int(data.elapsed)): return false
 	if not valid_number(data.get("elapsed")) or not valid_number(data.get("staff_shift_handover_at")) or data.staff_shift_handover_at > data.elapsed or data.staff_shift_handover_at < -CasinoTuning.STAFF_SHIFT_HANDOVER_GAP: return false
 	if not data.get("relief_targets") is Dictionary: return false
 	for role in relief_targets:
@@ -2501,8 +2496,7 @@ func restore(data: Dictionary) -> bool:
 	var restored_play = data.get("owner_play", {})
 	if not OwnerPlay.valid(restored_play, restored_owner, restored_events, data.tables) or (not restored_play.is_empty() and int(data.joined) >= 0): return false
 	if restored_room.busy() and (not restored_play.is_empty() or int(data.joined) >= 0): return false
-	# Older 0.4.2.6 saves have no physical location; preserve all money/game state.
-	var restored_location = data.get("location", {"area": "public", "private_position": [820.0, 650.0], "station": -1})
+	var restored_location = data.get("location")
 	if not restored_location is Dictionary or restored_location.get("area") not in ["public", "private"]: return false
 	var position_data = restored_location.get("private_position")
 	if not position_data is Array or position_data.size() != 2: return false
@@ -2628,7 +2622,7 @@ func start_game(id: int, bet: float, trips: float = 0, slot_lines: int = 1) -> b
 	if not accepting_new_play(table) and table.get("roulette_bets", {}).is_empty(): return false
 	var kind := table_kind(table)
 	if slot_lines not in CasinoTuning.SLOT_LINE_COUNTS: return false
-	if kind == "slots" and bet not in slot_profile(table).denominations: return false
+	if kind == "slots" and not is_equal_approx(bet, round(bet)): return false
 	if kind == "craps" or not is_finite(bet) or not is_finite(trips) or bet < table.minimum or bet > maximum_wager(table) or trips < 0 or trips > maximum_wager(table): return false
 	var cost := bet * 2 + trips if kind == "holdem" else bet
 	if kind == "roulette":

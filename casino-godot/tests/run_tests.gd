@@ -40,7 +40,7 @@ func owner_foundation() -> void:
 	check(restored.owner_bankroll == 910 and restored.cash == initial_cash + 150, "Partial loss stays personal")
 	var missing := json_save(sim)
 	missing.erase("owner_bankroll")
-	check(restored.restore(missing) and restored.owner_bankroll == 1000, "Missing current personal account defaults safely")
+	check(not restored.restore(missing), "Save without wallet data rejected instead of fabricating a balance")
 	var bad := json_save(restored)
 	bad.owner_bankroll.balance = -10
 	var before := JSON.stringify(restored.snapshot())
@@ -75,7 +75,10 @@ func optional_framework() -> void:
 	check(copy.optional_events.resolve(copy, id, "success") and not copy.optional_events.resolve(copy, id, "success"), "Async completion idempotent after reload")
 	sim.elapsed = int(events.active[0].expires)
 	events.tick(sim)
-	check(events.active.is_empty() and sim.cash == cash_before and sim.reputation == rep_before, "Opportunity expiration has no penalty")
+	check(events.find_event(id).is_empty() and sim.cash == cash_before and sim.reputation == rep_before, "Opportunity expiration has no penalty")
+	check(events.active.size() == 1 and events.active[0].type == "manufacturer_demo", "Introductory demo is scheduled separately")
+	check(events.resolve(sim, int(events.active[0].id), "dismissed"), "Clear introductory offer before queue fixture")
+	events.next_check = sim.elapsed + 10000
 	check(events.spawn(sim, "management_sample", true), "Management sample spawn")
 	id = int(events.active[0].id)
 	check(events.resolve(sim, id, "dismissed") and sim.reputation == rep_before - 0.25, "Explicit management dismissal consequence")
@@ -146,7 +149,7 @@ func ui_checks() -> void:
 		ui.game_view.render_current()
 		await process_frame
 		check(ui.game_view.visible and not ui.events_panel.visible and not ui.inspector_panel.visible, "Event notifications do not overlay playable controls " + str(dimensions))
-		check(find_button(ui.game_view.actions, "Spin") != null, "Existing slot play control retained " + str(dimensions))
+		check(ui.game_view.slot_spin.is_visible_in_tree() and ui.game_view.slot_spin.get_global_rect().intersects(Rect2(Vector2.ZERO, ui.game_view.size)), "Current slot spin control visible " + str(dimensions))
 	ui.leave_table()
 	check(ui.sim.owner_play.is_empty() and ui.floor_view.visible, "Owner result returns cleanly to casino management")
 	saved = JSON.parse_string(FileAccess.get_file_as_string(ui.owner_checkpoint_path))
@@ -411,7 +414,7 @@ func momentum_checks() -> void:
 	check(copy.momentum.influence == influence, "Load cannot reset big-win cooldown")
 	var saved := json_save(sim)
 	saved.erase("momentum")
-	check(copy.restore(saved) and copy.momentum.value == CasinoTuning.MOMENTUM_BASELINE, "Existing saves receive safe additive momentum default")
+	check(not copy.restore(saved), "Save missing current momentum data rejected")
 	var pristine := JSON.stringify(copy.snapshot())
 	for field in ["value", "influence", "guest_win_at"]:
 		var bad := json_save(sim)
@@ -575,7 +578,7 @@ func objective_checks() -> void:
 	check(failed.optional_objectives.claim(failed, failed_id), "Failed checkpoint leaves reward retryable")
 	var saved := json_save(sim)
 	saved.erase("optional_objectives")
-	check(copy.restore(saved) and copy.optional_objectives.active.is_empty() and copy.optional_objectives.next_check > copy.elapsed, "Existing save defaults safely without catch-up goals/rewards")
+	check(not copy.restore(saved), "Save missing current objective data rejected")
 	var pristine := JSON.stringify(copy.snapshot())
 	for field in ["next_id", "rewarded", "cursor"]:
 		var bad := json_save(sim)
@@ -586,25 +589,30 @@ func objective_checks() -> void:
 	var drinks := CasinoSimulation.new("easy", ["slots"])
 	drinks.opened = true
 	drinks.purchase_bar()
-	drinks.hire("Service", -1)
-	drinks.set_drink_menu("basic", true)
+	drinks.set_drink_menu("water", false)
 	drinks.spawn_guest()
 	var drink_guest: Dictionary = drinks.guests[0]
-	drink_guest.state = "Watching"
+	drink_guest.state = "At bar"
+	drink_guest.bar_slot = 0
+	var bar_position := drinks.bar_guest_position(0)
+	drink_guest.x = bar_position.x
+	drink_guest.y = bar_position.y
 	drink_guest.thirst = CasinoTuning.DRINK_THIRST_TRIGGER
-	drink_guest.drink_order = "basic"
-	drink_guest.drink_quote = 5
-	drinks.deliver_drink(drink_guest, {"name": "Service", "duty": "Active", "service_product": "basic"})
+	drink_guest.drink_request_at = drinks.elapsed
+	drinks.Bar.request(drinks, drink_guest)
+	drinks.DrinkService.move_counter(drinks, 3)
 	drinks.optional_objectives.cursor = drinks.optional_objectives.KINDS.find("paid_drinks")
-	check(drinks.optional_objectives.offer(drinks) and drinks.optional_objectives.active[0].kind == "paid_drinks", "Actual paid service makes a drink goal eligible")
-	var drink_goal: Dictionary = drinks.optional_objectives.active[0]
-	drinks.optional_objectives.start(drinks, int(drink_goal.id))
-	for delivery in range(2):
-		drink_guest.thirst = CasinoTuning.DRINK_THIRST_TRIGGER
-		drink_guest.drink_order = "basic"
-		drink_guest.drink_quote = 5
-		drinks.deliver_drink(drink_guest, {"name": "Service", "duty": "Active", "service_product": "basic"})
-	check(drink_goal.state == "ready", "Actual paid deliveries complete service goal")
+	var offered: bool = drinks.optional_objectives.offer(drinks)
+	check(offered and not drinks.optional_objectives.active.is_empty() and drinks.optional_objectives.active[0].kind == "paid_drinks", "Actual counter sale makes a drink goal eligible without floor staff")
+	if offered:
+		var drink_goal: Dictionary = drinks.optional_objectives.active[0]
+		check(drinks.optional_objectives.start(drinks, int(drink_goal.id)), "Counter service goal starts")
+		for delivery in range(2):
+			drink_guest.thirst = CasinoTuning.DRINK_THIRST_TRIGGER
+			drink_guest.drink_request_at = drinks.elapsed
+			drinks.Bar.request(drinks, drink_guest)
+			drinks.DrinkService.move_counter(drinks, 3)
+		check(drink_goal.state == "ready" and drinks.bar_totals.sold == 3, "Actual paid counter deliveries complete service goal")
 	var real_win := false
 	for seed_value in range(1, 100):
 		var player := CasinoSimulation.new()

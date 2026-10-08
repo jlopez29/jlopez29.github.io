@@ -163,7 +163,7 @@ func _input(event: InputEvent) -> void:
 	if pressed and not dice_held and can_throw():
 		var parent := get_parent() as ScrollContainer
 		if parent != null and not parent.get_global_rect().has_point(position_on_screen): return
-		if not Rect2(shooter_pocket() - Vector2(51, 32), Vector2(102, 64)).has_point(at): return
+		if not Rect2(shooter_pocket() - Vector2(68, 40), Vector2(136, 80)).has_point(at): return
 		dice_held = true
 		origin = at
 		pointer = at
@@ -498,7 +498,7 @@ func _draw() -> void:
 
 func die(at: Vector2, value: int, angle: float) -> void:
 	draw_set_transform(offset + at * factor, angle, Vector2.ONE * factor)
-	draw_texture_rect(PitBoss.texture("casino_play/craps/die_%d.svg" % value), Rect2(-20, -20, 40, 40), false)
+	draw_texture_rect(PitBoss.texture("casino_play/craps/die_%d.svg" % value), Rect2(-26, -26, 52, 52), false)
 	draw_set_transform(offset, 0, Vector2.ONE * factor)
 
 func _gui_input(event: InputEvent) -> void:

@@ -53,22 +53,24 @@ func run() -> void:
 	check(ui.private_play and ui.game_view.visible and ui.game_view.sim.is_private, "Fixture opens authoritative shared play view")
 	check(ui.game_view.art.get_script() == load("res://scripts/casino_surface.gd") and ui.felt.get_script() == load("res://presentation/play/craps_surface.gd"), "Shared public game components")
 	ui.game_view.art.slot_audio.volume = 0
-	ui.game_view.bet = 0.25
+	ui.game_view.bet = 1.0
 	var wallet: float = ui.sim.owner_bankroll
 	var cash: float = ui.sim.cash
 	ui.game_view.transact(true)
 	var round_data: Dictionary = ui.sim.back_room.state.round
 	check(not round_data.is_empty(), "Shared spin executes private wager")
 	if not round_data.is_empty():
-		check(is_equal_approx(ui.sim.owner_bankroll, wallet - maxf(0, 0.25 - round_data.credit)) and is_equal_approx(ui.sim.cash, cash + maxf(0, round_data.credit - 0.25)), "Private principal/loss/profit contract")
+		check(is_equal_approx(ui.sim.owner_bankroll, wallet - 1.0 + round_data.credit) and is_equal_approx(ui.sim.cash, cash), "Private total return stays in personal wallet")
 		check(not ui.sim.back_room.settle(ui.sim, int(ui.sim.back_room.state.operation), round_data.credit), "Duplicate settlement rejected")
 	var restored := Sim.new()
 	var data: Dictionary = JSON.parse_string(JSON.stringify(ui.sim.snapshot()))
 	var loaded := restored.restore(data)
 	check(loaded and restored.location == data.location and restored.back_room.rng.state == ui.sim.back_room.rng.state and restored.owner_bankroll == ui.sim.owner_bankroll and restored.owner_account.next_operation == ui.sim.owner_account.next_operation and restored.owner_account.pending == ui.sim.owner_account.pending and restored.owner_account.history == data.owner_bankroll.history, "Save/load preserves area/wallet/RNG/operations")
 	data.erase("location")
-	check(restored.restore(data) and restored.location.area == "public" and restored.owner_bankroll == ui.sim.owner_bankroll, "Existing 0.4.2.6 save defaults safely")
-	ui.game_view.art.spinning = 0
+	check(not restored.restore(data), "Save missing current physical location rejected")
+	ui.game_view.art._process(20)
+	ui.game_view.update_result_hold(0)
+	ui.game_view.update_result_hold(1.51)
 	ui.leave_table()
 	check(ui.in_back_room and ui.back_room_floor.visible and not ui.private_play, "Game exit returns beside fixture")
 	ui.back_room_floor.select_at(ui.back_room_floor.screen_at(PitBossFloorContext.KIOSK.get_center()))
@@ -86,10 +88,19 @@ func run() -> void:
 	var money_sim := Sim.new()
 	var initial_cash: float = money_sim.cash
 	var operation: int = money_sim.back_room.debit(money_sim, 250)
-	check(operation > 0 and money_sim.back_room.settle(money_sim, operation, 750) and money_sim.owner_bankroll == 1000 and money_sim.cash == initial_cash + 500, "Only private net profit enters Casino Cash")
+	check(operation > 0 and money_sim.back_room.settle(money_sim, operation, 750) and money_sim.owner_bankroll == 1500 and money_sim.cash == initial_cash, "Full private return enters personal wallet")
 	check(not money_sim.back_room.settle(money_sim, operation, 750), "Profit cannot be credited twice")
 	money_sim.back_room.choose("roulette")
-	money_sim.back_room.add(money_sim, "Red", 0.25)
+	check(not money_sim.back_room.add(money_sim, "Red", 0.99), "Sub-dollar layout wager rejected")
+	for kind in ["slots", "blackjack", "holdem", "roulette", "craps"]:
+		var minimum_sim := Sim.new()
+		minimum_sim.back_room.choose(kind)
+		for amount in [0.01, 0.50, 0.99]:
+			var accepted: bool = minimum_sim.back_room.add(minimum_sim, "Red" if kind == "roulette" else "field", amount) if kind in ["roulette", "craps"] else minimum_sim.back_room.start(minimum_sim, amount)
+			check(not accepted and minimum_sim.owner_bankroll == 1000 and minimum_sim.owner_account.pending.is_empty(), "Sub-dollar wager rejected without debit " + kind)
+		var accepted: bool = minimum_sim.back_room.add(minimum_sim, "Red" if kind == "roulette" else "field", 1.0) if kind in ["roulette", "craps"] else minimum_sim.back_room.start(minimum_sim, 1.0)
+		check(accepted, "Dollar minimum accepted " + kind)
+	check(money_sim.back_room.add(money_sim, "Red", 1.0), "One dollar wager accepted")
 	var pending_save: Dictionary = JSON.parse_string(JSON.stringify(money_sim.snapshot()))
 	check(restored.restore(pending_save) and restored.owner_account.pending == pending_save.owner_bankroll.pending and restored.back_room.busy(), "Unfinished private escrow survives save/load")
 	check(not restored.recovery.can_refill(restored), "Recovery blocked by pending wagers")

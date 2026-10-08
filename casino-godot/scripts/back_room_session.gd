@@ -1,5 +1,6 @@
 extends RefCounted
 ## Private external counterparty. No floor asset, guest, dealer or game-clock dependency.
+const MINIMUM_STAKE := 1.0
 const Games = preload("res://scripts/casino_games.gd")
 const Account = preload("res://scripts/owner_bankroll.gd")
 const Craps = preload("res://scripts/craps.gd")
@@ -13,7 +14,7 @@ static func cents(value: float) -> float:
 	return round(value * 100.0) / 100.0
 
 static func stake_valid(value: float) -> bool:
-	return Account.money(value) and value >= 0.01 and is_equal_approx(value * 100, round(value * 100))
+	return Account.money(value) and value >= MINIMUM_STAKE and is_equal_approx(value * 100, round(value * 100))
 
 func busy() -> bool:
 	return not state.contracts.is_empty() or not state.bets.is_empty() or (not state.round.is_empty() and state.round.get("phase") != "done")

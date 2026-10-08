@@ -72,7 +72,7 @@ The developer performs most gameplay verification manually. **Token efficiency m
 
 ## Saves and state
 
-Pre-alpha **development saves are disposable**: do not add migrations, legacy schema adapters or historical compatibility work unless explicitly asked. Current-version saves and authoritative state should remain internally consistent. Preserve defensive handling of corrupt data, invalid money, double actions, outstanding wagers and runtime errors. Never silently erase or double-credit in-progress private bets in the current build. When modifying schema, cleanly replace obsolete current code instead of adding historical branches.
+Pre-alpha **development saves are disposable**: do not add migrations, legacy schema adapters or historical compatibility work unless explicitly asked. Discard incompatible schema-version saves on load and direct the player to start a new casino; tests should enforce the current schema instead of requiring older gameplay or save compatibility. Current-version saves and authoritative state should remain internally consistent. Preserve defensive handling of corrupt data, invalid money, double actions, outstanding wagers and runtime errors. Never silently erase or double-credit in-progress private bets in the current build. When modifying schema, cleanly replace obsolete current code instead of adding historical branches.
 
 ## Casino gameplay and economy
 

@@ -33,7 +33,7 @@ func get_table(id: int) -> Dictionary:
 	var s: Dictionary = source.back_room.state
 	var owner := CrapsRules.empty_bets()
 	owner.merge(source.back_room.layout(), true)
-	return {"id": joined, "kind": s.kind, "minimum": 0.01, "round": s.round,
+	return {"id": joined, "kind": s.kind, "minimum": source.back_room.MINIMUM_STAKE, "round": s.round,
 		"roulette_bets": source.back_room.layout() if s.kind == "roulette" else {},
 		"owner": owner, "point": s.point, "owner_working": s.working, "dice": s.round.get("dice", [1, 1]),
 		"rolls": s.round.get("rolls", 0), "shooter": 0, "owner_queued": false, "betting_hold": false,

@@ -37,8 +37,9 @@ func seat(sim: CasinoSimulation, table: Dictionary, index: int = 0) -> Dictionar
 	guest.table = table.id
 	guest.seat = index
 	guest.state = "Playing"
-	guest.x = 425.0
-	guest.y = 450.0
+	var position := sim.guest_seat_position(table, index)
+	guest.x = position.x
+	guest.y = position.y
 	guest.session_left = 500
 	guest.wallet = 1000.0
 	guest.start = 1000.0
@@ -353,6 +354,15 @@ func bar_ui_checks() -> void:
 	ui.queue_free()
 	await process_frame
 
+func deliver_test_drink(sim: CasinoSimulation, guest: Dictionary) -> void:
+	guest.drink_request_at = sim.elapsed
+	sim.Bar.request(sim, guest)
+	check(guest.drink_order == "basic", "Real soda request accepted")
+	for frame in range(600):
+		sim.move_service(0.1)
+		if guest.drink_order.is_empty(): break
+	check(guest.drink_order.is_empty() and guest.drink_state == "FULFILLED", "Assigned service completes the real delivery")
+
 func hospitality_and_departure() -> void:
 	var sim := CasinoSimulation.new()
 	sim.blackjack_unlocked = true
@@ -363,19 +373,16 @@ func hospitality_and_departure() -> void:
 	var guest := seat(sim, sim.tables[0])
 	guest.thirst = 20
 	guest.last_wager_minute = -1
-	sim.drink_access.append("basic")
-	sim.drink_menu.append("basic")
-	guest.drink_order = "basic"
-	guest.drink_quote = 5.0
+	sim.set_drink_menu("basic", true)
+	sim.set_drink_menu("water", false)
+	check(sim.hire("Service", -1), "Hospitality fixture hires floor service")
 	var before := sim.cash
-	sim.deliver_drink(guest, {"name": "Service", "duty": "Active", "service_product": "basic"})
+	deliver_test_drink(sim, guest)
 	check(sim.bar_totals.sold == 1 and sim.bar_totals.comped == 0 and near(sim.cash-before, 4), "Seat without wagers pays $5 drink, $1 product")
 	guest.thirst = 20
 	guest.last_wager_minute = sim.elapsed
-	guest.drink_order = "basic"
-	guest.drink_quote = 5.0
 	before = sim.cash
-	sim.deliver_drink(guest, {"name": "Service", "duty": "Active", "service_product": "basic"})
+	deliver_test_drink(sim, guest)
 	check(sim.bar_totals.comped == 1 and near(sim.cash-before, -1), "Recent real wagering comp cost")
 	guest.thirst = 20
 	guest.state = "Watching"

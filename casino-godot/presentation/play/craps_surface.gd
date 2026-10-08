@@ -8,8 +8,10 @@ var layouts := {}
 var display_signature: Array = []
 const ROLL_SECONDS := 1.2
 const SETTLE_SECONDS := 1.0
+const RESULT_HOLD_SECONDS := 1.5
+const ROLL_END := SETTLE_SECONDS + RESULT_HOLD_SECONDS
 const RETURN_SECONDS := 1.3
-var animation_duration := ROLL_SECONDS + SETTLE_SECONDS
+var animation_duration := ROLL_SECONDS + ROLL_END
 var observed_sim: PitBossGameContext
 var resting_dice := Vector2(1130, 920)
 var return_from := Vector2.ZERO
@@ -39,6 +41,7 @@ var context_choices: Array = []
 var touch_points := {}
 var gesture_active := false
 var side_open := false
+var side_touch_index := -1
 var side_button: Button
 const SIDE_KEYS := ["hard_4", "hard_6", "hard_8", "hard_10", "any_seven", "any_craps", "aces", "ace_deuce", "yo", "boxcars"]
 const PROP_DICE := {"hard_4": [2, 2], "hard_10": [5, 5], "hard_6": [3, 3], "hard_8": [4, 4], "aces": [1, 1], "ace_deuce": [1, 2], "yo": [5, 6], "boxcars": [6, 6], "any_seven": [1, 6], "any_craps": [1, 2]}
@@ -50,7 +53,7 @@ func rebuild_geometry() -> void:
 	if old_size != PLAY_SIZE:
 		view_center = PLAY_SIZE / 2
 	canvas = PLAY_SIZE
-	dice_bounds = Rect2(Vector2(20, 20), PLAY_SIZE - Vector2(40, 70))
+	dice_bounds = Rect2(Vector2(84, 44), PLAY_SIZE - Vector2(168, 108))
 	layouts.clear()
 	targets.clear()
 	spots.clear()
@@ -104,12 +107,12 @@ func rebuild_geometry() -> void:
 			region(Rect2(prop_x + (i % 2) * prop_width / 2, margin + (1 + int(i / 2)) * row_height, prop_width / 2, row_height), keys[i])
 		region(Rect2(prop_x, margin + row_height * 5, prop_width, row_height), "any_craps")
 	tray = Rect2(PLAY_SIZE.x * 0.68, PLAY_SIZE.y - 64, PLAY_SIZE.x * 0.3, 48)
-	if portrait: tray = Rect2(PLAY_SIZE.x * 0.34, PLAY_SIZE.y - 64, PLAY_SIZE.x * 0.30, 48)
+	if portrait: tray = Rect2(PLAY_SIZE.x * 0.50, PLAY_SIZE.y - 64, PLAY_SIZE.x * 0.30, 48)
 	if is_instance_valid(side_button):
 		side_button.visible = portrait and not busy()
 		side_button.position = Vector2(size.x - 60, size.y - 62)
 		side_button.size = Vector2(52, 52)
-		side_button.text = "Close" if side_open else "Side"
+		side_button.text = "Board" if side_open else "Hard"
 		if sim != null and sim.joined >= 0 and not side_open:
 			for key in SIDE_KEYS:
 				if float(sim.get_table(sim.joined).owner.get(key, 0)) > 0: side_button.text = "Side *"; break
@@ -190,7 +193,12 @@ func _ready() -> void:
 	side_button.tooltip_text = "Hardways and one-roll side bets / close"
 	side_button.add_theme_font_size_override("font_size", 12)
 	for state in ["normal", "hover", "pressed", "disabled"]:
-		side_button.add_theme_stylebox_override(state, PitBoss.box(Color("382e54"), GOLD, 26))
+		var style := PitBoss.box(Color("382e54"), GOLD, 26)
+		style.content_margin_left = 4
+		style.content_margin_right = 4
+		style.content_margin_top = 4
+		style.content_margin_bottom = 4
+		side_button.add_theme_stylebox_override(state, style)
 	side_button.pressed.connect(func():
 		if dice_held or busy(): return
 		side_open = not side_open
@@ -223,7 +231,7 @@ func _process(delta: float) -> void:
 		initialize_table(table)
 	animation = maxf(0, animation - delta)
 	if int(table.rolls) != last_roll: capture_roll(table)
-	if animation <= SETTLE_SECONDS and int(table.rolls) > 0:
+	if animation <= ROLL_END and int(table.rolls) > 0:
 		reference_dice = table.dice.duplicate()
 	if animation <= 0:
 		if shooter_seen != int(table.shooter):
@@ -339,7 +347,7 @@ func plan_throw(shooter: int = -99, released_at: Vector2 = Vector2(-1, -1)) -> v
 
 func dice_center() -> Vector2:
 	if dice_held: return free_hand_position()
-	if animation > SETTLE_SECONDS:
+	if animation > ROLL_END:
 		var t := clampf((animation_duration - animation) / ROLL_SECONDS, 0, 1)
 		var hit := 0.58 - throw_power * 0.12
 		if t < hit:
@@ -463,15 +471,35 @@ func _draw() -> void:
 			draw_rect(rect, color, false, 2 / factor)
 		if preview.valid and not mouse_down: chip_at(pointer, preview.amount, 12 / factor, color)
 	draw_set_transform(Vector2.ZERO)
-	if not preview.is_empty():
-		var text := ("Don't Pass Lay Odds" if preview.key == "lay_odds" else CrapsRules.name_for(preview.key)) + " | " + Chips.Money.cash(preview.amount, 2)
-		if not preview.valid: text += " | " + preview.reason
-		var label := Rect2(8, 4, size.x - 16, 56 if text.length() > 55 else 30)
-		box(label, Color(0.04, 0.10, 0.08, 0.96), 6)
-		if text.length() > 55:
-			centered(Rect2(8, 4, size.x - 16, 26), text.get_slice(" | ", 0) + " | " + Chips.Money.cash(preview.amount, 2), 12, GOLD)
-			centered(Rect2(8, 30, size.x - 16, 26), preview.reason, 12, Color("ef9486"))
-		else: centered(label, text, 12, GOLD if preview.valid else Color("ef9486"))
+	var last := last_roll_caption()
+	var last_rect := Rect2(8, size.y - 36, minf(size.x * 0.48 - 16, 240), 30)
+	box(last_rect, Color(0.04, 0.10, 0.08, 0.96), 6)
+	centered(last_rect, last, 14, GOLD)
+
+func preview_caption() -> String:
+	var preview := feedback_for(hover)
+	if preview.is_empty(): return ""
+	var entries := chips_at(pointer)
+	if entries.size() == 1 and entries[0].key == hover:
+		return "%s | %s | Tap for details" % [CrapsRules.name_for(hover), Chips.Money.cash(float(entries[0].amount), 2)]
+	var text := CrapsRules.name_for(preview.key) + " | " + Chips.Money.cash(preview.amount, 2)
+	return text if preview.valid else text + " | " + preview.reason
+
+# Include rotated corners, die separation and shadows in the visible-area clamp.
+# This also keeps dice visible when the player zooms or pans the board.
+func visible_pair_position(at: Vector2) -> Vector2:
+	var margin := Vector2(90, 58) + Vector2.ONE * 6 / factor
+	var low := felt_position(Vector2.ZERO) + margin
+	var high := felt_position(size) - margin
+	for axis in range(2):
+		at[axis] = clampf(at[axis], low[axis], high[axis]) if low[axis] <= high[axis] else (low[axis] + high[axis]) / 2
+	return at
+
+func visible_die_position(at: Vector2) -> Vector2:
+	var inset := Vector2.ONE * (37 + 6 / factor)
+	var low := felt_position(Vector2.ZERO) + inset
+	var high := felt_position(size) - inset
+	return at.clamp(low, high)
 
 
 func player_at(seat: int) -> Vector2:
@@ -492,8 +520,12 @@ func draw_players(table: Dictionary) -> void:
 	var point_text := "POINT OFF" if int(table.point) == 0 else "POINT %d" % table.point
 	centered(Rect2(PLAY_SIZE.x * 0.22, PLAY_SIZE.y - 72, PLAY_SIZE.x * 0.44, 25), point_text + " | " + sim.shooter_name(table), 18, GOLD)
 
+func last_roll_caption() -> String:
+	if reference_dice.size() != 2: return "Last roll: --"
+	return "Last roll: %d + %d = %d" % [reference_dice[0], reference_dice[1], int(reference_dice[0]) + int(reference_dice[1])]
+
 func draw_dice(table: Dictionary) -> void:
-	var center := dice_center()
+	var center := visible_pair_position(dice_center())
 	if delivery > 0:
 		var bank := endpoint("bank", -1)
 		draw_line(bank + Vector2(60, -40), center + Vector2(0, 26), Color("c5a071"), 5)
@@ -504,19 +536,20 @@ func draw_dice(table: Dictionary) -> void:
 		draw_line(center, center + direction * 85, GOLD, 4)
 		draw_circle(center + direction * 85, 6, GOLD)
 	for i in range(2):
-		var at := center + Vector2(-27 + i * 54, i * 3)
+		var at := center + Vector2(-40 + i * 80, i * 3)
 		var angle := -0.1 if i == 0 else 0.12
 		var value := int(table.dice[i])
-		if animation > SETTLE_SECONDS:
+		if animation > ROLL_END:
 			var t := clampf((animation_duration - animation) / ROLL_SECONDS, 0, 1)
 			angle += (1 - t) * (12 + i * 5) * throw_power
 			# Decorative cycling is deterministic and never reads the simulation RNG.
 			value = 1 + (int(clock * 19) + i * 3) % 6
 		elif dice_held: angle += sin(clock * 23 + i) * 0.15
-		if animation > SETTLE_SECONDS:
+		if animation > ROLL_END:
 			var progress := clampf((animation_duration - animation) / ROLL_SECONDS, 0, 1)
 			at += Vector2((i * 2 - 1) * 12, (i * 2 - 1) * 17) * sin(progress * PI / 2)
-			draw_ellipse_shadow(at)
+		at = visible_die_position(at)
+		if animation > ROLL_END: draw_ellipse_shadow(at)
 		die(at, value, angle)
 	if can_throw(): centered(Rect2(center + Vector2(-95, -60), Vector2(190, 30)), "HOLD & FLICK", 21, GOLD)
 
@@ -541,7 +574,8 @@ func chip_at(at: Vector2, value: float, radius: float = 17, tint: Color = Color.
 	Chips.draw_stack(self, at, value, radius, player_color(-1) if tint == Color.TRANSPARENT else tint)
 
 func shooter_pocket(shooter: int = -99) -> Vector2:
-	if shooter == -99: shooter = int(sim.get_table(sim.joined).shooter)
+	if shooter == -99:
+		shooter = int(sim.get_table(sim.joined).get("shooter", -1)) if sim != null and sim.joined >= 0 else -1
 	if shooter < 0: return endpoint("bank", -1)
 	var seat := -1
 	for guest in sim.seated(sim.joined):
@@ -743,10 +777,24 @@ func _input(event: InputEvent) -> void:
 	# Dice and bets use the same source-art inverse, including native touch events.
 	var pointer_event := event is InputEventMouseButton or event is InputEventMouseMotion or event is InputEventScreenTouch or event is InputEventScreenDrag
 	if not pointer_event: return
-	if side_button.visible and side_button.get_global_rect().has_point(event.position) and not mouse_down and not dice_held:
-		if event is InputEventScreenTouch:
-			if event.pressed: side_button.pressed.emit()
+	# Own the complete native button gesture; Godot's emulated mouse path
+	# must never activate the same button a second time.
+	if event is InputEventScreenTouch:
+		if event.pressed and side_touch_index < 0 and side_button.visible and side_button.get_global_rect().has_point(event.position) and not mouse_down and not dice_held:
+			side_touch_index = event.index
 			get_viewport().set_input_as_handled()
+			return
+		if event.index == side_touch_index:
+			if not event.pressed:
+				side_touch_index = -1
+				if side_button.get_global_rect().has_point(event.position): side_button.pressed.emit()
+			get_viewport().set_input_as_handled()
+			return
+	if event is InputEventScreenDrag and event.index == side_touch_index:
+		get_viewport().set_input_as_handled()
+		return
+	if (event is InputEventMouseButton or event is InputEventMouseMotion) and event.device == -1 and (side_touch_index >= 0 or (side_button.visible and side_button.get_global_rect().has_point(event.position))):
+		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventScreenTouch or event is InputEventScreenDrag:
 		if event is InputEventScreenTouch:
@@ -818,6 +866,7 @@ func _input(event: InputEvent) -> void:
 func _notification(what: int) -> void:
 	super._notification(what)
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		side_touch_index = -1
 		touch_points.clear()
 		gesture_active = false
 		mouse_down = false

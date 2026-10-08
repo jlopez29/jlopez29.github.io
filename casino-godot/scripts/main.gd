@@ -1845,6 +1845,11 @@ func load_game() -> bool:
 		refresh()
 		return false
 	var data = JSON.parse_string(FileAccess.get_file_as_string(CasinoTuning.SAVE_PATH))
+	if data is Dictionary and data.get("version") != CasinoTuning.SAVE_VERSION:
+		var removed := DirAccess.remove_absolute(CasinoTuning.SAVE_PATH)
+		sim.log_event("Older pre-alpha save cleared. Start a new casino." if removed == OK else "Older pre-alpha save is incompatible. Start a new casino.")
+		refresh()
+		return false
 	var restored: bool = data is Dictionary and sim.restore(data)
 	if not restored:
 		sim.log_event("Save could not be loaded. The file and current casino were retained.")
@@ -1993,7 +1998,7 @@ func show_new_game_setup(initial: bool = false) -> void:
 		add_button(layout, "Continue saved casino", func():
 			if load_game(): close_modal()
 			else:
-				add_label(layout, "Could not load this save. Choose a new setup or check your save file.", 14, GOLD))
+				add_label(layout, "Could not load this save. Choose a new casino setup.", 14, GOLD))
 	layout_ui()
 
 func start_casino(mode: String, preferred: Array) -> void:

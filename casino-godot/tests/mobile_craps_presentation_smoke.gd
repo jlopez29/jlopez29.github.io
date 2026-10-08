@@ -52,7 +52,7 @@ func run() -> void:
 		check(surface.custom_minimum_size == Vector2.ZERO, "No oversized minimum")
 		check(view.rack_scroll.is_visible_in_tree(), "Shared viewport rack")
 		check(not surface.get_global_rect().intersects(view.rack_scroll.get_global_rect()), "Rack outside felt")
-		check(surface.size.y >= dimensions.y - 220, "Felt real estate " + str(dimensions))
+		check(surface.size.y >= dimensions.y - 240, "Felt real estate " + str(dimensions))
 		check(surface.target_at(surface.spots.odds) == "odds" and surface.target_at(surface.spots.pass) == "pass", "Parent interior and actual border separate")
 		for key in CrapsRules.empty_bets():
 			check(surface.spots.has(key), "Shared chip anchor " + key)
@@ -140,14 +140,14 @@ func run() -> void:
 		view.render_current()
 		await settle()
 		if DisplayServer.get_name() != "headless":
-			await RenderingServer.frame_post_draw
+			RenderingServer.force_draw()
 			root.get_texture().get_image().save_png("/tmp/felt-craps-%dx%d.png" % [dimensions.x, dimensions.y])
 			surface.pointer = surface.spots.odds
 			surface.hover = surface.target_at(surface.pointer)
 			surface.queue_redraw()
-			await RenderingServer.frame_post_draw
+			RenderingServer.force_draw()
 			root.get_texture().get_image().save_png("/tmp/felt-craps-desktop-odds-hover.png")
-	# Private cent wager uses this same shell and geometry.
+	# Private minimum uses this same shell and geometry.
 	ui.felt.animation = 0
 	ui.rolling = 0
 	ui.leave_table()
@@ -156,7 +156,7 @@ func run() -> void:
 		if station.kind == "craps": ui.open_private_station(station); break
 	await settle()
 	var view = ui.game_view
-	view.select_chip(0.01)
+	view.select_chip(1.0)
 	ui.game_view.paused = false
 	ui.speed = 1
 	ui.felt.animation = 0
@@ -164,9 +164,51 @@ func run() -> void:
 	ui.felt.locked = false
 	var wallet: float = ui.sim.owner_bankroll
 	await tap("field")
-	check(is_equal_approx(view.sim.get_table(view.sim.joined).owner.field, 0.01) and is_equal_approx(ui.sim.owner_bankroll, wallet - 0.01), "Private whole-cent wager")
+	check(is_equal_approx(view.sim.get_table(view.sim.joined).owner.field, 1.0) and is_equal_approx(ui.sim.owner_bankroll, wallet - 1.0), "Private dollar wager")
 	view.sim.remove_bet(view.sim.joined, "field")
-	check(is_equal_approx(ui.sim.owner_bankroll, wallet), "Cent refund")
+	check(is_equal_approx(ui.sim.owner_bankroll, wallet), "Dollar refund")
+	check(view.rack.denominations.all(func(value): return value >= 1), "Private rack has no sub-dollar chips")
+	view.select_chip(0.25)
+	check(view.bet == 1.0, "Private sub-dollar chip selection rejected")
+	root.size = Vector2i(390, 844)
+	root.content_scale_size = root.size
+	await settle()
+	view.layout_play()
+	await settle()
+	var surface = ui.felt
+	surface.animation = 0
+	surface.delivery = 0
+	surface.update_view_transform()
+	check(surface.side_button.visible and not surface.side_open, "Portrait starts on regular board")
+	for expected in [true, false, true, false]:
+		var at: Vector2 = surface.side_button.get_global_rect().get_center()
+		await touch(at, true)
+		var mouse := InputEventMouseButton.new()
+		mouse.device = -1
+		mouse.button_index = MOUSE_BUTTON_LEFT
+		mouse.position = at
+		mouse.pressed = true
+		Input.parse_input_event(mouse)
+		await touch(at, false)
+		mouse.pressed = false
+		Input.parse_input_event(mouse)
+		await settle()
+		check(surface.side_open == expected and not surface.mouse_down, "One tap toggles and persists " + str(expected))
+		if expected:
+			var before: float = ui.sim.owner_bankroll
+			await tap("hard_6")
+			check(surface.side_open and is_equal_approx(view.sim.get_table(view.sim.joined).owner.hard_6, 1.0), "Overlay stays open after hardway tap")
+			view.sim.remove_bet(view.sim.joined, "hard_6")
+			check(is_equal_approx(ui.sim.owner_bankroll, before), "Hardway refund")
+	if DisplayServer.get_name() != "headless":
+		RenderingServer.force_draw()
+		root.get_texture().get_image().save_png("/tmp/craps-portrait.png")
+	check(surface.last_roll_caption() == "Last roll: --", "No fabricated last roll")
+	check(ui.sim.back_room.add(ui.sim, "pass", 1.0) and ui.sim.back_room.roll(ui.sim), "Private real dice roll")
+	surface.capture_roll(view.sim.get_table(view.sim.joined))
+	surface._process(surface.ROLL_SECONDS + 0.01)
+	var dice: Array = ui.sim.back_room.state.round.dice
+	check(surface.last_roll_caption() == "Last roll: %d + %d = %d" % [dice[0], dice[1], int(dice[0]) + int(dice[1])], "Last roll shows settled dice and total")
 	ui.leave_table()
 	ui.queue_free()
 	await process_frame

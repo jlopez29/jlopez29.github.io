@@ -162,11 +162,13 @@ func _draw() -> void:
 	elif kind == "roulette": draw_wheel()
 
 func draw_wheel() -> void:
-	image("roulette/roulette_felt_base.png", Rect2(Vector2.ZERO, size))
-	var extent := minf(size.x - 16, size.y - 16)
+	var extent := minf(size.x - 24, size.y - 24)
 	wheel_rect = Rect2((size - Vector2.ONE * extent) / 2, Vector2.ONE * extent)
 	var center := wheel_rect.get_center()
-	var rotation := TAU * 2 * pow(spinning / maxf(0.01, duration), 2) if spinning > 0 else 0.0
+	var remaining := clampf(spinning / maxf(0.01, duration), 0, 1)
+	var rotation := TAU * 3 * pow(remaining, 3)
+	draw_circle(center + Vector2(0, 5), extent * 0.50, Color(0, 0, 0, 0.3))
+	draw_arc(center, extent * 0.51, 0, TAU, 96, Color("b99854"), 2, true)
 	draw_set_transform(center, rotation)
 	image("roulette/roulette_wheel.svg", Rect2(-Vector2.ONE * extent / 2, Vector2.ONE * extent))
 	# The art's green pocket begins at twelve o'clock; WHEEL owns European order.
@@ -178,9 +180,17 @@ func draw_wheel() -> void:
 	if not round.is_empty():
 		result_number = int(round.number)
 		var angle := -PI / 2 + (Games.WHEEL.find(result_number) + 0.5) * TAU / 37 + rotation
-		if spinning > 0: angle += TAU * spinning / duration
-		var ball := center + Vector2.from_angle(angle) * extent * 0.39
+		angle -= TAU * 5 * pow(remaining, 2)
+		var orbit := extent * lerpf(0.39, 0.46, smoothstep(0, 0.45, remaining))
+		if spinning > 0:
+			for i in range(1, 7):
+				var trail := center + Vector2.from_angle(angle + i * 0.06 * remaining) * orbit
+				draw_circle(trail, maxf(2, extent * 0.012), Color(1, 0.94, 0.72, (1 - i / 7.0) * 0.28 * remaining))
+		var ball := center + Vector2.from_angle(angle) * orbit
+		draw_circle(ball + Vector2(1, 2), maxf(4, extent * 0.017), Color(0, 0, 0, 0.4))
 		draw_circle(ball, maxf(4, extent * 0.015), Color("fff5dd"))
+		if remaining < 0.18:
+			draw_arc(center, extent * 0.41, angle - 0.07, angle + 0.07, 12, Color("ffe397"), 3, true)
 	if spinning <= 0 and not round.is_empty():
 		panel(Rect2(center - Vector2(30, 24), Vector2(60, 48)), Color("15241e"))
 		centered(center + Vector2(0, 8), str(result_number), 26)

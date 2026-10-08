@@ -99,6 +99,12 @@ func feedback_for(key: String) -> Dictionary:
 	var rect: Rect2 = cells[key] if cells.has(key) else Rect2(spots[key] - Vector2(13, 13), Vector2(26, 26))
 	return preload("res://presentation/play/wager_feedback.gd").resolve(context, key, selected, rect, locked)
 
+func preview_caption() -> String:
+	var preview := feedback_for(hover)
+	if preview.is_empty(): return ""
+	var text := hover.replace("–", "-") + " | " + Chips.Money.cash(preview.amount, 2)
+	return text + " | " + (preview.detail if preview.valid else preview.reason)
+
 func begin_chip_drag() -> void:
 	if locked: return
 	pressed_on_felt = true
@@ -161,10 +167,9 @@ func _draw() -> void:
 		if name == "Red": color = Color("c62c37")
 		if name == "Black": color = Color("111c18")
 		if name.is_valid_int():
-			# Asset cropping is presentation metadata; cells/spots above own bet geometry.
-			var n := int(name)
-			var source := Rect2(201, 230, 120, 356) if n == 0 else Rect2(320 + int((n - 1) / 3) * 120, 230 + (2 - (n - 1) % 3) * 118, 120, 118)
-			draw_texture_rect_region(PitBoss.texture("casino_play/roulette/roulette_betting_layout.png"), rect, source)
+			draw_rect(rect, color)
+			draw_rect(rect, Color("c6a649"), false, 1.5)
+			caption(rect.get_center(), name, int(clampf(minf(rect.size.x, rect.size.y) * 0.60, 10, 28)))
 		else:
 			draw_rect(rect, Color(0.06, 0.24, 0.16, 0.65))
 			draw_rect(rect, Color("c6a649"), false, 1.5)
@@ -172,7 +177,7 @@ func _draw() -> void:
 			if portrait and "dozen" in name:
 				caption(rect.get_center() - Vector2(0, 14), name.get_slice(" ", 0), 14)
 				title = "dozen"
-			caption(rect.get_center(), title, int(clampf(rect.size.x / maxf(2, title.length()) * 1.4, 12, 24)))
+			caption(rect.get_center(), title, int(clampf(minf(rect.size.y * 0.55, rect.size.x / maxf(2, title.length()) * 1.4), 8, 24)))
 		if name == str(winning_number): draw_rect(rect.grow(-2), Color("ffe397"), false, 3)
 	# Small seam marks make streets and six-line bets discoverable.
 	for name in spots:
@@ -189,10 +194,6 @@ func _draw() -> void:
 			for number in Games.roulette_bets()[hover].numbers:
 				draw_rect(cells[str(number)], Color(color, 0.2))
 				draw_rect(cells[str(number)], color, false, 2)
-		var title: String = hover.replace("–", "-") + " | " + Chips.Money.cash(preview.amount, 2)
-		draw_rect(Rect2(8, 0, size.x - 16, 38), Color(0.03, 0.09, 0.07, 0.95))
-		caption(Vector2(size.x / 2, 11), title, 13, color)
-		caption(Vector2(size.x / 2, 29), "Legal | " + preview.detail if preview.valid else preview.reason, 12, color)
 		if preview.valid: chip(pointer, preview.amount, true)
 	# Committed snapshots exist only after the shared simulation spin.
 	for wager in guest_wagers:
