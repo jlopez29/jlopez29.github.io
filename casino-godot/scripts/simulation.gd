@@ -13,6 +13,7 @@ const Property = preload("res://scripts/floor_property.gd")
 const Placement = preload("res://scripts/asset_placement.gd")
 const Seating = preload("res://presentation/art_catalog.gd")
 const Bar = preload("res://scripts/drink_economy.gd")
+const TechService = preload("res://scripts/tech_service.gd")
 const DrinkService = preload("res://scripts/drink_service.gd")
 
 var cash := CasinoTuning.STARTING_CASH
@@ -40,7 +41,7 @@ var payouts := 0.0
 var payroll := 0.0
 var overhead := 0.0
 # Cash expenses recorded once; classifications never make an additional charge.
-var expense_totals := {"dealer_payroll": 0.0, "service_payroll": 0.0, "upkeep": 0.0, "repairs": 0.0, "comps": 0.0, "hiring": 0.0, "construction": 0.0, "sales": 0.0, "drink_products": 0.0, "drink_comps": 0.0, "property_upkeep": 0.0}
+var expense_totals := {"dealer_payroll": 0.0, "service_payroll": 0.0, "tech_payroll": 0.0, "upkeep": 0.0, "repairs": 0.0, "comps": 0.0, "hiring": 0.0, "construction": 0.0, "sales": 0.0, "drink_products": 0.0, "drink_comps": 0.0, "property_upkeep": 0.0}
 var payroll_by_state := {"active": 0.0, "relief": 0.0, "break": 0.0, "off_duty": 0.0}
 var relief_targets := {"Dealer": 1, "Service": 1}
 var bar_owned := false
@@ -563,7 +564,7 @@ func floor_presentation() -> Dictionary:
 	return result
 
 func hire(role: String, target: int) -> bool:
-	if role not in ["Dealer", "Service"]: return false
+	if role not in ["Dealer", "Service", "Tech"]: return false
 	if role == "Service" and not bar_owned:
 		log_event("Purchase the bar before hiring drink service staff.")
 		return false
@@ -580,7 +581,7 @@ func hire(role: String, target: int) -> bool:
 	staff.append(Staffing.new_employee(self, role))
 	Staffing.rebalance(self, true)
 	refresh_progression()
-	log_event("%s hired. Automatic coverage and relief rotation enabled." % role)
+	log_event("Tech hired. On call for repairs; each Tech covers three games." if role == "Tech" else "%s hired. Automatic coverage and relief rotation enabled." % role)
 	return true
 
 func staffing_summary(role: String) -> Dictionary:
@@ -596,7 +597,7 @@ func set_service_positions(amount: int) -> void:
 	Staffing.rebalance(self, true)
 
 func staff_rest(employee: Dictionary, off_duty: bool = false) -> void:
-	if employee not in staff: return
+	if employee not in staff or employee.role == "Tech": return
 	Staffing.request_rest(self, employee, "Off Duty" if off_duty else "Break")
 	Staffing.rebalance(self)
 
@@ -990,6 +991,9 @@ func guest_blocked_repair(guest: Dictionary) -> Dictionary:
 	return repair
 
 func clear_repair_waiters(table_id: int) -> void:
+	for employee in staff:
+		if employee.role == "Tech" and int(employee.repair_target) == table_id:
+			TechService.release(employee)
 	for guest in guests:
 		if guest.repair_wait_table != table_id: continue
 		guest.repair_wait_table = -1
@@ -1389,7 +1393,7 @@ func reroute() -> void:
 	geometry_revision += 1
 	placement_signature.clear()
 	for employee in staff:
-		if employee.role == "Service" and employee.has("service_state"): route(employee)
+		if (employee.role == "Service" and employee.has("service_state")) or (employee.role == "Tech" and int(employee.get("repair_target", -1)) > 0): route(employee)
 	for guest in guests:
 		if guest.state in ["Walking", "Playing"]:
 			var table := get_table(int(guest.table))
@@ -1433,6 +1437,7 @@ func move_entity(entity: Dictionary, delta: float) -> Vector2:
 
 func move_guests(delta: float) -> void:
 	move_service(delta)
+	TechService.move(self, delta)
 	DrinkService.move_counter(self, delta)
 	for effect in cashout_effects: effect.life -= delta
 	cashout_effects = cashout_effects.filter(func(e): return e.life > 0)
@@ -1692,10 +1697,10 @@ func step() -> void:
 		day += 1
 	var wages := 0.0
 	for employee in staff:
-		if employee.duty == "Off Duty": continue
-		var wage := (CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE) / 60.0
+		if employee.duty in ["Off Duty", "On Call"]: continue
+		var wage := Staffing.wage(str(employee.role)) / 60.0
 		wages += wage
-		expense_totals["dealer_payroll" if employee.role == "Dealer" else "service_payroll"] += wage
+		expense_totals["dealer_payroll" if employee.role == "Dealer" else "tech_payroll" if employee.role == "Tech" else "service_payroll"] += wage
 		payroll_by_state[payroll_state(employee)] += wage
 		if employee.role == "Service" and employee.duty == "Active" and str(employee.get("service_product", "")) in drink_stats:
 			drink_stats[str(employee.service_product)].service_payroll += wage
@@ -1705,6 +1710,7 @@ func step() -> void:
 	payroll += wages
 	cash -= wages
 	Staffing.tick(self)
+	TechService.tick(self)
 	step_tables.clear()
 	step_crew.clear()
 	for table in tables: step_tables[int(table.id)] = table
@@ -2111,12 +2117,13 @@ func spend_nonpayroll(amount: float, category: String) -> void:
 	expense_totals[category] += amount
 
 func payroll_state(employee: Dictionary) -> String:
+	if employee.role == "Tech": return "active" if employee.duty == "Repairing" else "off_duty"
 	return {"Active": "active", "Relief": "relief", "Break": "break", "Off Duty": "off_duty"}[employee.duty]
 
 func payroll_rate() -> float:
 	var amount := 0.0
 	for employee in staff:
-		if employee.duty != "Off Duty": amount += CasinoTuning.DEALER_WAGE if employee.role == "Dealer" else CasinoTuning.SERVICE_WAGE
+		if employee.duty not in ["Off Duty", "On Call"]: amount += Staffing.wage(str(employee.role))
 	return amount
 
 func planned_payroll_rate() -> float:
@@ -2126,7 +2133,8 @@ func planned_payroll_rate() -> float:
 		var on_shift := employees.filter(func(e): return e.duty != "Off Duty").size()
 		var needed := Staffing.required(self, role)
 		var planned := mini(employees.size(), needed + int(relief_targets[role])) if needed > 0 else 0
-		amount += maxi(on_shift, planned) * (CasinoTuning.DEALER_WAGE if role == "Dealer" else CasinoTuning.SERVICE_WAGE)
+		amount += maxi(on_shift, planned) * Staffing.wage(role)
+	amount += staff.filter(func(e): return e.role == "Tech" and e.duty == "Repairing").size() * CasinoTuning.TECH_WAGE
 	return amount
 
 func recurring_costs() -> float:
@@ -2432,6 +2440,7 @@ func restore(data: Dictionary) -> bool:
 			for waypoint in guest.path:
 				if not waypoint is Array or waypoint.size() != 2 or not valid_number(waypoint[0]) or not valid_number(waypoint[1]):
 					return false
+	var repair_claims := {}
 	var employee_ids := {}
 	for employee in data.staff:
 		if not employee is Dictionary:
@@ -2439,17 +2448,19 @@ func restore(data: Dictionary) -> bool:
 		for key in ["id", "name", "role", "table", "energy", "duty", "state_since", "shift_end", "available_at", "rest_due", "service_product"]:
 			if not employee.has(key):
 				return false
-		if not employee.name is String or employee.role not in ["Dealer", "Service"] or not valid_number(employee.table) or not valid_number(employee.energy):
+		if not employee.name is String or employee.role not in ["Dealer", "Service", "Tech"] or not valid_number(employee.table) or not valid_number(employee.energy):
 			return false
 		if not valid_number(employee.id) or employee.id != int(employee.id) or employee.id < 1 or employee.id >= data.next_id or employee_ids.has(int(employee.id)) or int(employee.id) in ids: return false
 		employee_ids[int(employee.id)] = true
-		if employee.duty not in ["Active", "Relief", "Break", "Off Duty"] or employee.rest_due not in ["", "Break", "Off Duty"] or employee.energy < 0 or employee.energy > 100: return false
+		if employee.duty not in (["On Call", "Repairing"] if employee.role == "Tech" else ["Active", "Relief", "Break", "Off Duty"]) or employee.rest_due not in ["", "Break", "Off Duty"] or employee.energy < 0 or employee.energy > 100: return false
 		if not employee.service_product is String or (employee.service_product != "" and not CasinoTuning.DRINK_PROFILES.has(employee.service_product)): return false
 		for key in ["state_since", "shift_end", "available_at"]:
 			if not valid_number(employee[key]) or employee[key] < 0: return false
 		if employee.state_since > data.elapsed: return false
 		if employee.duty != "Active" and (int(employee.table) != -1 or employee.rest_due != ""): return false
 		if employee.role == "Service" and (int(employee.table) != -1 or employee.rest_due != ""): return false
+		if employee.role == "Tech":
+			if not TechService.valid_employee(self, employee, data.tables, repair_claims): return false
 		if employee.role == "Dealer" and employee.duty == "Active":
 			var assigned: Array = data.tables.filter(func(t): return int(t.id) == int(employee.table))
 			if assigned.is_empty() or required_crew(assigned[0]) == 0: return false

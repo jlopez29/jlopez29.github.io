@@ -251,7 +251,7 @@ func sync_world() -> void:
 			employees[int(crew[i].id)] = crew[i]
 			staff_positions[int(crew[i].id)] = sim.dealer_position(presentation.tables[table_id], i)
 	for employee in sim.staff:
-		if employee.role == "Service" and employee.duty == "Active":
+		if (employee.role == "Service" and employee.duty == "Active") or (employee.role == "Tech" and employee.duty == "Repairing"):
 			employees[int(employee.id)] = employee
 			staff_positions[int(employee.id)] = Vector2(float(employee.get("x", 730)), float(employee.get("y", 90)))
 	prune(staff_views, staff_positions)

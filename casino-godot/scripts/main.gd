@@ -1013,17 +1013,21 @@ func render_staff() -> void:
 	add_label(inspector, "STAFF & COVERAGE", 11, GOLD)
 	add_label(inspector, "%d employees" % sim.staff.size(), 24)
 	finance_short_metric(inspector, "Current paid shift", FinancialText.cash(sim.payroll_rate(), 0) + "/hr")
-	add_label(inspector, "Active, relief and breaks are paid. Off duty is unpaid. Shifts last 8 hours, followed by at least 6 hours off; closing does not reset fatigue or shifts.", 13, MUTED)
+	add_label(inspector, "Dealers and drink service use paid shifts and breaks. Techs stay on call, with wages charged only during repair calls.", 13, MUTED)
 	if sim.unlocked("blackjack") or sim.staff.any(func(e): return e.role == "Dealer"):
 		render_staff_role("Dealer", "Dealers")
 	else:
 		add_label(inspector, "Your slots operate without dealers.", 14, MUTED)
+	render_staff_role("Tech", "Repair techs")
 	if sim.bar_available():
 		render_staff_role("Service", "Drink service")
 	elif sim.revealed("service"):
 		render_bar_purchase()
 
 func render_staff_role(role: String, title: String) -> void:
+	if role == "Tech":
+		render_tech_staff()
+		return
 	var coverage: Dictionary = sim.staffing_summary(role)
 	add_gap(inspector, 12)
 	add_label(inspector, "%s - %d employed" % [title, int(coverage.employed)], 20, GOLD)
@@ -1049,7 +1053,7 @@ func render_staff_role(role: String, title: String) -> void:
 		add_button(positions, "+", func(): sim.set_service_positions(sim.service_positions + 1); refresh(), sim.service_positions >= CasinoTuning.MAX_STAFF)
 	var accessible: bool = sim.unlocked("blackjack") if role == "Dealer" else sim.bar_owned
 	var hire := add_button(inspector, "Hire %s | $%d" % [role.to_lower(), CasinoTuning.HIRING_COST] if accessible else "Service access approaching", func(): sim.hire(role, -1); refresh(), not accessible or sim.cash < CasinoTuning.HIRING_COST or sim.staff.size() >= CasinoTuning.MAX_STAFF)
-	hire.tooltip_text = "$%d per game hour on shift. Extra roster employees rest unpaid until coverage is needed. Relief targets use hired staff; they do not create employees." % (CasinoTuning.DEALER_WAGE if role == "Dealer" else CasinoTuning.SERVICE_WAGE)
+	hire.tooltip_text = "$%d per game hour on shift. Extra roster employees rest unpaid until coverage is needed. Relief targets use hired staff; they do not create employees." % sim.Staffing.wage(role)
 	if int(coverage.employed) == 0: return
 	add_button(inspector, "Hide employee details" if staff_details_role == role else "Employee details >", func(): staff_details_role = "" if staff_details_role == role else role; refresh())
 	if staff_details_role != role: return
@@ -1072,6 +1076,29 @@ func render_staff_role(role: String, title: String) -> void:
 			add_button(inspector, "End shift", func(): sim.staff_rest(employee, true); refresh(), employee.rest_due == "Off Duty")
 		else:
 			add_label(inspector, "Rested shifts start automatically when coverage is needed.", 12, MUTED)
+
+func render_tech_staff() -> void:
+	var coverage: Dictionary = sim.staffing_summary("Tech")
+	add_gap(inspector, 12)
+	add_label(inspector, "Repair techs - %d employed" % coverage.employed, 20, GOLD)
+	add_label(inspector, str(coverage.coverage), 16, TEAL if coverage.coverage == "GOOD COVERAGE" else GOLD)
+	finance_short_metric(inspector, "Games / covered capacity", "%d / %d" % [coverage.games, coverage.capacity])
+	finance_short_metric(inspector, "Techs needed", str(coverage.required))
+	finance_short_metric(inspector, "On call / repairing", "%d / %d" % [coverage.on_call, coverage.repairing])
+	add_label(inspector, "One Tech covers three machines or tables. Techs rotate repair calls automatically and return to on-call availability when finished.", 13, MUTED)
+	add_label(inspector, "Available from the start. $%d/hr only during repair calls, plus parts from casino cash. Unfunded repairs stay queued." % CasinoTuning.TECH_WAGE, 13, MUTED)
+	if int(coverage.employed) < int(coverage.required):
+		add_label(inspector, "Hire %d more Techs for full coverage." % (int(coverage.required) - int(coverage.employed)), 14, GOLD)
+	add_button(inspector, "Hire tech | $%d" % CasinoTuning.HIRING_COST, func(): sim.hire("Tech", -1); refresh(), sim.cash < CasinoTuning.HIRING_COST or sim.staff.size() >= CasinoTuning.MAX_STAFF)
+	if int(coverage.employed) == 0: return
+	add_button(inspector, "Hide employee details" if staff_details_role == "Tech" else "Employee details >", func(): staff_details_role = "" if staff_details_role == "Tech" else "Tech"; refresh())
+	if staff_details_role != "Tech": return
+	for employee in sim.staff:
+		if employee.role != "Tech": continue
+		add_gap(inspector, 8)
+		add_label(inspector, str(employee.name) + " - " + str(employee.duty), 16, TEXT)
+		if employee.duty == "Repairing":
+			add_label(inspector, "Game #%d | %d/%d min" % [employee.repair_target, employee.repair_minutes, CasinoTuning.TECH_REPAIR_MINUTES], 13, MUTED)
 
 func finance_color(amount: float) -> Color:
 	return TEAL if amount > 0.005 else Color("ff9486") if amount < -0.005 else MUTED
@@ -1309,6 +1336,7 @@ func render_finance_payroll(parent: Node) -> void:
 	var costs: Dictionary = sim.expense_totals
 	finance_row(parent, "Dealers", -float(costs.dealer_payroll))
 	finance_row(parent, "Service staff", -float(costs.service_payroll))
+	finance_row(parent, "Repair techs", -float(costs.tech_payroll))
 	var commitment := finance_line(parent)
 	add_label(commitment, "Current commitment", 14, MUTED)
 	finance_value(commitment, "%s/hr" % FinancialText.cash(sim.payroll_rate(), 0), 14, GOLD)

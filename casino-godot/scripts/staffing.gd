@@ -4,10 +4,17 @@ extends RefCounted
 static func new_employee(sim, role: String, table_id: int = -1) -> Dictionary:
 	var employee_id: int = sim.next_id
 	sim.next_id += 1
-	return {"id": employee_id, "name": CasinoTuning.NAMES[sim.rng.randi_range(0, 11)], "role": role,
+	var employee := {"id": employee_id, "name": CasinoTuning.NAMES[sim.rng.randi_range(0, 11)], "role": role,
 		"table": table_id, "energy": 100.0, "duty": "Active" if table_id > 0 else "Off Duty",
 		"state_since": sim.elapsed, "shift_end": sim.elapsed + CasinoTuning.STAFF_SHIFT_MINUTES,
 		"available_at": sim.elapsed, "rest_due": "", "service_product": ""}
+	if role == "Tech":
+		employee.duty = "On Call"
+		employee.merge({"call_speed": CasinoTuning.ENTITY_WALK_SPEED, "repair_target": -1, "repair_minutes": 0, "x": CasinoTuning.ENTRY.x, "y": CasinoTuning.ENTRY.y, "tx": CasinoTuning.ENTRY.x, "ty": CasinoTuning.ENTRY.y})
+	return employee
+
+static func wage(role: String) -> float:
+	return CasinoTuning.DEALER_WAGE if role == "Dealer" else CasinoTuning.TECH_WAGE if role == "Tech" else CasinoTuning.SERVICE_WAGE
 
 static func compatible(sim, employee: Dictionary, table: Dictionary) -> bool:
 	# One compatibility hook; all current dealers cover all current table games.
@@ -51,7 +58,7 @@ static func best_relief(sim, role: String, table: Dictionary = {}) -> Dictionary
 static func request_rest(sim, employee: Dictionary, state: String) -> void:
 	if employee.duty == "Off Duty" or (employee.duty == "Break" and state == "Break"): return
 	var table: Dictionary = sim.get_table(int(employee.table))
-	var replacement: Dictionary = best_relief(sim, str(employee.role), table) if employee.duty == "Active" else {}
+	var replacement: Dictionary = best_relief(sim, str(employee.role), table if employee.role == "Dealer" else {}) if employee.duty == "Active" else {}
 	if not replacement.is_empty():
 		replacement.duty = "Active"
 		replacement.table = employee.table
@@ -65,6 +72,7 @@ static func request_rest(sim, employee: Dictionary, state: String) -> void:
 
 static func tick(sim) -> void:
 	for employee in sim.staff:
+		if employee.role == "Tech": continue
 		var rate := 0.0
 		match employee.duty:
 			"Active":
@@ -84,7 +92,7 @@ static func tick(sim) -> void:
 		elif employee.rest_due != "":
 			request_rest(sim, employee, str(employee.rest_due))
 		elif employee.duty == "Active" and employee.energy <= CasinoTuning.STAFF_BREAK_ENERGY:
-			var relief: Dictionary = best_relief(sim, str(employee.role), sim.get_table(int(employee.table)))
+			var relief: Dictionary = best_relief(sim, str(employee.role), sim.get_table(int(employee.table)) if employee.role == "Dealer" else {})
 			if not relief.is_empty() or employee.energy <= CasinoTuning.STAFF_EXHAUSTED_ENERGY:
 				request_rest(sim, employee, "Break")
 	rebalance(sim)
@@ -93,7 +101,7 @@ static func tick(sim) -> void:
 
 static func shift_handover(sim) -> void:
 	if not sim.opened or sim.elapsed - sim.staff_shift_handover_at < CasinoTuning.STAFF_SHIFT_HANDOVER_GAP: return
-	var finishing: Array = sim.staff.filter(func(e): return e.duty == "Active" and e.rest_due == "" and int(e.shift_end) - sim.elapsed <= CasinoTuning.STAFF_SHIFT_HANDOVER_MINUTES)
+	var finishing: Array = sim.staff.filter(func(e): return e.role != "Tech" and e.duty == "Active" and e.rest_due == "" and int(e.shift_end) - sim.elapsed <= CasinoTuning.STAFF_SHIFT_HANDOVER_MINUTES)
 	finishing.sort_custom(func(a, b): return a.shift_end < b.shift_end)
 	for employee in finishing:
 		var rested: Array = sim.staff.filter(func(e): return e.role == employee.role and can_start(sim, e))
@@ -111,6 +119,7 @@ static func targets(sim) -> Array:
 
 static func required(sim, role: String) -> int:
 	if role == "Service": return int(sim.service_positions) if sim.bar_available() else 0
+	if role == "Tech": return ceili(float(sim.tables.size()) / CasinoTuning.TECH_GAMES_PER_PERSON)
 	var count := 0
 	for table in targets(sim): count += sim.required_crew(table)
 	return count
@@ -189,6 +198,7 @@ static func continuous_roster(positions: int, relief: int) -> int:
 	return ceili((positions + relief) * float(CasinoTuning.STAFF_SHIFT_MINUTES + CasinoTuning.STAFF_OFF_DUTY_MINUTES) / CasinoTuning.STAFF_SHIFT_MINUTES)
 
 static func summary(sim, role: String) -> Dictionary:
+	if role == "Tech": return sim.TechService.summary(sim)
 	var result := {"employed": 0, "active": 0, "relief": 0, "break": 0, "off_duty": 0, "ready_next_shift": 0, "required": required(sim, role)}
 	for employee in sim.staff:
 		if employee.role != role: continue
@@ -205,7 +215,7 @@ static func report_problems(sim) -> void:
 	if not sim.opened: return
 	var missing: Array = targets(sim).filter(func(t): return sim.crew(int(t.id)).size() < sim.required_crew(t))
 	var service: Dictionary = summary(sim, "Service")
-	var exhausted: bool = sim.staff.any(func(e): return e.duty == "Active" and e.energy <= CasinoTuning.STAFF_BREAK_ENERGY and best_relief(sim, str(e.role), sim.get_table(int(e.table))).is_empty())
+	var exhausted: bool = sim.staff.any(func(e): return e.role != "Tech" and e.duty == "Active" and e.energy <= CasinoTuning.STAFF_BREAK_ENERGY and best_relief(sim, str(e.role), sim.get_table(int(e.table))).is_empty())
 	var signature: String = str(missing.map(func(t): return int(t.id))) + str(service.active < service.required) + str(exhausted)
 	if signature == sim.staffing_notice_signature: return
 	if sim.elapsed - sim.staffing_notice_at < CasinoTuning.STAFF_NOTICE_COOLDOWN: return

@@ -32,10 +32,10 @@ func update_view(employee: Dictionary, at: Vector2, zoom: float) -> void:
 		role = next_role
 		body.texture = Art.texture("guests/base/guest_" + ("purple" if role == "Owner" else "cyan" if role == "Service" else "green") + ".svg")
 		body.scale = Vector2.ONE * base_size / CasinoTuning.CHARACTER_TEXTURE_DIAMETER / body.texture.get_width()
-		body.modulate = Color("7b53af") if role == "Owner" else Color.WHITE if role == "Service" else Color("37805c")
+		body.modulate = Color("7b53af") if role == "Owner" else Color("e8ad58") if role == "Tech" else Color.WHITE if role == "Service" else Color("37805c")
 		ring.texture = Art.texture("guests/rings/ring_staff.svg")
 		ring.scale = Vector2.ONE * (base_size + 6) / ring.texture.get_width()
-		icon.texture = Art.texture("icons/status/vip.svg" if role == "Owner" else "icons/gameplay/drink.svg" if role == "Service" else "icons/gameplay/spade.svg")
+		icon.texture = Art.texture("icons/status/vip.svg" if role == "Owner" else "icons/gameplay/drink.svg" if role == "Service" else "icons/gameplay/wrench.svg" if role == "Tech" else "icons/gameplay/spade.svg")
 		queue_redraw()
 	if role_changed or delivering != next_delivery:
 		delivering = next_delivery

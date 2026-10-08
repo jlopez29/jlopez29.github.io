@@ -51,8 +51,8 @@ func run() -> void:
 			dice.capture_roll(view.current_table())
 			dice._process(dice.ROLL_SECONDS + 0.001)
 			check(dice.animation > dice.SETTLE_SECONDS and dice.reference_dice.size() == 2 and dice.previous.table.owner.field == 1, "Settled dice retain pre-roll chips during recognition")
-			dice._process(1.49)
-			check(dice.animation > dice.SETTLE_SECONDS and dice.busy(), "Craps holds chips for 1.5 seconds")
+			dice._process(1.24)
+			check(dice.animation > dice.SETTLE_SECONDS and dice.busy(), "Craps holds chips for 1.25 seconds")
 			dice.animation = 0
 			dice.hover = "come"
 			view.update_bet_indicator()
@@ -70,12 +70,12 @@ func run() -> void:
 			view.art._process(view.art.timeline.reveal_at + 0.01 if kind == "slots" else 10)
 			view.update_result_hold(0)
 			view.render_current()
-			check(view.result_hold == 1.5 and view.locked(), "Recognition lock " + kind)
+			check(view.result_hold == 1.25 and view.locked(), "Recognition lock " + kind)
 			var operations: int = sim.owner_account.next_operation
 			view.transact(true)
 			check(sim.owner_account.next_operation == operations, "Recognition prevents repeat wager " + kind)
 			if kind == "roulette": check(view.felt.bets == {"Red": 1.0}, "Roulette chips stay through result hold")
-			view.update_result_hold(1.49)
+			view.update_result_hold(1.24)
 			check(view.result_hold > 0, "Hold cannot finish early " + kind)
 			view.update_result_hold(0.02)
 			view.art._process(20)

@@ -70,7 +70,7 @@ func run() -> void:
 	check(not restored.restore(data), "Save missing current physical location rejected")
 	ui.game_view.art._process(20)
 	ui.game_view.update_result_hold(0)
-	ui.game_view.update_result_hold(1.51)
+	ui.game_view.update_result_hold(1.26)
 	ui.leave_table()
 	check(ui.in_back_room and ui.back_room_floor.visible and not ui.private_play, "Game exit returns beside fixture")
 	ui.back_room_floor.select_at(ui.back_room_floor.screen_at(PitBossFloorContext.KIOSK.get_center()))
