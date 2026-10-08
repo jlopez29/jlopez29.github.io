@@ -24,7 +24,7 @@ func mount(ui: Control) -> void:
 	categories = HBoxContainer.new()
 	body.add_child(categories)
 	for kind in ["slots", "tables", "amenities"]:
-		var button: Button = ui.add_button(categories, "Bar" if kind == "amenities" else kind.capitalize(), func():
+		var button: Button = ui.add_button(categories, kind.capitalize(), func():
 			category = kind
 			update_state())
 		button.toggle_mode = true
@@ -42,6 +42,9 @@ func mount(ui: Control) -> void:
 	for kind in ["blackjack", "roulette", "craps", "holdem"]:
 		add_purchase(kind, "starter", CasinoGames.NAMES[kind].replace("’", "'"))
 	add_purchase("bar", "starter", "Bar service")
+	add_purchase("vip", "", "VIP Access")
+	add_purchase("high_limit", "", "High-Limit Capability")
+	add_purchase("expansion", "", "Floor Expansion")
 	more = PopupMenu.new()
 	add_child(more)
 	more.add_theme_constant_override("v_separation", 26)
@@ -65,6 +68,9 @@ func add_purchase(kind: String, profile_id: String, title: String) -> void:
 	var button: Button = ui.add_button(catalog, title, func():
 		if kind == "bar":
 			ui.open_page("bar")
+			return
+		if kind in ["vip", "high_limit", "expansion"]:
+			ui.open_page("development" if kind == "expansion" else "amenities")
 			return
 		ui.build_kind = kind
 		ui.build_slot_profile = profile_id
@@ -95,11 +101,17 @@ func update_state() -> void:
 	for purchase in purchases:
 		var kind: String = purchase.kind
 		var button: Button = purchase.button
-		button.visible = (category == "amenities" if kind == "bar" else category == "slots" if kind == "slots" else category == "tables")
+		button.visible = (category == "amenities" if kind in ["bar", "vip", "high_limit", "expansion"] else category == "slots" if kind == "slots" else category == "tables")
 		if kind == "bar":
 			button.text = "Bar service\n" + ("Manage" if ui.sim.bar_owned else "Review purchase")
 			button.disabled = false
 			button.tooltip_text = "Review purchase, hiring and payroll costs."
+			continue
+		if kind in ["vip", "high_limit", "expansion"]:
+			var status := "Owned" if ui.sim.feature_owned(kind) and kind != "expansion" else "Review purchase" if ui.sim.unlocked(kind) else "Locked / review"
+			button.text = purchase.title + "\n" + status
+			button.disabled = false
+			button.tooltip_text = "Review directional purchases in Casino Development." if kind == "expansion" else "Review benefits, Casino Cash price and access requirements."
 			continue
 		var unlocked: bool = ui.sim.slot_unlocked(purchase.profile) if kind == "slots" else ui.sim.unlocked(kind)
 		var revealed: bool = kind == "slots" or ui.sim.revealed(kind)

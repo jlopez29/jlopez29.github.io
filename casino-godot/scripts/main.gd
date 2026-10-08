@@ -675,6 +675,8 @@ func refresh(structural: bool = true) -> void:
 		render_staff()
 	elif page == "finance":
 		render_finance()
+	elif page == "amenities":
+		render_amenities()
 	elif page == "bar":
 		render_bar_menu()
 	elif page == "incidents":
@@ -1170,6 +1172,37 @@ func show_bar_product(id: String) -> void:
 	bar_menu_tab = "active" if id in sim.drink_menu else "available"
 	open_page("bar")
 
+func render_amenity_requirements(feature: String) -> void:
+	if not sim.restricted():
+		add_label(inspector, "Easy mode: access is unrestricted.", 13, MUTED)
+		return
+	for milestone in CasinoTuning.MILESTONES:
+		if str(milestone.id) != feature: continue
+		for requirement in unlock_requirements(milestone):
+			add_label(inspector, "Normal-mode %s: %s" % [requirement.name, requirement_text(requirement)], 13, MUTED)
+
+func render_amenities() -> void:
+	if sim.bar_owned:
+		add_label(inspector, "BAR SERVICE - Owned", 20, GOLD)
+		add_button(inspector, "Manage drink menu", func(): open_page("bar"))
+	else:
+		render_bar_purchase()
+	for feature in ["vip", "high_limit"]:
+		add_gap(inspector, 12)
+		var title := "VIP Access" if feature == "vip" else "High-Limit Capability"
+		var owned := sim.feature_owned(feature)
+		var available := sim.unlocked(feature)
+		var cost := sim.feature_cost(feature)
+		add_label(inspector, title, 20, GOLD)
+		add_label(inspector, "Makes VIP guests eligible to arrive at your casino." if feature == "vip" else "Enables the existing higher table minimum settings. Game wager caps still apply.", 14, MUTED)
+		finance_short_metric(inspector, "Purchase with Casino Cash", money(cost))
+		render_amenity_requirements(feature)
+		if not owned and available and sim.cash < cost:
+			add_label(inspector, "Insufficient Casino Cash: " + money(sim.cash) + " available.", 13, GOLD)
+		add_button(inspector, "Owned" if owned else "Locked" if not available else "Purchase " + title + " | " + money(cost), func(): sim.purchase_upgrade(feature); refresh(), owned or not available or sim.cash < cost)
+	add_gap(inspector, 12)
+	add_button(inspector, "Floor Expansion - review directional purchases", func(): open_page("development"))
+
 func render_bar_purchase() -> void:
 	add_label(inspector, "BAR SERVICE", 20, GOLD)
 	finance_short_metric(inspector, "Purchase with Casino Cash", money(CasinoTuning.BAR_PURCHASE_COST))
@@ -1179,8 +1212,7 @@ func render_bar_purchase() -> void:
 	add_label(inspector, "Recommended startup: 1 active + 1 relief. Off Duty staff are unpaid.", 14, TEXT)
 	finance_short_metric(inspector, "Recommended continuous roster", str(sim.Staffing.continuous_roster(1, 1)))
 	add_label(inspector, "Drink expectations begin after purchase. Delaying purchase has no missing-service penalty.", 13, MUTED)
-	if not sim.unlocked("service"):
-		add_label(inspector, "Requires Bar access at Casino Rating 20 after Blackjack access.", 14, GOLD)
+	render_amenity_requirements("service")
 	add_button(inspector, "Bar owned" if sim.bar_owned else "Purchase Bar | " + money(CasinoTuning.BAR_PURCHASE_COST), func(): sim.purchase_bar(); refresh(), not sim.unlocked("service") or sim.bar_owned or sim.cash < CasinoTuning.BAR_PURCHASE_COST)
 
 func render_bar_menu() -> void:
@@ -2191,10 +2223,7 @@ func render_desktop_build() -> void:
 	if desktop_build_category == "slots":
 		for id in CasinoTuning.SLOT_PROFILES: render_build_card("slots", id)
 	elif desktop_build_category == "amenities":
-		if sim.bar_owned:
-			add_label(inspector, "Bar owned", 20, GOLD)
-			add_button(inspector, "Manage drink menu", func(): open_page("bar"))
-		else: render_bar_purchase()
+		render_amenities()
 	else:
 		for kind in Games.COSTS:
 			if kind != "slots": render_build_card(kind)
