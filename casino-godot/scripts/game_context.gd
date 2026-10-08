@@ -84,6 +84,10 @@ func bet_error(id: int, key: String, chip: float = 0) -> String:
 	if key in ["come", "dont_come"] and int(table.point) == 0: return "Wait for a point."
 	if key == "odds" and (int(table.point) == 0 or table.owner.pass <= 0): return "Place Pass first."
 	if key == "lay_odds" and (int(table.point) == 0 or table.owner.dont_pass <= 0): return "Place Don't Pass first."
+	for n in CrapsRules.NUMBERS:
+		if key in ["come_" + str(n), "dont_come_" + str(n)]: return "Contract travels from Come / Don't Come."
+		if key == "come_odds_" + str(n) and table.owner.get("come_" + str(n), 0) <= 0: return "Odds need an established Come contract."
+		if key == "dont_come_odds_" + str(n) and table.owner.get("dont_come_" + str(n), 0) <= 0: return "Lay odds need an established Don't Come contract."
 	return ""
 func bet(id: int, key: String, chip: float = 0) -> bool:
 	return execute("add", {"key": key, "stake": chip}) if is_private else source.bet(id, key, chip)

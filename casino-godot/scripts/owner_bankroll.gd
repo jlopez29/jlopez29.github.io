@@ -35,16 +35,16 @@ func wager(id: int, amount: float, at: int) -> bool:
 	record("wager", -amount, at, id)
 	return true
 
-func settle(id: int, total_return: float, at: int, kind: String = "") -> Dictionary:
+func settle(id: int, total_return: float, at: int, kind: String = "", personal_return: bool = false) -> Dictionary:
 	var key := str(id)
 	if not pending.has(key) or not money(total_return): return {}
 	var stake: float = pending[key]
-	var returned := minf(stake, total_return)
+	var returned := total_return if personal_return else minf(stake, total_return)
 	var profit := maxf(0, total_return - stake)
-	if not money(balance + returned) or not money(profit_transferred + profit): return {}
+	if not money(balance + returned) or (not personal_return and not money(profit_transferred + profit)): return {}
 	pending.erase(key) # Remove before publishing or crediting anything.
 	balance += returned
-	profit_transferred += profit
+	if not personal_return: profit_transferred += profit
 	if kind.is_empty(): kind = "win" if profit > 0 else "loss" if total_return < stake else "push"
 	record(kind, returned, at, id, profit)
 	return {"stake": stake, "returned_stake": returned, "profit": profit}

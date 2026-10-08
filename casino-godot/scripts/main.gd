@@ -166,8 +166,14 @@ func _ready() -> void:
 	room_tools.z_index = 31
 	add_child(room_tools)
 	add_button(room_tools, "Pause / Play", toggle_pause)
-	add_button(room_tools, "Save", save_game)
-	add_button(room_tools, "Load", load_game)
+	var room_menu := MenuButton.new()
+	room_menu.text = "Menu"
+	room_menu.custom_minimum_size = Vector2(72, 44)
+	room_tools.add_child(room_menu)
+	room_menu.get_popup().add_item("Save", 0)
+	room_menu.get_popup().add_item("Load", 1)
+	room_menu.get_popup().add_item("Transfer personal wallet to casino", 5)
+	room_menu.get_popup().id_pressed.connect(global_action)
 	room_tools.hide()
 	floor_view.private_door_requested.connect(walk_to_private_door)
 	floor_view.private_door_reached.connect(enter_back_room)
@@ -514,6 +520,7 @@ func global_action(id: int) -> void:
 		2: show_help()
 		3: confirm_reset()
 		4: toggle_dev_panel()
+		5: show_wallet_transfer()
 
 func toggle_dev_panel() -> void:
 	if not OS.is_debug_build() or not is_instance_valid(developer_panel) or modal != null: return
@@ -647,7 +654,7 @@ func refresh(structural: bool = true) -> void:
 	else:
 		apply_visibility()
 	floor_view.invalidate_presentation()
-	if not private_play: felt.chip = chip_value
+	if not private_play: felt.chip = game_view.bet if game_view.visible else chip_value
 	felt.locked = rolling > 0 or speed == 0 or table_options or modal != null
 	felt.queue_redraw()
 	add_label(feed, "HOUSE ACTIVITY", 12, MUTED)
@@ -1333,12 +1340,12 @@ func render_finance_advanced(parent: Node) -> void:
 	finance_row(parent, "Owner floor house result", sim.visitor_house_result())
 	finance_row(parent, "Drink sales", float(sim.bar_totals.revenue))
 	finance_row(parent, "All costs incl. investment", -sim.operating_costs())
-	finance_row(parent, "Owner / Back Room profit transfers", sim.owner_account.profit_transferred)
+	finance_row(parent, "Owner wallet / event transfers", sim.owner_account.profit_transferred)
 	if sim.sponsored_income > 0: finance_row(parent, "Sponsored promotions", sim.sponsored_income)
 	finance_row(parent, "Owner Bankroll (personal)", sim.owner_bankroll)
 	finance_row(parent, "Recorded net cash flow", sim.net_profit(), false)
 	finance_row(parent, "Pending stakes", sim.live_stakes())
-	var note := add_label(parent, "Cash flow includes owner floor transfers, event net winnings, sponsored promotions and pending floor stakes.", 12, MUTED)
+	var note := add_label(parent, "Cash flow includes owner floor transfers, personal wallet transfers, event net winnings, sponsored promotions and pending floor stakes.", 12, MUTED)
 	note.tooltip_text = "Starting cash and developer funding are outside recorded flow. Operating profit excludes capital, hiring and owner gambling; gaming win excludes unresolved stakes."
 	if not sim.owner_account.history.is_empty():
 		add_label(parent, "Recent owner transactions", 12, GOLD)
@@ -1449,7 +1456,7 @@ func render_finance() -> void:
 		detail = finance_card("investment", "Investment / setup", -investment)
 		if detail != null: render_finance_investment(detail)
 	finance_row(inspector, "Net cash flow", sim.net_profit(), false)
-	if not finance_advanced: add_label(inspector, "Cash flow includes owner floor transfers, event net winnings, sponsored promotions and pending floor stakes.", 12, MUTED)
+	if not finance_advanced: add_label(inspector, "Cash flow includes owner floor transfers, personal wallet transfers, event net winnings, sponsored promotions and pending floor stakes.", 12, MUTED)
 	var advanced := add_button(inspector, "Advanced accounting -" if finance_advanced else "Advanced accounting >", func(): finance_advanced = not finance_advanced; refresh())
 	advanced.tooltip_text = "Reconciliation and payroll diagnostics"
 	if finance_advanced: render_finance_advanced(inspector)
@@ -1505,7 +1512,7 @@ func table_action(action: String) -> void:
 		refresh()
 		return
 	if action.begins_with("chip:"):
-		chip_value = int(action.substr(5))
+		chip_value = float(action.substr(5))
 	elif action == "more": table_options = not table_options
 	elif action == "leave": leave_table()
 	elif action == "shoot":
@@ -1922,6 +1929,27 @@ func show_help() -> void:
 		body += "\n\nCraps needs two dealers. The shooter keeps the dice until seven-out. Pass dice hands off to a CPU; Hold betting pauses that table's CPU rolls. My bets lists contracts and removable stakes."
 	body += "\n\nOn phones use Floor, Build, Staff and More. Guests, Finance and House Activity are also available in More. Save locally before leaving."
 	dialog("Build your house.", body, "Back to casino", func(): pass, false)
+
+func show_wallet_transfer() -> void:
+	var amount := SpinBox.new()
+	amount.min_value = 0.01
+	amount.max_value = maxf(0.01, sim.owner_bankroll)
+	amount.step = 0.01
+	amount.value = minf(100, sim.owner_bankroll)
+	amount.prefix = "$"
+	amount.custom_minimum_size.y = 44
+	var layout := dialog("Transfer to casino", "Personal wallet: $%.2f\nChoose how much to add to Casino Cash." % sim.owner_bankroll, "Transfer", func():
+		if not sim.transfer_personal_to_casino(amount.value):
+			sim.log_event("Transfer failed. Check your available personal funds and local storage.")
+		refresh())
+	if layout == null:
+		amount.free()
+		return
+	modal.z_index = 40
+	for child in get_children():
+		if child.has_meta("modal_shade"): child.z_index = 39
+	layout.add_child(amount)
+	layout.move_child(amount, 3)
 
 func confirm_reset() -> void:
 	dialog("Start a new casino?", "Your existing local save is kept until you save again. Choose difficulty and starting games next.", "Choose new-game setup", func(): show_new_game_setup())

@@ -64,6 +64,7 @@ func mount(ui: Control) -> void:
 	global_menu.add_theme_font_size_override("font_size", 16)
 	for title in ["Save", "Load", "Help", "New casino"]: global_menu.add_item(title)
 	if OS.is_debug_build(): global_menu.add_item("Developer tools")
+	global_menu.add_item("Transfer personal wallet to casino", 5)
 	global_menu.id_pressed.connect(ui.global_action)
 	ui.mobile_speed = ui.add_button(self, "1x", func():
 		if ui.speed == 0: ui.speed = 1

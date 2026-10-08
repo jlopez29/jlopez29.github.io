@@ -1,6 +1,12 @@
 extends "res://scripts/slot_presentation.gd"
 const Card = preload("res://presentation/play/playing_card.gd")
 var pending := false
+var play_height := 600.0
+var staged_trips := 0.0
+var selecting_trips := false
+var card_limit := 86.0
+var bet_spots := {}
+signal spot_selected(trips: bool)
 var seated_players: Array = []
 var seat_panels: Array[Dictionary] = []
 var card_nodes: Array[TextureRect] = []
@@ -15,7 +21,7 @@ func _ready() -> void:
 	resized.connect(configure)
 
 func hand(cards: Array, at: Vector2, available: float, hidden_after: int = 99) -> void:
-	var width := clampf(available / maxf(2, cards.size() + 0.5), 48, 86)
+	var width := clampf(available / maxf(2, cards.size() + 0.5), 30, card_limit)
 	var gap := minf(width + 8, maxf(18, (available - width) / maxi(1, cards.size() - 1)))
 	var span := width + gap * (cards.size() - 1)
 	for i in range(cards.size()):
@@ -36,95 +42,91 @@ func configure() -> void:
 	captions.clear()
 	seat_panels.clear()
 	active_hand_rect = Rect2()
+	bet_spots.clear()
 	if kind in ["blackjack", "holdem"]:
-		var compact := size.x < 600
+		custom_minimum_size.y = maxf(180, play_height)
+		var compact := size.x < 600 or play_height < 440
+		var short := play_height < 300 and size.x > 600
+		var h := maxf(180, play_height)
+		var seat_height := 48.0 if compact else 150.0 if not seated_players.is_empty() else 0.0
+		var field_h := h - seat_height
 		var center := size.x / 2
 		var done: bool = round.get("phase", "") == "done"
 		var dealer: Array = round.get("dealer", [0, 0])
+		card_limit = clampf(field_h * (0.20 if kind == "holdem" else 0.24), 36, 108)
 		var dealer_total := str(Games.total(dealer)) if done else str(Games.total([dealer[0]])) if not round.is_empty() else ""
 		if kind == "holdem": dealer_total = ""
-		captions.append({"at": Vector2(center, 30), "text": ("DEALER " if done or round.is_empty() or kind == "holdem" else "DEALER SHOWING ") + dealer_total + (" | Bust" if done and kind == "blackjack" and Games.total(dealer) > 21 else ""), "size": 16})
-		hand(dealer, Vector2(center, 42), size.x - 32, 99 if done else 1 if not round.is_empty() and kind == "blackjack" else 0)
+		captions.append({"at": Vector2(size.x * 0.13 if short else center, 20), "text": "DEALER " + dealer_total, "size": 15})
+		hand(dealer, Vector2(size.x * 0.13 if short else center, 30), size.x * 0.24 if short else size.x - 32, 99 if done else 1 if not round.is_empty() and kind == "blackjack" else 0)
 		if kind == "blackjack":
 			var hands: Array = round.get("hands", [])
-			var cols := 1 if compact else mini(4, maxi(1, hands.size()))
-			var row_height := 220.0
-			custom_minimum_size.y = 180 + ceili(maxi(1, hands.size()) / float(cols)) * row_height + 60
-			var y0 := 236.0
+			var columns := maxi(1, hands.size()) if short else mini(2 if compact else 4, maxi(1, hands.size()))
+			var rows := ceili(maxi(1, hands.size()) / float(columns))
+			var start := 34.0 if short else field_h * 0.50
+			var row_h := (field_h - start - 52) / rows
+			card_limit = clampf(row_h / 1.6, 30, 108)
 			for i in range(maxi(1, hands.size())):
-				var at := Vector2((i % cols + 0.5) * size.x / cols, y0 + int(i / cols) * row_height)
+				var at := Vector2(size.x * (0.28 + (i + 0.5) * 0.72 / columns) if short else (i % columns + 0.5) * size.x / columns, start + int(i / columns) * row_h)
 				var cards: Array = hands[i].cards if i < hands.size() else [0, 0]
 				var active: bool = pending and int(round.get("active", 0)) == i
 				var title := "YOUR HAND" if hands.size() < 2 else "HAND %d" % (i + 1)
-				if i < hands.size():
-					title += " | %d" % Games.total(cards)
-					if active: title += " | YOUR TURN"
-					elif done: title += " | " + hand_result(hands[i])
-				captions.append({"at": at - Vector2(0, 12), "text": title, "size": 16, "active": active})
-				hand(cards, at, size.x / cols - 30, 0 if round.is_empty() else 99)
-				if i < hands.size():
-					captions.append({"at": at + Vector2(-22, 165), "text": "YOUR BET", "size": 14, "chip": float(hands[i].bet)})
-				else:
-					captions.append({"at": at + Vector2(0, 145), "text": "Choose a wager below", "size": 14})
-				if active: active_hand_rect = Rect2(at - Vector2(100, 28), Vector2(200, 230))
-			configure_seats(y0 + ceili(maxi(1, hands.size()) / float(cols)) * row_height + 12, done)
+				if i < hands.size(): title += " | %d" % Games.total(cards) + (" | TURN" if active else " | " + hand_result(hands[i]) if done else "")
+				captions.append({"at": at - Vector2(0, 10), "text": title, "size": 13, "active": active})
+				hand(cards, at, size.x * (0.72 if short else 1.0) / columns - 24, 0 if round.is_empty() else 99)
+				if active: active_hand_rect = Rect2(at - Vector2(size.x / columns / 2 - 8, 22), Vector2(size.x / columns - 16, row_h))
+				var stake := float(hands[i].bet) if pending and i < hands.size() else wager if i == 0 else 0.0
+				var spot := Rect2(Vector2(at.x - 42, field_h - 44), Vector2(84, 40))
+				bet_spots["Bet %d" % i] = spot
+				captions.append({"at": spot.get_center(), "text": "", "size": 12, "chip": stake, "stack_at": spot.get_center(), "seat": -1})
 		else:
-			custom_minimum_size.y = 600
 			var visible_board := 5 if done or round.get("phase", "") == "river" else 3 if round.get("phase", "") == "flop" else 0
-			captions.append({"at": Vector2(center, 200), "text": "COMMUNITY", "size": 14})
-			hand(round.get("board", [0, 0, 0, 0, 0]), Vector2(center, 212), size.x - 24, visible_board)
-			captions.append({"at": Vector2(center, 345), "text": "YOUR HAND", "size": 16})
-			hand(round.get("player", [0, 0]), Vector2(center, 356), size.x - 32, 0 if round.is_empty() else 99)
-			if not round.is_empty():
-				var amounts := {"Ante": float(round.get("base", 0)), "Blind": float(round.get("base", 0)), "Trips": float(round.get("trips", 0)), "Play": float(round.get("play", 0))}
-				var index := 0
-				for title in amounts:
-					var at := Vector2((index + 0.5) * size.x / 4, 580)
-					captions.append({"at": at, "text": title, "size": 14})
-					if amounts[title] > 0: captions.append({"at": at - Vector2(0, 60), "text": "", "size": 14, "stack_at": at - Vector2(0, 60), "chip": amounts[title], "seat": -1})
-					index += 1
-			configure_seats(600, done)
+			captions.append({"at": Vector2(center, 20 if short else field_h * 0.35 - 10), "text": "COMMUNITY", "size": 13})
+			hand(round.get("board", [0, 0, 0, 0, 0]), Vector2(center, 30 if short else field_h * 0.35), size.x * 0.48 if short else size.x - 24, visible_board)
+			captions.append({"at": Vector2(size.x * 0.87 if short else center, 20 if short else field_h * 0.66 - 10), "text": "YOUR HAND", "size": 14})
+			hand(round.get("player", [0, 0]), Vector2(size.x * 0.87 if short else center, 30 if short else field_h * 0.66), size.x * 0.24 if short else size.x - 32, 0 if round.is_empty() else 99)
+			var amounts := {"Ante": float(round.get("base", wager)), "Blind": float(round.get("base", wager)), "Trips": float(round.get("trips", staged_trips)), "Play": float(round.get("play", 0))}
+			if not pending: amounts = {"Ante": wager, "Blind": wager, "Trips": staged_trips, "Play": 0.0}
+			var index := 0
+			for title in amounts:
+				var at := Vector2((index + 0.5) * size.x / 4, field_h - 26)
+				bet_spots[title] = Rect2(at - Vector2(38, 22), Vector2(76, 44))
+				captions.append({"at": at + Vector2(0, 17), "text": title, "size": 12})
+				if amounts[title] > 0: captions.append({"at": at, "text": "", "size": 12, "stack_at": at - Vector2(0, 6), "chip": amounts[title], "seat": -1})
+				index += 1
+		configure_seats(field_h, done)
 	else:
-		custom_minimum_size.y = 240 if kind == "roulette" else 0
+		custom_minimum_size.y = 0
 	for i in range(card_cursor, card_nodes.size()): card_nodes[i].hide()
 	queue_redraw()
 
+
 func configure_seats(top: float, done: bool) -> void:
-	# Seat identity comes from the live roster, never the round's array order.
 	var by_id := {}
 	for npc in round.get("npcs", []): by_id[int(npc.id)] = npc
 	var roster := seated_players.duplicate()
 	roster.sort_custom(func(a, b): return int(a.seat) < int(b.seat))
-	var columns := maxi(1, mini(3, int(size.x / 270)))
+	var columns := maxi(1, roster.size())
 	var width := size.x / columns
+	var compact := size.x < 600 or play_height < 440
+	card_limit = 54
 	for i in range(roster.size()):
 		var guest: Dictionary = roster[i]
 		var npc: Dictionary = by_id.get(int(guest.id), {})
 		var seat := int(guest.seat)
-		var at := Vector2((i % columns + 0.5) * width, top + int(i / columns) * 320)
-		seat_panels.append({"rect": Rect2(at + Vector2(-width / 2 + 8, 0), Vector2(width - 16, 308)), "at": at + Vector2(-width / 2 + 34, 28), "seat": seat})
-		captions.append({"at": at + Vector2(12, 26), "text": "Seat %d | %s" % [seat + 1, str(guest.name).get_slice(" |", 0).left(16)], "size": 14})
-		if npc.is_empty():
-			captions.append({"at": at + Vector2(0, 100), "text": "Seated / awaiting next hand", "size": 14})
-			continue
-		hand(npc.cards, at + Vector2(0, 40), width - 40, 0 if kind == "holdem" and not done else 99)
-		if kind == "blackjack":
-			captions.append({"at": at + Vector2(0, 220), "text": "", "size": 14, "chip": float(npc.staked), "stack_at": at + Vector2(0, 220), "seat": seat})
-			captions.append({"at": at + Vector2(0, 184), "text": "Total %d" % Games.total(npc.cards), "size": 14})
-		else:
-			# The engine has already committed Ante + Blind + optional Play.
-			# Split that actual total for display; NPCs have no Trips stake.
-			var amounts := {"Ante": float(npc.bet), "Blind": float(npc.bet), "Play": maxf(0, float(npc.staked) - float(npc.bet) * 2)}
-			var index := 0
-			for title in amounts:
-				var chip_at := at + Vector2((index - 1) * width / 3.5, 220)
-				captions.append({"at": chip_at - Vector2(0, 36), "text": title, "size": 12})
-				if amounts[title] > 0: captions.append({"at": chip_at, "text": "", "size": 12, "chip": amounts[title], "stack_at": chip_at, "seat": seat})
-				index += 1
-		if done:
-			var outcome := "Fold" if kind == "holdem" and npc.get("folded", false) else "Win" if float(npc.returned) > float(npc.staked) else "Push" if is_equal_approx(float(npc.returned), float(npc.staked)) else "Loss"
-			captions.append({"at": at + Vector2(0, 290), "text": outcome + " | Back " + FinancialText.cash(float(npc.returned), 2), "size": 14})
-	custom_minimum_size.y = maxf(custom_minimum_size.y, top + ceili(roster.size() / float(columns)) * 320 + 16)
+		var at := Vector2((i + 0.5) * width, top)
+		seat_panels.append({"rect": Rect2(at + Vector2(-width / 2 + 2, 0), Vector2(width - 4, 46 if compact else 148)), "at": at + Vector2(-width / 2 + 16, 15), "seat": seat})
+		captions.append({"at": at + Vector2(8, 17), "text": "S%d" % (seat + 1), "size": 11})
+		if not compact and not npc.is_empty(): hand(npc.cards, at + Vector2(0, 24), width - 12, 0 if kind == "holdem" and not done else 99)
+		captions.append({"at": at + Vector2(0, 36 if compact else 118), "text": FinancialText.cash(float(npc.get("staked", 0)), 2) if not npc.is_empty() else "Waiting", "size": 11})
+		if done and not compact: captions.append({"at": at + Vector2(0, 138), "text": "Back " + FinancialText.cash(float(npc.returned), 2), "size": 11})
+
+func _gui_input(event: InputEvent) -> void:
+	if pending or kind != "holdem": return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		for key in ["Ante", "Trips"]:
+			if bet_spots.has(key) and bet_spots[key].has_point(event.position):
+				spot_selected.emit(key == "Trips")
+				accept_event()
 
 const FinancialText = preload("res://scripts/financial_text.gd")
 static func hand_result(hand_data: Dictionary) -> String:
@@ -138,13 +140,14 @@ func _draw() -> void:
 	if font == null: return
 	if kind in ["blackjack", "holdem"]:
 		image("blackjack/blackjack_felt_base.png", Rect2(Vector2.ZERO, size))
-		if kind == "blackjack":
-			# Crop the printed rules/arc; existing hands and wager chips stay dynamic.
-			var overlay := PitBoss.texture("casino_play/blackjack/blackjack_felt_overlay.png")
-			var rules_rect := Rect2(size.x * 0.12, 150, size.x * 0.76, 62)
-			var print_width := minf(size.x * 0.8, 580)
-			rules_rect = Rect2((size.x - print_width) / 2, 166, print_width, 50)
-			draw_texture_rect_region(overlay, rules_rect, Rect2(440, 330, 1170, 270))
+		if active_hand_rect.has_area(): draw_rect(active_hand_rect, GOLD, false, 2)
+		if kind == "blackjack" and play_height >= 300:
+			var rule_y := maxf(30, (play_height - (48 if size.x < 600 else 150 if not seated_players.is_empty() else 0)) * 0.43)
+			draw_arc(Vector2(size.x / 2, rule_y - 100), minf(size.x * 0.43, 420), 0.35, PI - 0.35, 48, Color("bda365"), 2)
+			centered(Vector2(size.x / 2, rule_y), "BLACKJACK 3:2 | DEALER STANDS ON 17", 12, GOLD)
+		for key in bet_spots:
+			var spot: Rect2 = bet_spots[key]
+			draw_style_box(PitBoss.box(Color(0.03, 0.16, 0.10, 0.3), GOLD if (key == "Trips" if selecting_trips else key == "Ante") else Color("b5aa7b"), 20), spot)
 		for seat_panel in seat_panels:
 			draw_rect(seat_panel.rect, Color(0.02, 0.12, 0.09, 0.75))
 			draw_rect(seat_panel.rect, Chips.seat_color(int(seat_panel.seat)), false, 1)

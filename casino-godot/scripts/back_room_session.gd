@@ -37,15 +37,14 @@ func debit(sim, stake: float) -> int:
 
 func settle(sim, id: int, returned: float) -> bool:
 	returned = cents(returned)
-	if not Account.money(returned) or not is_finite(sim.cash + returned) or absf(sim.cash + returned) > CasinoTuning.OWNER_MONEY_LIMIT: return false
-	var result: Dictionary = sim.owner_account.settle(id, returned, sim.elapsed, "back_room_settlement")
+	if not Account.money(returned): return false
+	var result: Dictionary = sim.owner_account.settle(id, returned, sim.elapsed, "back_room_settlement", true)
 	if result.is_empty(): return false
 	sim.owner_account.balance = cents(sim.owner_account.balance)
-	sim.cash += float(result.profit)
 	state.profit += float(result.profit)
 	sim.owner_account.record("back_room_return", returned, sim.elapsed, id)
 	sim.owner_account.record("back_room_loss", -maxf(0, float(result.stake) - returned), sim.elapsed, id)
-	state.result = "Returned $%.2f | Personal loss $%.2f | CASINO CASH +$%.2f" % [returned, maxf(0, float(result.stake)-returned), state.profit]
+	state.result = "Returned $%.2f | Personal loss $%.2f | PERSONAL WINNINGS +$%.2f" % [returned, maxf(0, float(result.stake)-returned), state.profit]
 	return true
 
 func start(sim, stake: float, lines: int = 1, trips: float = 0) -> bool:
@@ -139,7 +138,7 @@ func roll(sim) -> bool:
 		var bets := layout()
 		state.round = Games.spin_roulette(bets, rng)
 		state.round.bets = bets
-		# Roulette is one resolved portfolio: aggregate its net before splitting principal/profit.
+		# Roulette is one resolved portfolio: aggregate its stakes and total return.
 		var ids: Array = state.bets.keys()
 		var id := int(ids[0])
 		var total := 0.0
@@ -168,14 +167,13 @@ func roll(sim) -> bool:
 				remaining.append(item)
 				# Standing place/hardway winnings are profit; their principal remains escrowed.
 				var profit := cents(float(single.credit))
-				if not is_finite(sim.cash + profit) or absf(sim.cash + profit) > CasinoTuning.OWNER_MONEY_LIMIT or not Account.money(sim.owner_account.profit_transferred + profit): return false
-				sim.cash += profit
-				sim.owner_account.profit_transferred += profit
+				if not Account.money(sim.owner_account.balance + profit): return false
+				sim.owner_account.balance = cents(sim.owner_account.balance + profit)
 				state.profit += profit
-				if profit > 0: sim.owner_account.record("back_room_standing_profit", 0, sim.elapsed, int(item.id), profit)
+				if profit > 0: sim.owner_account.record("back_room_standing_profit", profit, sim.elapsed, int(item.id), profit)
 		state.contracts = remaining
 		state.point = result.point
-		state.result = "Dice %d + %d | %s | CASINO CASH +$%.2f" % [a,b,result.message,state.profit]
+		state.result = "Dice %d + %d | %s | PERSONAL WINNINGS +$%.2f" % [a,b,result.message,state.profit]
 		state.round = {"dice": [a,b], "phase": "done", "rolls": int(state.round.get("rolls", 0)) + 1, "credit": result.credit}
 	else: return false
 	state.sequence += 1

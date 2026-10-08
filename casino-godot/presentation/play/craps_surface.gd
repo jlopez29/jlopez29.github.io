@@ -3,27 +3,7 @@ extends "res://scripts/craps_layout.gd"
 const Chips = preload("res://presentation/play/chip_stack.gd")
 const DragChip = preload("res://presentation/play/chip_drag.gd")
 var drag_overlay: Control
-const FELT_SIZE := Vector2(1536, 1024)
-const PLAY_SIZE := Vector2(1536, 1120)
-const PRINTED_REGIONS := {
-	"pass": Rect2(285, 790, 790, 80),
-	"dont_pass": Rect2(290, 716, 785, 64),
-	"dont_come": Rect2(160, 103, 120, 310),
-	"come": Rect2(160, 427, 915, 140),
-	"field": Rect2(290, 580, 785, 125),
-	"hard_4": Rect2(1178, 314, 155, 82),
-	"hard_6": Rect2(1344, 314, 153, 82),
-	"hard_8": Rect2(1178, 408, 155, 79),
-	"hard_10": Rect2(1344, 408, 153, 79),
-	"any_seven": Rect2(1178, 560, 319, 52),
-	"aces": Rect2(1178, 616, 155, 76),
-	"boxcars": Rect2(1344, 616, 153, 76),
-	# The center Horn rectangle is deliberately excluded from both regions.
-	"yo": Rect2(1178, 704, 120, 78),
-	"ace_deuce": Rect2(1380, 704, 117, 78),
-	"any_craps": Rect2(1178, 795, 319, 49),
-}
-const NUMBER_EDGES := [286, 424, 565, 709, 852, 997, 1155]
+var PLAY_SIZE := Vector2(1200, 760)
 var layouts := {}
 var display_signature: Array = []
 const ROLL_SECONDS := 1.2
@@ -37,16 +17,188 @@ var return_to := Vector2.ZERO
 var pan_distance := 0.0
 var mouse_down := false
 var drag_stack := false
-var chip_positions := {}
 var reference_dice: Array = []
 var rebound := Vector2.ZERO
-const DICE_BOUNDS := Rect2(110, 95, 990, 785)
+var dice_bounds := Rect2(20, 20, 1160, 650)
+
+# Camera state is independent of rolls, shooter changes and simulation refreshes.
+var view_zoom := 1.0
+var view_center := PLAY_SIZE / 2
+var pan_mode := false
+var remove_drop: Control
+var input_overlay: Control
+var options_overlay: Control
+var VIEW_REGIONS := {}
+var hover := ""
+var context_menu: PopupMenu
+var context_key := ""
+var bet_press_started := 0.0
+var printed_keys: Array[String] = []
+var context_odds := ""
+var context_choices: Array = []
+var touch_points := {}
+var gesture_active := false
+var side_open := false
+var side_button: Button
+const SIDE_KEYS := ["hard_4", "hard_6", "hard_8", "hard_10", "any_seven", "any_craps", "aces", "ace_deuce", "yo", "boxcars"]
+const PROP_DICE := {"hard_4": [2, 2], "hard_10": [5, 5], "hard_6": [3, 3], "hard_8": [4, 4], "aces": [1, 1], "ace_deuce": [1, 2], "yo": [5, 6], "boxcars": [6, 6], "any_seven": [1, 6], "any_craps": [1, 2]}
+
+func rebuild_geometry() -> void:
+	var old_size := PLAY_SIZE
+	portrait = size.x < size.y
+	PLAY_SIZE = Vector2(600 if portrait else 1200, (600 if portrait else 1200) * size.y / maxf(1, size.x))
+	if old_size != PLAY_SIZE:
+		view_center = PLAY_SIZE / 2
+	canvas = PLAY_SIZE
+	dice_bounds = Rect2(Vector2(20, 20), PLAY_SIZE - Vector2(40, 70))
+	layouts.clear()
+	targets.clear()
+	spots.clear()
+	printed_keys.clear()
+	var margin := 12.0
+	var width := PLAY_SIZE.x - margin * 2
+	var height := PLAY_SIZE.y - 100
+	var main_width := width if portrait else width * 0.75
+	var main_height := height
+	var number_height := main_height * (0.34 if portrait else 0.29)
+	var dc_width := main_width * 0.14
+	region(Rect2(margin, margin, dc_width, number_height), "dont_come")
+	var columns := 3 if portrait else 6
+	var rows := 2 if portrait else 1
+	var cell_width := (main_width - dc_width) / columns
+	var cell_height := number_height / rows
+	for i in range(6):
+		var n: int = CrapsRules.NUMBERS[i]
+		var rect := Rect2(margin + dc_width + (i % columns) * cell_width, margin + int(i / columns) * cell_height, cell_width, cell_height)
+		region(rect, CrapsRules.PLACE_KEYS[n])
+		spots[CrapsRules.PLACE_KEYS[n]] = rect.position + rect.size * Vector2(0.22, 0.42)
+		# Contract metadata is never a printed row or an empty-area target.
+		for j in range(4):
+			var key: String = ["come_", "dont_come_", "come_odds_", "dont_come_odds_"][j] + str(n)
+			var area := Rect2(rect.position + Vector2((j % 2) * cell_width / 2, cell_height * (0.52 + int(j / 2) * 0.24)), Vector2(cell_width / 2, cell_height * 0.24))
+			region(area, key, false)
+			spots[key] = area.position + area.size * Vector2(0.25, 0.5)
+	var y := margin + number_height
+	var short_landscape := not portrait and size.x < 1000
+	for pair in [["come", 0.20 if portrait else (0.17 if short_landscape else 0.21)], ["field", 0.20 if portrait else (0.18 if short_landscape else 0.22)], ["dont_pass", 0.12 if portrait else (0.17 if short_landscape else 0.13)], ["pass", 0.14 if portrait else (0.19 if short_landscape else 0.15)]]:
+		var band := main_height * float(pair[1])
+		region(Rect2(margin, y, main_width, band), pair[0])
+		y += band
+	for pair in [["pass", "odds"], ["dont_pass", "lay_odds"]]:
+		var parent: Rect2 = layouts[pair[0]]
+		# Zero-height metadata lies on the exact existing border, not a new row.
+		region(Rect2(parent.position.x, parent.end.y, parent.size.x, 0), pair[1], false)
+	if portrait:
+		for i in range(SIDE_KEYS.size()):
+			var cell := Rect2(margin + (i % 2) * width / 2, 60 + int(i / 2) * (height - 60) / 5, width / 2, (height - 60) / 5)
+			if not side_open: cell.position.x -= PLAY_SIZE.x * 2
+			region(cell, SIDE_KEYS[i], side_open)
+	else:
+		side_open = false
+		var prop_x := margin + main_width
+		var prop_width := width - main_width
+		var row_height := height / 6
+		region(Rect2(prop_x, margin, prop_width, row_height), "any_seven")
+		var keys := ["hard_4", "hard_10", "hard_6", "hard_8", "aces", "ace_deuce", "yo", "boxcars"]
+		for i in range(keys.size()):
+			region(Rect2(prop_x + (i % 2) * prop_width / 2, margin + (1 + int(i / 2)) * row_height, prop_width / 2, row_height), keys[i])
+		region(Rect2(prop_x, margin + row_height * 5, prop_width, row_height), "any_craps")
+	tray = Rect2(PLAY_SIZE.x * 0.68, PLAY_SIZE.y - 64, PLAY_SIZE.x * 0.3, 48)
+	if portrait: tray = Rect2(PLAY_SIZE.x * 0.34, PLAY_SIZE.y - 64, PLAY_SIZE.x * 0.30, 48)
+	if is_instance_valid(side_button):
+		side_button.visible = portrait and not busy()
+		side_button.position = Vector2(size.x - 60, size.y - 62)
+		side_button.size = Vector2(52, 52)
+		side_button.text = "Close" if side_open else "Side"
+		if sim != null and sim.joined >= 0 and not side_open:
+			for key in SIDE_KEYS:
+				if float(sim.get_table(sim.joined).owner.get(key, 0)) > 0: side_button.text = "Side *"; break
+	VIEW_REGIONS = {"Lines / odds": layouts.pass.merge(layouts.dont_pass), "Numbers left": Rect2(margin + dc_width, margin, (main_width - dc_width) / 2, number_height), "Numbers right": Rect2(margin + dc_width + (main_width - dc_width) / 2, margin, (main_width - dc_width) / 2, number_height), "Come / Don't Come": layouts.come.merge(layouts.dont_come), "Field": layouts.field, "Hardways": layouts.hard_4.merge(layouts.hard_8), "Proposition bets": layouts.any_seven.merge(layouts.any_craps), "Dice": Rect2(shooter_pocket() - Vector2(60, 40), Vector2(120, 80))}
+
+func update_view_transform() -> void:
+	rebuild_geometry()
+	var fitted := minf(size.x / PLAY_SIZE.x, size.y / PLAY_SIZE.y)
+	factor = maxf(0.0001, fitted * view_zoom)
+	var half_visible := size / (2 * factor)
+	for axis in range(2):
+		view_center[axis] = PLAY_SIZE[axis] / 2 if half_visible[axis] >= PLAY_SIZE[axis] / 2 else clampf(view_center[axis], half_visible[axis], PLAY_SIZE[axis] - half_visible[axis])
+	offset = size / 2 - view_center * factor
+
+func fit_view() -> void:
+	if dice_held or mouse_down: return
+	pan_mode = false
+	view_zoom = 1
+	view_center = PLAY_SIZE / 2
+	update_view_transform()
+	queue_redraw()
+
+func zoom_view(multiplier: float, anchor: Vector2 = Vector2(-1, -1)) -> void:
+	if dice_held or mouse_down: return
+	if anchor.x < 0: anchor = size / 2
+	var source := felt_position(anchor)
+	view_zoom = clampf(view_zoom * multiplier, 1, 8)
+	update_view_transform()
+	view_center += source - felt_position(anchor)
+	update_view_transform()
+	queue_redraw()
+
+func focus_region(title: String) -> void:
+	if dice_held or mouse_down or not VIEW_REGIONS.has(title): return
+	var rect: Rect2 = VIEW_REGIONS[title]
+	if title == "Dice": rect = Rect2(shooter_pocket() - Vector2(130, 90), Vector2(260, 180))
+	var fitted := minf(size.x / PLAY_SIZE.x, size.y / PLAY_SIZE.y)
+	view_zoom = clampf(minf(size.x / (rect.size.x + 40), size.y / (rect.size.y + 40)) / maxf(fitted, 0.0001), 1, 8)
+	if title == "Dice": view_zoom = clampf(maxf(view_zoom, 1.1 / maxf(fitted, 0.0001)), 1, 8)
+	view_center = rect.get_center()
+	update_view_transform()
+	queue_redraw()
+
+func begin_chip_drag(amount: float) -> void:
+	if sim == null or sim.joined < 0 or locked or busy(): return
+	var table := sim.get_table(sim.joined)
+	if amount < float(table.minimum) or amount > sim.maximum_wager(table) or amount > sim.owner_bankroll: return
+	pan_mode = false
+	chip = amount
+	action_requested.emit("chip:%.2f" % amount)
+	mouse_down = true
+	pan_distance = 0
+	dragging = "chip"
+	drag_stack = false
 
 func _ready() -> void:
 	super._ready()
+	mouse_exited.connect(func(): hover = ""; queue_redraw())
+	resized.connect(func(): update_view_transform(); queue_redraw())
 	var drag_layer := CanvasLayer.new()
 	drag_layer.layer = 100
 	add_child(drag_layer)
+	context_menu = PopupMenu.new()
+	add_child(context_menu)
+	context_menu.id_pressed.connect(func(id: int):
+		if id >= 100:
+			var choice: Dictionary = context_choices[id - 100]
+			open_context(choice.key, int(choice.seat))
+		elif id == 0:
+			if not locked and not busy() and CrapsRules.removable(context_key, int(sim.get_table(sim.joined).point)):
+				sim.remove_bet(sim.joined, context_key)
+				action_requested.emit("refresh")
+		elif id == 2: place_chip(context_odds, spots[context_odds])
+		elif id == 3: place_chip(context_key, spots[context_key]))
+	side_button = Button.new()
+	add_child(side_button)
+	side_button.z_index = 5
+	side_button.tooltip_text = "Hardways and one-roll side bets / close"
+	side_button.add_theme_font_size_override("font_size", 12)
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		side_button.add_theme_stylebox_override(state, PitBoss.box(Color("382e54"), GOLD, 26))
+	side_button.pressed.connect(func():
+		if dice_held or busy(): return
+		side_open = not side_open
+		hover = ""
+		mouse_down = false
+		dragging = ""
+		update_view_transform()
+		queue_redraw())
 	drag_overlay = DragChip.new()
 	drag_layer.add_child(drag_overlay)
 
@@ -63,26 +215,16 @@ func _process(delta: float) -> void:
 		if dice_held: cancel_throw()
 		drag_overlay.hide()
 		return
-	if mouse_down and not dragging.is_empty() and pan_distance > 10: scroll_chip_drag(delta)
 	update_drag_overlay()
-	var mobile := get_viewport_rect().size.x < 1000
-	var minimum := Vector2(1300, 948) if mobile else Vector2.ZERO
-	if custom_minimum_size != minimum:
-		custom_minimum_size = minimum
-		if mobile: call_deferred("focus_line")
 	clock += delta
 	var animating := animation > 0 or dice_held or delivery > 0
 	var table := sim.get_table(sim.joined)
 	if observed_sim != sim or table_id != sim.joined:
 		initialize_table(table)
-		if mobile: call_deferred("focus_line")
 	animation = maxf(0, animation - delta)
 	if int(table.rolls) != last_roll: capture_roll(table)
 	if animation <= SETTLE_SECONDS and int(table.rolls) > 0:
 		reference_dice = table.dice.duplicate()
-	if animation <= 0:
-		for kind in chip_positions.keys():
-			if float(table.owner.get(kind, 0)) <= 0: chip_positions.erase(kind)
 	if animation <= 0:
 		if shooter_seen != int(table.shooter):
 			# A handoff starts at the visible dice, even if the shooter changes mid-return.
@@ -101,7 +243,6 @@ func _process(delta: float) -> void:
 					return_from = resting_dice
 					return_to = shooter_pocket()
 					delivery = RETURN_SECONDS
-	if mobile and not mouse_down and (animation > 0 or delivery > 0): follow_dice(delta)
 	var guests := sim.seated(sim.joined)
 	var next := [table.dice, table.point, table.owner, table.shooter, guests.map(func(g): return [g.id, g.seat, g.bets, g.wallet]), locked, size, dice_ready]
 	if next != display_signature or animating or delivery > 0:
@@ -115,12 +256,12 @@ func initialize_table(table: Dictionary) -> void:
 	last_roll = int(table.rolls)
 	animation = 0
 	flights.clear()
-	chip_positions.clear()
 	reference_dice = table.dice.duplicate() if int(table.rolls) > 0 else []
 	resting_dice = endpoint("bank", -1)
 	shooter_seen = int(table.shooter)
 	reset_dice()
 	previous = snapshot(table)
+	fit_view()
 
 func snapshot(table: Dictionary) -> Dictionary:
 	# Only capture the visible participants and fields needed to animate this roll.
@@ -176,25 +317,25 @@ func reset_dice() -> void:
 
 func plan_throw(shooter: int = -99, released_at: Vector2 = Vector2(-1, -1)) -> void:
 	launch = shooter_pocket(shooter) if released_at.x < 0 else released_at
-	launch = launch.clamp(DICE_BOUNDS.position, DICE_BOUNDS.end)
+	launch = launch.clamp(dice_bounds.position, dice_bounds.end)
 	var direction := Vector2(throw_aim, -1).normalized() if portrait else Vector2(1, throw_aim).normalized()
 	# Trace the actual flick to the first cushion, including side/corner hits.
 	var normal := Vector2.DOWN if portrait else Vector2.LEFT
-	var travel := (DICE_BOUNDS.position.y - launch.y) / direction.y if portrait else (DICE_BOUNDS.end.x - launch.x) / direction.x
+	var travel := (dice_bounds.position.y - launch.y) / direction.y if portrait else (dice_bounds.end.x - launch.x) / direction.x
 	if absf(direction.x) > 0.001:
-		var side := ((DICE_BOUNDS.end.x if direction.x > 0 else DICE_BOUNDS.position.x) - launch.x) / direction.x
+		var side := ((dice_bounds.end.x if direction.x > 0 else dice_bounds.position.x) - launch.x) / direction.x
 		if side < travel:
 			travel = side
 			normal = Vector2.LEFT if direction.x > 0 else Vector2.RIGHT
 	if absf(direction.y) > 0.001:
-		var side := ((DICE_BOUNDS.end.y if direction.y > 0 else DICE_BOUNDS.position.y) - launch.y) / direction.y
+		var side := ((dice_bounds.end.y if direction.y > 0 else dice_bounds.position.y) - launch.y) / direction.y
 		if side < travel:
 			travel = side
 			normal = Vector2.UP if direction.y > 0 else Vector2.DOWN
 	impact = launch + direction * maxf(0, travel)
 	# Cushion absorbs most normal momentum; felt friction slows the rebound.
 	rebound = (direction - normal * direction.dot(normal)) * 0.55 - normal * direction.dot(normal) * 0.38
-	landing = (impact + rebound * (100 + throw_power * 210)).clamp(DICE_BOUNDS.position, DICE_BOUNDS.end)
+	landing = (impact + rebound * (100 + throw_power * 210)).clamp(dice_bounds.position, dice_bounds.end)
 
 func dice_center() -> Vector2:
 	if dice_held: return free_hand_position()
@@ -214,30 +355,54 @@ func dice_center() -> Vector2:
 
 func region(rect: Rect2, kind: String, clickable: bool = true) -> void:
 	spots[kind] = rect.get_center()
+	if kind in ["pass", "dont_pass"]: spots[kind] = rect.position + rect.size * Vector2(0.34, 0.5)
 	layouts[kind] = rect
-	if clickable: targets.append({"rect": rect, "kind": kind, "enabled": true})
+	if clickable:
+		printed_keys.append(kind)
+		targets.append({"rect": rect, "kind": kind, "enabled": true})
 
-func supplemental(rect: Rect2, kind: String) -> void:
-	region(rect, kind)
-	box(rect, Color("12372b"), 6, GOLD)
-	centered(rect, CrapsRules.name_for(kind).replace("’", "'"), 19)
+func wager_caption(kind: String) -> String:
+	if kind in CrapsRules.PLACE_KEYS.values(): return CrapsRules.name_for(kind).trim_prefix("Place ")
+	if kind == "dont_come": return "DON'T COME"
+	return CrapsRules.name_for(kind).to_upper()
 
-func correction(rect: Rect2, text: String) -> void:
-	box(rect, Color("06441c"), 0)
-	centered(rect, text, 20)
+func border_band(kind: String) -> Rect2:
+	var line: Rect2 = layouts[kind]
+	var half_width := (16.0 if portrait or size.x < 1000 else 9.0) / factor
+	var inset := minf(12 / factor, line.size.x * 0.05)
+	return Rect2(line.position + Vector2(inset, -half_width), Vector2(line.size.x - inset * 2, half_width * 2))
 
-func printed_pair(center: Vector2, first: int, second: int) -> void:
-	# Correct decorative dice that do not match the supported named wager.
-	for i in range(2):
-		draw_texture_rect(PitBoss.texture("casino_play/craps/die_%d.svg" % (first if i == 0 else second)), Rect2(center + Vector2(-48 + i * 54, -21), Vector2(42, 42)), false)
+func draw_printed_cell(kind: String) -> void:
+	var rect: Rect2 = layouts[kind]
+	box(rect, Color(0.07, 0.29, 0.21, 0.45), 0, INK)
+	if kind in CrapsRules.PLACE_KEYS.values():
+		centered(Rect2(rect.position, Vector2(rect.size.x, rect.size.y * 0.46)), wager_caption(kind), int(minf(rect.size.x * 0.48, rect.size.y * 0.40)), GOLD)
+	elif kind == "dont_come":
+		for i in range(3):
+			var text: String = ["DON'T", "COME", "BAR 12"][i]
+			centered(Rect2(rect.position + Vector2(0, rect.size.y * (0.24 + i * 0.16)), Vector2(rect.size.x, rect.size.y * 0.16)), text, int(minf(20, rect.size.x * 0.22)), INK)
+	elif PROP_DICE.has(kind):
+		var fs := int(minf(20, rect.size.x / maxf(6, wager_caption(kind).length()) * 1.6))
+		centered(Rect2(rect.position, Vector2(rect.size.x, rect.size.y * 0.32)), wager_caption(kind), fs)
+		var die_size := minf(rect.size.y * (0.34 if side_open else 0.36), rect.size.x * 0.25)
+		for i in range(2):
+			var at := rect.get_center() + Vector2((i * 2 - 1) * die_size * 0.60, 0)
+			draw_texture_rect(PitBoss.texture("casino_play/craps/die_%d.svg" % PROP_DICE[kind][i]), Rect2(at - Vector2.ONE * die_size / 2, Vector2.ONE * die_size), false)
+		var pay := int(CrapsRules.PROP_PAY[kind]) if CrapsRules.PROP_PAY.has(kind) else 9 if kind in ["hard_6", "hard_8"] else 7
+		var payout := "%d:1" % pay
+		if kind == "any_seven": payout = "All 7 totals | " + payout
+		elif kind == "any_craps": payout = "All 2, 3, 12 | " + payout
+		centered(Rect2(rect.position + Vector2(0, rect.size.y * 0.77), Vector2(rect.size.x, rect.size.y * 0.20)), payout, int(minf(18, rect.size.x / maxf(6, payout.length()) * 1.6)), GOLD)
+	elif kind in ["field"]:
+		centered(Rect2(rect.position, Vector2(rect.size.x, rect.size.y * 0.56)), wager_caption(kind), int(minf(38 if kind == "field" else 23, rect.size.y * 0.34)))
+		var detail := "2   3   4   9   10   11   12" if kind == "field" else "7  |  %d:1" % CrapsRules.PROP_PAY[kind] if kind == "any_seven" else "2 | 3 | 12"
+		centered(Rect2(rect.position + Vector2(0, rect.size.y * 0.52), Vector2(rect.size.x, rect.size.y * 0.35)), detail, int(minf(25, rect.size.y * 0.23)), GOLD)
+	else:
+		centered(rect, wager_caption(kind), int(minf(42 if kind == "come" else 30, rect.size.y * 0.40)), Color("edb97b") if kind == "come" else INK)
 
-func wager_art(kind: String, first: int, second: int, caption: String) -> void:
-	# Mask the entire printed cell before drawing correct wager faces and payout.
-	# The opaque mask avoids red dice/shadows peeking around the new faces.
-	var rect: Rect2 = PRINTED_REGIONS[kind]
-	box(rect, Color("06441c"), 0)
-	printed_pair(Vector2(rect.get_center().x, rect.position.y + 27), first, second)
-	centered(Rect2(rect.position + Vector2(0, rect.size.y - 26), Vector2(rect.size.x, 26)), caption, 20)
+func feedback_for(kind: String) -> Dictionary:
+	if kind.is_empty() or not layouts.has(kind): return {}
+	return preload("res://presentation/play/wager_feedback.gd").resolve(sim, kind, chip, layouts[kind], locked or busy())
 
 func _draw() -> void:
 	targets.clear()
@@ -246,76 +411,22 @@ func _draw() -> void:
 	if sim == null or font == null or sim.joined < 0: return
 	var table := sim.get_table(sim.joined)
 	if table.is_empty(): return
-	canvas = PLAY_SIZE
-	portrait = get_viewport_rect().size.x < get_viewport_rect().size.y
-	factor = minf(size.x / PLAY_SIZE.x, size.y / PLAY_SIZE.y)
-	offset = (size - PLAY_SIZE * factor) / 2
+	update_view_transform()
 	draw_set_transform(offset, 0, Vector2.ONE * factor)
-	# The full new felt is drawn once, without cropping or aspect distortion.
-	draw_texture_rect(PitBoss.texture("casino_play/craps/craps_felt_layout.png"), Rect2(Vector2.ZERO, FELT_SIZE), false)
-	for kind in PRINTED_REGIONS: region(PRINTED_REGIONS[kind], kind)
-	# The straight and left Pass bands share a key; curved/unsupported areas do not.
-	targets.append({"rect": Rect2(37, 245, 57, 414), "kind": "pass", "enabled": true})
-	for i in range(6):
-		var n: int = CrapsRules.NUMBERS[i]
-		var x: float = NUMBER_EDGES[i] + 5
-		var w: float = NUMBER_EDGES[i + 1] - x - 5
-		region(Rect2(x, 211, w, 163), CrapsRules.PLACE_KEYS[n])
-		region(Rect2(x, 103, w / 2, 45), "come_%d" % n, false)
-		region(Rect2(x + w / 2, 103, w / 2, 45), "dont_come_%d" % n, false)
-		region(Rect2(x, 153, w / 2, 54), "come_odds_%d" % n, float(table.owner["come_%d" % n]) > 0)
-		region(Rect2(x + w / 2, 153, w / 2, 54), "dont_come_odds_%d" % n, float(table.owner["dont_come_%d" % n]) > 0)
-		centered(Rect2(x, 103, w, 45), "COME / DC", 15, GOLD)
-		centered(Rect2(x, 159, w, 42), "ODDS / LAY", 14, GOLD)
-		if int(table.point) == n:
-			box(Rect2(x + 8, 383, w - 16, 31), Color("111d20"), 5, GOLD)
-			centered(Rect2(x + 8, 383, w - 16, 31), "POINT ON", 18, GOLD)
-	# No targets for Big 6/8, C/E or Horn. All supported hardways are explicit.
-	wager_art("hard_4", 2, 2, "Hard 4 | 7:1")
-	wager_art("hard_6", 3, 3, "Hard 6 | 9:1")
-	wager_art("hard_8", 4, 4, "Hard 8 | 9:1")
-	wager_art("hard_10", 5, 5, "Hard 10 | 7:1")
-	wager_art("aces", 1, 1, "Aces 2 | 30:1")
-	wager_art("boxcars", 6, 6, "12 | 30:1")
-	# Mask the full lower row, including shadows; retain a non-clickable Horn marker.
-	box(Rect2(1178, 700, 319, 88), Color("06441c"), 0)
-	printed_pair(Vector2(1240, 727), 5, 6)
-	printed_pair(Vector2(1438, 727), 1, 2)
-	box(Rect2(1305, 690, 70, 56), Color("12372b"), 0, INK, 2)
-	centered(Rect2(1305, 693, 70, 25), "HORN", 18, GOLD)
-	centered(Rect2(1305, 717, 70, 25), "BET", 18, GOLD)
-	correction(Rect2(1179, 756, 120, 28), "Yo 11 | 15:1")
-	correction(Rect2(1381, 756, 117, 28), "3 | 15:1")
-	correction(Rect2(841, 678, 181, 29), "12 pays 3:1")
-	# Supported wagers without a printed area get explicit labeled regions.
-	supplemental(Rect2(285, 875, 790, 42), "odds")
-	supplemental(Rect2(110, 718, 168, 62), "lay_odds")
-	# One continuous wooden apron and upholstered edge beneath the original felt.
-	box(Rect2(16, 1024, 1504, 88), Color("593723"), 14, Color("ba8853"), 4)
-	box(Rect2(24, 1026, 1488, 15), Color("26312d"), 6, Color("c4a773"), 2)
-	for i in range(6):
-		var denomination: int = Chips.DENOMINATIONS[i]
-		var at := Vector2(64 + i * 106, 1062)
-		box(Rect2(at - Vector2(38, 21), Vector2(76, 54)), Color("221b16"), 12, Color("9d764b"), 3)
-		Chips.draw_stack(self, at - Vector2(0, 2), denomination, 21, Color.TRANSPARENT, false, true)
-		centered(Rect2(at + Vector2(-40, 27), Vector2(80, 20)), "$%d" % denomination, 17)
-		if denomination < float(table.minimum) or denomination > sim.maximum_wager(table) or denomination > sim.owner_bankroll or locked or busy(): draw_circle(at, 29, Color(0, 0, 0, 0.55))
-		if chip == denomination: draw_arc(at, 29, 0, TAU, 36, GOLD, 2)
-		targets.append({"rect": Rect2(at - Vector2(32, 32), Vector2(64, 64)), "kind": "#%d" % denomination, "enabled": true})
-	tray = Rect2(730, 1030, 780, 64)
+	# Flat fabric only; geometry owns all printed regions and input.
+	draw_texture_rect(PitBoss.texture("casino_play/blackjack/blackjack_felt_base.png"), Rect2(Vector2.ZERO, PLAY_SIZE), false)
+	for kind in printed_keys:
+		if side_open and kind not in SIDE_KEYS: continue
+		draw_printed_cell(kind)
+		if kind in CrapsRules.PLACE_KEYS.values() and CrapsRules.PLACE_KEYS.get(int(table.point), "") == kind:
+			var rect: Rect2 = layouts[kind]
+			box(Rect2(rect.position + Vector2(4, 4), Vector2(32, 18)), Color("111d20"), 2, GOLD)
+			centered(Rect2(rect.position + Vector2(4, 4), Vector2(32, 18)), "ON", 12, GOLD)
 	box(tray, Color("111d20"), 6, Color("51452b"))
-	centered(tray, "Drag removable chips here to take down", 20, GOLD)
-	box(Rect2(1178, 50, 320, 185), Color("10291f"), 8, GOLD)
-	centered(Rect2(1180, 58, 316, 42), "POINT OFF" if int(table.point) == 0 else "POINT %d / ON" % table.point, 24, GOLD)
-	centered(Rect2(1180, 100, 316, 30), "You have the dice" if int(table.shooter) == 0 else sim.shooter_name(table) + " has the dice", 19)
-	if reference_dice.size() == 2:
-		centered(Rect2(1180, 139, 316, 26), "LAST ROLL: %d + %d = %d" % [reference_dice[0], reference_dice[1], int(reference_dice[0]) + int(reference_dice[1])], 18, GOLD)
-		for i in range(2):
-			draw_texture_rect(PitBoss.texture("casino_play/craps/die_%d.svg" % int(reference_dice[i])), Rect2(1294 + i * 48, 176, 36, 36), false)
-	else:
-		centered(Rect2(1180, 145, 316, 30), "LAST ROLL: --", 18, GOLD)
+	centered(tray, "TAKE DOWN", 18, GOLD)
+	if side_open: centered(Rect2(0, 8, PLAY_SIZE.x, 42), "HARDWAYS / ONE-ROLL BETS", 23, GOLD)
 	draw_players(table)
-	draw_dice(table)
+	if not side_open: draw_dice(table)
 	var shown: Dictionary = previous.table if animation > SETTLE_SECONDS and not previous.is_empty() else table
 	draw_wagers(shown.owner, -1)
 	var guests: Array = previous.guests if animation > SETTLE_SECONDS and not previous.is_empty() else sim.seated(sim.joined)
@@ -333,10 +444,38 @@ func _draw() -> void:
 			if flight.pay and int(flight.seat) == -1: owner_returned += float(flight.amount)
 		if owner_returned > 0:
 			centered(Rect2(70, 923, 220, 28), "$%d returned" % owner_returned, 20, player_color(-1))
+	var preview := feedback_for(hover)
+	var stack_preview := chips_at(pointer)
+	if not preview.is_empty() and stack_preview.size() == 1 and stack_preview[0].key == hover:
+		var entry: Dictionary = stack_preview[0]
+		preview.amount = entry.amount
+		preview.reason = "Tap for contract details." if int(entry.seat) < 0 else "Seat %d | Read-only wager." % (int(entry.seat) + 1)
+		preview.valid = false
+		if hover not in ["odds", "lay_odds"]: preview.region = chip_bounds(hover, int(entry.seat), float(entry.amount))
+	if not preview.is_empty():
+		var rect: Rect2 = preview.region
+		var color := Color("ead189") if preview.valid else Color("d18a76")
+		if hover in ["odds", "lay_odds"]:
+			draw_line(rect.position, rect.end, Color(color, 0.25), 8 / factor)
+			draw_line(rect.position, rect.end, color, 3 / factor)
+		else:
+			draw_rect(rect, Color(color, 0.18))
+			draw_rect(rect, color, false, 2 / factor)
+		if preview.valid and not mouse_down: chip_at(pointer, preview.amount, 12 / factor, color)
 	draw_set_transform(Vector2.ZERO)
+	if not preview.is_empty():
+		var text := ("Don't Pass Lay Odds" if preview.key == "lay_odds" else CrapsRules.name_for(preview.key)) + " | " + Chips.Money.cash(preview.amount, 2)
+		if not preview.valid: text += " | " + preview.reason
+		var label := Rect2(8, 4, size.x - 16, 56 if text.length() > 55 else 30)
+		box(label, Color(0.04, 0.10, 0.08, 0.96), 6)
+		if text.length() > 55:
+			centered(Rect2(8, 4, size.x - 16, 26), text.get_slice(" | ", 0) + " | " + Chips.Money.cash(preview.amount, 2), 12, GOLD)
+			centered(Rect2(8, 30, size.x - 16, 26), preview.reason, 12, Color("ef9486"))
+		else: centered(label, text, 12, GOLD if preview.valid else Color("ef9486"))
+
 
 func player_at(seat: int) -> Vector2:
-	return Vector2(180 if seat < 0 else 330 + seat * 125, 968)
+	return Vector2(PLAY_SIZE.x * (0.12 if seat < 0 else 0.25 + seat * 0.06), PLAY_SIZE.y - 34)
 
 func player_color(seat: int) -> Color:
 	return Chips.seat_color(seat)
@@ -347,17 +486,11 @@ func draw_players(table: Dictionary) -> void:
 	for player in players:
 		var seat := int(player.seat)
 		var at := player_at(seat)
-		Chips.avatar(self, at, seat, 22)
-		if int(player.id) == int(table.shooter): draw_arc(at, 28, 0, TAU, 36, GOLD, 3)
-		centered(Rect2(at + Vector2(-58, 20), Vector2(116, 28)), str(player.name).get_slice(" |", 0).left(11), 18, player_color(seat))
-	centered(Rect2(1050, 945, 160, 28), "DEALER", 18, GOLD)
-	var phase := "Hold dice, flick UP" if portrait else "Hold dice, flick RIGHT"
-	if animation > SETTLE_SECONDS: phase = "Dice rolling to the wall"
-	elif animation > 0: phase = "Raking / paying the table"
-	elif delivery > 0: phase = "Pulling dice back / pushing to shooter"
-	elif not dice_ready: phase = "Dealer preparing dice"
-	elif int(table.shooter) != 0: phase = sim.shooter_name(table) + " is shooting"
-	centered(Rect2(380, 38, 750, 34), phase, 22, GOLD)
+		Chips.avatar(self, at, seat, 15)
+		if int(player.id) == int(table.shooter): draw_arc(at, 20, 0, TAU, 36, GOLD, 2)
+		centered(Rect2(at + Vector2(-34, 14), Vector2(68, 20)), str(player.name).get_slice(" |", 0).left(8), 12, player_color(seat))
+	var point_text := "POINT OFF" if int(table.point) == 0 else "POINT %d" % table.point
+	centered(Rect2(PLAY_SIZE.x * 0.22, PLAY_SIZE.y - 72, PLAY_SIZE.x * 0.44, 25), point_text + " | " + sim.shooter_name(table), 18, GOLD)
 
 func draw_dice(table: Dictionary) -> void:
 	var center := dice_center()
@@ -397,10 +530,12 @@ func draw_wagers(bets: Dictionary, seat: int) -> void:
 			for flight in flights:
 				if int(flight.seat) == seat and flight.to == kind and not flight.pay:
 					amount -= float(flight.amount)
-		if amount <= 0 or not spots.has(kind): continue
-		var small: bool = layouts[kind].size.y < 60 or layouts[kind].size.x < 100
-		var radius := float((8 if small else 13) if seat >= 0 else (10 if small else 20))
-		chip_at(endpoint(kind, seat), amount, radius, player_color(seat))
+		if amount <= 0 or not spots.has(kind) or (portrait and ((kind in SIDE_KEYS) != side_open)): continue
+		var at := endpoint(kind, seat)
+		var radius := wager_radius(kind, seat)
+		Chips.draw_stack(self, at, amount, radius, player_color(seat), seat < 0 and kind not in ["odds", "lay_odds"])
+		if seat < 0 and is_contract(kind):
+			label(at + Vector2(-radius, -radius - 3), ("DC" if kind.begins_with("dont") else "C") + ("+" if "odds" in kind else ""), int(9 / factor), player_color(seat))
 
 func chip_at(at: Vector2, value: float, radius: float = 17, tint: Color = Color.TRANSPARENT) -> void:
 	Chips.draw_stack(self, at, value, radius, player_color(-1) if tint == Color.TRANSPARENT else tint)
@@ -411,151 +546,280 @@ func shooter_pocket(shooter: int = -99) -> Vector2:
 	var seat := -1
 	for guest in sim.seated(sim.joined):
 		if int(guest.id) == shooter: seat = int(guest.seat)
-	return player_at(seat) + Vector2(0, -65)
+	return Vector2(PLAY_SIZE.x * 0.065 if seat < 0 else player_at(seat).x, PLAY_SIZE.y - 50)
 
 func free_hand_position() -> Vector2:
 	var hand := shooter_pocket() + pointer - origin
-	return Vector2(clampf(hand.x, 80, 1450), clampf(hand.y, 80, 990))
+	return hand.clamp(dice_bounds.position, dice_bounds.end)
+
+func is_contract(kind: String) -> bool:
+	return kind.begins_with("come_") or kind.begins_with("dont_come_")
+
+func wager_radius(kind: String, seat: int = -1) -> float:
+	var rect: Rect2 = layouts[kind]
+	if kind in ["odds", "lay_odds"]: return (12 if seat < 0 else 8) / factor
+	return minf((12 if seat < 0 else 5) / factor, minf(rect.size.x * (0.19 if seat < 0 else 0.07), rect.size.y * 0.30))
+
+func chip_bounds(kind: String, seat: int, amount: float) -> Rect2:
+	var radius := wager_radius(kind, seat)
+	var denomination := 1
+	for value in Chips.DENOMINATIONS:
+		if amount >= value: denomination = value
+	var layers := clampi(ceili(amount / denomination), 1, 6)
+	var rise := (layers - 1) * maxf(2, radius * 0.15)
+	return Rect2(endpoint(kind, seat) - Vector2(radius, radius + rise), Vector2(radius * 2, radius * 2 + rise))
 
 func endpoint(kind: String, seat: int) -> Vector2:
-	if kind == "bank": return Vector2(1130, 920)
+	if kind == "bank": return Vector2(PLAY_SIZE.x * 0.64, PLAY_SIZE.y - 70)
 	if kind == "player": return player_at(seat)
 	if not spots.has(kind): return Vector2.ZERO
-	var at: Vector2 = spots[kind]
-	if seat < 0: return chip_positions.get(kind, at)
 	var rect: Rect2 = layouts[kind]
-	var shift: Vector2 = [Vector2(-1, -1), Vector2(0, -1), Vector2(1, -1), Vector2(-1, 0), Vector2(1, 0), Vector2(-1, 1), Vector2(1, 1)][clampi(seat, 0, 6)]
-	return at + shift * Vector2(minf(32, rect.size.x / 3), minf(28, rect.size.y / 3))
+	if kind in ["odds", "lay_odds"]:
+		# Every chip center remains on the exact border, including NPC chips.
+		return Vector2(rect.position.x + rect.size.x * (0.22 if seat < 0 else 0.4 + seat * 0.075), rect.position.y)
+	if seat < 0: return spots[kind]
+	if is_contract(kind):
+		return rect.position + rect.size * Vector2(0.54 + (seat % 3) * 0.17, 0.25 + int(seat / 3) * 0.25)
+	return rect.position + rect.size * Vector2(0.42 + (seat % 4) * 0.16, 0.68 + int(seat / 4) * 0.18)
 
-func play_scroll() -> ScrollContainer:
-	var node := get_parent()
-	while node != null:
-		if node is ScrollContainer: return node
-		node = node.get_parent()
-	return null
+func chips_at(at: Vector2) -> Array:
+	var matches: Array = []
+	if sim == null or sim.joined < 0: return matches
+	var table := sim.get_table(sim.joined)
+	var participants: Array = [{"seat": -1, "bets": table.owner}]
+	participants.append_array(sim.seated(sim.joined))
+	for participant in participants:
+		# Canonical order, independent of dictionary insertion order.
+		for key in CrapsRules.empty_bets():
+			var amount := float(participant.bets.get(key, 0))
+			if amount > 0 and layouts.has(key) and (not portrait or ((key in SIDE_KEYS) == side_open)) and chip_bounds(key, int(participant.seat), amount).has_point(at):
+				matches.append({"key": key, "seat": participant.seat, "amount": amount})
+	return matches
 
-func target_at(at: Vector2) -> String:
+func target_at(at: Vector2, include_chips: bool = true) -> String:
+	if include_chips:
+		var matches := chips_at(at)
+		# Ambiguous and NPC stacks are handled by their read-only/context menu.
+		if matches.size() == 1: return matches[0].key
+		if matches.size() > 1: return ""
+	for key in ["odds", "lay_odds"]:
+		if not side_open and layouts.has(key) and border_band(key).has_point(at): return key
 	for target in targets:
-		if target.enabled and target.rect.has_point(at): return str(target.kind)
+		if target.enabled and (not side_open or target.kind in SIDE_KEYS) and target.rect.has_point(at): return str(target.kind)
 	return ""
 
-func place_chip(kind: String, at: Vector2) -> void:
-	if kind.is_empty() or kind.begins_with("#") or locked or busy(): return
+func place_chip(kind: String, _at: Vector2) -> void:
+	if kind.is_empty() or chip <= 0: return
+	if locked or busy():
+		message = "Paused or table busy."
+		return
 	var error := sim.bet_error(sim.joined, kind, chip)
 	if error.is_empty():
 		bet_clicked.emit(kind)
-		chip_positions[kind] = at
 	else: message = error
 	queue_redraw()
 
+func odds_for(key: String) -> String:
+	if key == "pass": return "odds"
+	if key == "dont_pass": return "lay_odds"
+	if key.begins_with("come_") and not key.begins_with("come_odds_"): return key.replace("come_", "come_odds_")
+	if key.begins_with("dont_come_") and not key.begins_with("dont_come_odds_"): return key.replace("dont_come_", "dont_come_odds_")
+	return ""
+
+func open_context(key: String, seat: int = -1) -> void:
+	if key.is_empty(): return
+	context_key = key
+	context_odds = odds_for(key)
+	var table := sim.get_table(sim.joined)
+	var bets: Dictionary = table.owner
+	if seat >= 0:
+		for guest in sim.seated(sim.joined):
+			if int(guest.seat) == seat: bets = guest.bets
+	context_menu.clear()
+	context_menu.add_item(CrapsRules.name_for(key) + " | " + Chips.Money.cash(float(bets.get(key, 0)), 2), 4)
+	context_menu.set_item_disabled(0, true)
+	if seat < 0:
+		if not is_contract(key):
+			context_menu.add_item("Add " + CrapsRules.name_for(key), 3)
+			context_menu.set_item_disabled(context_menu.item_count - 1, not feedback_for(key).valid)
+		elif "odds" in key:
+			context_menu.add_item("Add " + CrapsRules.name_for(key), 3)
+			context_menu.set_item_disabled(context_menu.item_count - 1, not feedback_for(key).valid)
+		if not context_odds.is_empty() and float(bets.get(key, 0)) > 0:
+			context_menu.add_item("Add " + CrapsRules.name_for(context_odds), 2)
+			context_menu.set_item_disabled(context_menu.item_count - 1, not feedback_for(context_odds).valid)
+		if float(bets.get(key, 0)) > 0:
+			context_menu.add_item("Remove wager", 0)
+			context_menu.set_item_disabled(context_menu.item_count - 1, locked or busy() or not CrapsRules.removable(key, int(table.point)))
+	var pay := ""
+	if CrapsRules.PROP_PAY.has(key): pay = "%d:1" % CrapsRules.PROP_PAY[key]
+	elif key.begins_with("hard_"): pay = "%d:1" % (9 if key in ["hard_6", "hard_8"] else 7)
+	if not pay.is_empty():
+		context_menu.add_item("Pays " + pay, 5)
+		context_menu.set_item_disabled(context_menu.item_count - 1, true)
+	context_menu.position = Vector2i(get_global_transform_with_canvas() * (offset + spots[key] * factor))
+	context_menu.popup()
+
+func open_stack_context(at: Vector2) -> bool:
+	var matches := chips_at(at)
+	if matches.is_empty(): return false
+	if matches.size() == 1:
+		open_context(matches[0].key, int(matches[0].seat))
+	else:
+		context_choices = matches
+		context_menu.clear()
+		for i in range(matches.size()):
+			var entry: Dictionary = matches[i]
+			context_menu.add_item(("You" if int(entry.seat) < 0 else "Seat %d" % (int(entry.seat) + 1)) + " | " + CrapsRules.name_for(entry.key), 100 + i)
+		context_menu.position = Vector2i(get_global_transform_with_canvas() * (offset + at * factor))
+		context_menu.popup()
+	return true
+
 func _gui_input(event: InputEvent) -> void:
-	if dice_held or factor <= 0 or sim == null or sim.joined < 0: return
+	if (event is InputEventMouseButton or event is InputEventMouseMotion) and event.device == -1: return
+	if dice_held or factor <= 0 or sim == null or sim.joined < 0 or (is_instance_valid(options_overlay) and options_overlay.visible) or (is_instance_valid(input_overlay) and input_overlay.visible): return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		var at := felt_position(event.position)
+		if not open_stack_context(at): open_context(target_at(at, false))
+		accept_event()
+		return
 	if event is InputEventMouseMotion:
-		pointer = (event.position - offset) / factor
+		pointer = felt_position(event.position)
+		hover = target_at(pointer)
+		queue_redraw()
 		if mouse_down:
 			pan_distance += event.relative.length()
 			if pan_distance > 10 and dragging == "":
-				var scroll := play_scroll()
-				if scroll != null:
-					scroll.scroll_horizontal -= int(event.relative.x)
-					scroll.scroll_vertical -= int(event.relative.y)
+				view_center -= event.relative / factor
+				update_view_transform()
+				pointer = felt_position(event.position)
 			queue_redraw()
 			accept_event()
+	elif event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		zoom_view(1.25 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 0.8, event.position)
+		accept_event()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		pointer = (event.position - offset) / factor
+		pointer = felt_position(event.position)
+		hover = target_at(pointer)
 		if event.pressed:
 			mouse_down = true
+			bet_press_started = clock
 			pan_distance = 0
 			dragging = ""
 			drag_stack = false
-			var target := target_at(pointer)
-			if target.begins_with("#"):
-				var denomination := float(target.substr(1))
-				var table := sim.get_table(sim.joined)
-				if locked or busy() or denomination < float(table.minimum) or denomination > sim.maximum_wager(table) or denomination > sim.owner_bankroll:
-					mouse_down = false
-					return
-				chip = denomination
-				action_requested.emit("chip:%d" % int(chip))
-				dragging = "chip"
-			elif not locked and not busy():
-				for kind in sim.get_table(sim.joined).owner:
-					if float(sim.get_table(sim.joined).owner[kind]) > 0 and spots.has(kind) and pointer.distance_to(endpoint(kind, -1)) < 30:
-						dragging = kind
-						drag_stack = true
+			if pan_mode:
+				accept_event()
+				return
+			if not locked and not busy():
+				var matches := chips_at(pointer)
+				if matches.size() == 1 and int(matches[0].seat) < 0:
+					dragging = matches[0].key
+					drag_stack = true
 		else:
 			mouse_down = false
-			if not locked and not busy():
+			if not pan_mode and not locked and not busy():
 				var target := target_at(pointer)
-				if drag_stack and pan_distance > 10:
-					if tray.has_point(pointer):
+				if (pan_distance <= 10 or dragging == "chip") and open_stack_context(pointer):
+					pass
+				elif pan_distance <= 10 and clock - bet_press_started >= 0.5:
+					open_context(target)
+				elif drag_stack and pan_distance > 10:
+					if tray.has_point(pointer) or (is_instance_valid(remove_drop) and remove_drop.get_global_rect().has_point(get_global_transform_with_canvas() * event.position)):
 						var returned := sim.remove_bet(sim.joined, dragging)
 						message = "Chips returned to your wallet." if returned > 0 else "That contract stays until it resolves."
 						action_requested.emit("refresh")
 					elif target == dragging:
-						chip_positions[dragging] = pointer
-				elif dragging == "chip" or pan_distance <= 10:
-					place_chip(target, pointer)
+						queue_redraw()
+				elif (dragging == "chip" or pan_distance <= 10) and Rect2(Vector2.ZERO, size).has_point(event.position):
+					place_chip(target_at(pointer, false), pointer)
 			dragging = ""
 			drag_stack = false
 		update_drag_overlay()
 		queue_redraw()
 		accept_event()
 
-func focus_line() -> void:
-	# Let container minimum-size propagation and scrollbar ranges settle first.
-	await get_tree().process_frame
-	await get_tree().process_frame
-	var scroll := play_scroll()
-	if scroll != null:
-		scroll.scroll_horizontal = int(160 * factor)
-		scroll.scroll_vertical = maxi(0, int(830 * factor - scroll.size.y / 2))
-
 func _input(event: InputEvent) -> void:
-	if not is_visible_in_tree(): return
-	# Capture an active rail/contract drag even outside the clipped scroll area.
-	# make_input_local uses the same canvas transform as the drop target geometry.
-	if mouse_down and not dice_held and (event is InputEventMouseMotion or (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed)):
-		var active_scroll := play_scroll()
-		if event is InputEventMouseButton and active_scroll != null and not active_scroll.get_global_rect().has_point(event.position):
-			mouse_down = false
-			dragging = ""
-			drag_stack = false
-		else:
-			_gui_input(make_input_local(event))
-		update_drag_overlay()
-		get_viewport().set_input_as_handled()
+	if not is_visible_in_tree() or context_menu.visible or (is_instance_valid(input_overlay) and input_overlay.is_visible_in_tree()) or (is_instance_valid(options_overlay) and options_overlay.is_visible_in_tree()): return
+	# Dice and bets use the same source-art inverse, including native touch events.
+	var pointer_event := event is InputEventMouseButton or event is InputEventMouseMotion or event is InputEventScreenTouch or event is InputEventScreenDrag
+	if not pointer_event: return
+	if side_button.visible and side_button.get_global_rect().has_point(event.position) and not mouse_down and not dice_held:
+		if event is InputEventScreenTouch:
+			if event.pressed: side_button.pressed.emit()
+			get_viewport().set_input_as_handled()
 		return
-	# The inherited dice gesture must respect the actual clipped play viewport.
-	if not dice_held and (event is InputEventMouseButton or event is InputEventScreenTouch):
-		var scroll := play_scroll()
-		if scroll != null and not scroll.get_global_rect().has_point(event.position): return
-	super._input(event)
+	if event is InputEventScreenTouch or event is InputEventScreenDrag:
+		if event is InputEventScreenTouch:
+			if event.pressed: touch_points[event.index] = event.position
+			else: touch_points.erase(event.index)
+		elif touch_points.has(event.index):
+			var previous_points := touch_points.values()
+			var old_span: float = previous_points[0].distance_to(previous_points[1]) if previous_points.size() == 2 else 0.0
+			var old_center: Vector2 = (previous_points[0] + previous_points[1]) / 2 if previous_points.size() == 2 else Vector2.ZERO
+			touch_points[event.index] = event.position
+			if touch_points.size() == 2 and not dice_held:
+				var points := touch_points.values()
+				var center: Vector2 = (points[0] + points[1]) / 2
+				var local: Vector2 = get_global_transform_with_canvas().affine_inverse() * center
+				mouse_down = false
+				dragging = ""
+				drag_stack = false
+				gesture_active = true
+				zoom_view(points[0].distance_to(points[1]) / maxf(1, old_span), local)
+				view_center -= (center - old_center) / factor
+				update_view_transform()
+				queue_redraw()
+		if touch_points.size() >= 2 or gesture_active or event.index != 0:
+			if touch_points.size() >= 2:
+				gesture_active = true
+				mouse_down = false
+				dragging = ""
+				drag_stack = false
+				hover = ""
+			if touch_points.is_empty(): gesture_active = false
+			get_viewport().set_input_as_handled()
+			return
+	var inside := get_global_rect().has_point(event.position)
+	# Godot also emits mouse events for native touch. Consume that second path
+	# only over our felt/active drag, leaving ordinary toolbar buttons usable.
+	if (event is InputEventMouseButton or event is InputEventMouseMotion) and event.device == -1:
+		if inside or mouse_down or dice_held: get_viewport().set_input_as_handled()
+		return
+	if not dice_held and not mouse_down and not inside: return
+	if not side_open and (not pan_mode or dice_held):
+		super._input(event)
 	if dice_held:
 		mouse_down = false
 		dragging = ""
 		drag_stack = false
 		drag_overlay.hide()
+		return
+	# The inherited release may have just consumed a dice flick.
+	if get_viewport().is_input_handled(): return
+	if event is InputEventScreenTouch or event is InputEventScreenDrag:
+		var local: Vector2 = get_global_transform_with_canvas().affine_inverse() * event.position
+		if event is InputEventScreenTouch:
+			var click := InputEventMouseButton.new()
+			click.position = local
+			click.button_index = MOUSE_BUTTON_LEFT
+			click.pressed = event.pressed
+			_gui_input(click)
+		else:
+			var motion := InputEventMouseMotion.new()
+			motion.position = local
+			motion.relative = get_global_transform_with_canvas().basis_xform_inv(event.relative)
+			_gui_input(motion)
+		get_viewport().set_input_as_handled()
+	elif mouse_down and (event is InputEventMouseMotion or (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed)):
+		_gui_input(make_input_local(event))
+		update_drag_overlay()
+		get_viewport().set_input_as_handled()
 
-func scroll_chip_drag(delta: float) -> void:
-	var scroll := play_scroll()
-	if scroll == null: return
-	var at := get_viewport().get_mouse_position()
-	var viewport := scroll.get_global_rect()
-	if not viewport.grow(32).has_point(at): return
-	var motion := Vector2.ZERO
-	if at.x < viewport.position.x + 32: motion.x = -1
-	elif at.x > viewport.end.x - 32: motion.x = 1
-	if at.y < viewport.position.y + 32: motion.y = -1
-	elif at.y > viewport.end.y - 32: motion.y = 1
-	scroll.scroll_horizontal += roundi(motion.x * delta * 360)
-	scroll.scroll_vertical += roundi(motion.y * delta * 360)
-	pointer = (get_global_transform_with_canvas().affine_inverse() * at - offset) / factor
-
-func follow_dice(delta: float) -> void:
-	var scroll := play_scroll()
-	if scroll == null: return
-	var at := offset + dice_center() * factor
-	var blend := 1 - exp(-delta * 9)
-	scroll.scroll_horizontal = int(lerpf(scroll.scroll_horizontal, maxf(0, at.x - scroll.size.x / 2), blend))
-	scroll.scroll_vertical = int(lerpf(scroll.scroll_vertical, maxf(0, at.y - scroll.size.y / 2), blend))
+func _notification(what: int) -> void:
+	super._notification(what)
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		touch_points.clear()
+		gesture_active = false
+		mouse_down = false
+		dragging = ""
+		drag_stack = false

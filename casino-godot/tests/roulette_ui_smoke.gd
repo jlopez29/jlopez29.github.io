@@ -6,6 +6,8 @@ func _initialize() -> void:
 func run() -> void:
 	var felt = load("res://scripts/roulette_layout.gd").new()
 	root.add_child(felt)
+	felt.wallet = 1000
+	felt.minimum = 5
 	for width in [950, 360]:
 		felt.size.x = width
 		felt.rebuild()

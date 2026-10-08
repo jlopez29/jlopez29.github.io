@@ -130,6 +130,10 @@ func cancel_throw() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT: cancel_throw()
 
+# Drawing and all pointer paths share this inverse transform.
+func felt_position(local_position: Vector2) -> Vector2:
+	return (local_position - offset) / maxf(factor, 0.0001)
+
 # Catch dice gestures before the scroll container. Bets still use the normal GUI path.
 func _input(event: InputEvent) -> void:
 	if not is_visible_in_tree() or sim == null or sim.joined < 0 or factor <= 0: return
@@ -155,7 +159,7 @@ func _input(event: InputEvent) -> void:
 		motion = true
 	else: return
 	var local := get_global_transform_with_canvas().affine_inverse() * position_on_screen
-	var at := (local - offset) / factor
+	var at := felt_position(local)
 	if pressed and not dice_held and can_throw():
 		var parent := get_parent() as ScrollContainer
 		if parent != null and not parent.get_global_rect().has_point(position_on_screen): return
@@ -500,9 +504,9 @@ func die(at: Vector2, value: int, angle: float) -> void:
 func _gui_input(event: InputEvent) -> void:
 	if dice_held: return
 	if event is InputEventMouseMotion:
-		pointer = (event.position - offset) / factor
+		pointer = felt_position(event.position)
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		pointer = (event.position - offset) / factor
+		pointer = felt_position(event.position)
 		if event.pressed:
 			origin = pointer
 			for target in targets:

@@ -2763,6 +2763,24 @@ func shared_roulette(table: Dictionary, number: int) -> void:
 
 	roulette_presentation = {"table_id": table.id, "number": number, "wagers": committed}
 
+func transfer_personal_to_casino(amount: float) -> bool:
+	if not BackRoom.stake_valid(amount) or amount > owner_bankroll: return false
+	if not is_finite(cash + amount) or absf(cash + amount) > CasinoTuning.OWNER_MONEY_LIMIT or not OwnerAccount.money(owner_account.profit_transferred + amount): return false
+	if owner_checkpoint.is_valid() and not owner_checkpoint.call(): return false
+	var account_before := owner_account.snapshot()
+	var cash_before := cash
+	owner_account.balance = BackRoom.cents(owner_bankroll - amount)
+	owner_account.profit_transferred = BackRoom.cents(owner_account.profit_transferred + amount)
+	owner_account.record("personal_to_casino", -amount, elapsed)
+	cash += amount
+	if owner_checkpoint.is_valid() and not owner_checkpoint.call():
+		owner_account.restore(account_before)
+		cash = cash_before
+		return false
+	emit_financial_event(amount, "owner_wallet_transfer", {}, -1, {"actor": "owner"})
+	log_event("Transferred $%.2f from personal wallet to Casino Cash." % amount)
+	return true
+
 # Event wagering is a separate counterparty from play at the owner's own tables.
 # total_return includes original stake; only positive net profit enters casino cash.
 func owner_wager_debit(operation_id: int, stake: float) -> bool:
@@ -2854,7 +2872,6 @@ func private_transaction(action: Callable) -> bool:
 	var recovery_anchor_utc := recovery.anchor_utc
 	var recovery_anchor_ticks := recovery.anchor_ticks
 	var cash_before := cash
-	var profit_before := owner_account.profit_transferred
 	var accepted: bool = action.call()
 	if not accepted or (owner_checkpoint.is_valid() and not owner_checkpoint.call()):
 		owner_account.restore(account_before)
@@ -2865,8 +2882,6 @@ func private_transaction(action: Callable) -> bool:
 		recovery.anchor_ticks = recovery_anchor_ticks
 		cash = cash_before
 		return false
-	var profit := owner_account.profit_transferred - profit_before
-	if profit > 0: emit_financial_event(profit, "back_room_profit", {}, -1, {"actor": "owner"})
 	return true
 
 func private_action(sequence: int, action: String, args: Dictionary = {}) -> bool:
