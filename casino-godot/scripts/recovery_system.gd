@@ -1,16 +1,34 @@
 extends RefCounted
-## One durable cycle, independent real clock and promotional RNG.
+## Active recovery uses a real clock and independent promotional RNG.
+## The daily allowance separately follows saved, elapsed in-game minutes.
 const Account = preload("res://scripts/owner_bankroll.gd")
 const TARGET := CasinoTuning.OWNER_STARTING_BANKROLL
 const CATEGORIES := ["Cage reconciliation", "Security investigation", "Slot technician", "Operations planning"]
 var rng := RandomNumberGenerator.new()
 var state := {}
+var passive_period := 0
 var anchor_ticks := Time.get_ticks_msec()
 var anchor_utc := int(Time.get_unix_time_from_system())
 
 func _init() -> void:
 	rng.randomize()
 	new_cycle(0, 0, anchor_utc, anchor_utc, [])
+
+func passive_due(elapsed: int) -> bool:
+	return int(elapsed / CasinoTuning.OWNER_RECOVERY_DAY_MINUTES) > passive_period
+
+func grant_daily(sim) -> bool:
+	if not passive_due(sim.elapsed): return false
+	var committed: float = sim.owner_bankroll
+	for stake in sim.owner_account.pending.values(): committed += float(stake)
+	if not Account.money(committed + CasinoTuning.OWNER_DAILY_RECOVERY): return false
+	if not sim.owner_account.reward(sim.owner_account.next_operation, CasinoTuning.OWNER_DAILY_RECOVERY, "daily_wallet_recovery", sim.elapsed): return false
+	# Keep this independent of active recovery cycles, tickets and pending wagers.
+	passive_period += 1
+	return true
+
+func passive_minutes_remaining(elapsed: int) -> int:
+	return maxi(0, (passive_period + 1) * CasinoTuning.OWNER_RECOVERY_DAY_MINUTES - elapsed)
 
 func now() -> int:
 	# In-session elapsed time is monotonic. Offline wall time is accepted on restore.
@@ -148,10 +166,13 @@ func advance(sim, source: String, amount: float) -> void:
 func snapshot() -> Dictionary:
 	var copy: Dictionary = state.duplicate(true)
 	copy.clock_utc = now()
-	return {"state": copy, "rng": str(rng.state)}
+	return {"state": copy, "rng": str(rng.state), "passive_period": passive_period}
 
-func restore(data: Variant) -> bool:
+func restore(data: Variant, elapsed: int = 0) -> bool:
 	if not data is Dictionary or not data.get("state") is Dictionary or not data.get("rng") is String or not data.rng.is_valid_int() or str(int(data.rng)) != data.rng: return false
+	var completed_days := int(elapsed / CasinoTuning.OWNER_RECOVERY_DAY_MINUTES)
+	var paid = data.get("passive_period", completed_days)
+	if not Account.money(paid) or paid != int(paid) or paid > completed_days: return false
 	var s: Dictionary = data.state
 	for key in ["cycle_id","started_utc","last_full_utc","next_time_utc","completed","clock_utc"]:
 		if not Account.money(s.get(key)) or s[key] != int(s[key]): return false
@@ -178,6 +199,7 @@ func restore(data: Variant) -> bool:
 		for key in ["award","draw_utc","granted"]:
 			if not Account.money(t.get(key)): return false
 		if int(t.award) not in ([0,100,250,500,1000] if t.kind == "scratch" else [0,100,250,1000]) or t.granted > t.award or (not t.claimed and t.granted != 0): return false
+	passive_period = int(paid)
 	state = s.duplicate(true)
 	rng.state = int(data.rng)
 	anchor_ticks = Time.get_ticks_msec()

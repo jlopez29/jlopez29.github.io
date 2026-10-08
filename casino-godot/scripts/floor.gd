@@ -201,7 +201,7 @@ func _gui_input(event: InputEvent) -> void:
 
 func select_at(screen: Vector2) -> void:
 	var at := world_at(screen)
-	if not building and sim.door_bounds().grow(12).has_point(at):
+	if not building and sim.door_bounds().has_point(at):
 		private_door_requested.emit()
 		return
 	approaching_private_door = false
@@ -274,7 +274,7 @@ func _draw() -> void:
 		draw_circle(at, 8, Color("ac8c4f"))
 		draw_circle(at, 5, Color("ead398"))
 	draw_rect(CasinoTuning.ENTRANCE_CLEARANCE, Color("283b4d"))
-	text_at(CasinoTuning.ENTRY + Vector2(-42, 12), "ENTRANCE", GOLD, 12)
+	draw_front_doors()
 	for table in sim.tables:
 		draw_table(table)
 		if not compact_labels and sim.elapsed < int(table.staff_rotation_until):
@@ -646,7 +646,26 @@ func feedback_box(bg: Color, border: Color, radius: int) -> StyleBoxFlat:
 	return skin
 
 func approach_private_door() -> bool:
+	move_target = Vector2(INF, INF)
+	walk_path.clear()
 	visitor_mode = true
 	walk_to(sim.door_approach())
 	approaching_private_door = move_target.is_finite()
 	return approaching_private_door
+
+func draw_front_doors() -> void:
+	if not sim.is_private:
+		var entrance := PitBossFloorContext.Property.public_door()
+		draw_rect(entrance, Color("283b4d"))
+		draw_rect(entrance, TEAL, false, 2)
+		text_at(entrance.position + Vector2(6, 16), "PUBLIC", TEAL, 10)
+		text_at(entrance.position + Vector2(2, 30), "ENTRANCE", TEAL, 10)
+	var door := sim.door_bounds()
+	draw_rect(door, Color("382817"))
+	draw_rect(door, GOLD, false, 2)
+	if sim.is_private:
+		text_at(door.position - Vector2(0, 8), "EXIT", GOLD, 11)
+	else:
+		text_at(door.position + Vector2(6, 16), "BACK", GOLD, 10)
+		text_at(door.position + Vector2(5, 30), "ROOM", GOLD, 10)
+	draw_circle(door.end - Vector2(12, 12) if sim.is_private else door.end - Vector2(5, 7), 3 if sim.is_private else 2, GOLD)

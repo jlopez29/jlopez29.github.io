@@ -27,6 +27,12 @@ def main():
     parser.add_argument("--version", default="0.4.2.6", help="Player-facing version")
     args = parser.parse_args()
     project = Path(__file__).resolve().parent
+    # Fail before export rather than letting Godot fall back to its engine art.
+    branding = project / "assets" / "pit_boss" / "branding"
+    for name in ("pit_boss_chip.png", "pit_boss_logo.png", "pit_boss_splash.png"):
+        asset = branding / name
+        if not asset.is_file() or asset.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+            raise RuntimeError(f"Missing or invalid source branding PNG: {asset}")
     updated = datetime.now(timezone.utc).astimezone(ZoneInfo("America/New_York"))
     timestamp = f"{updated:%B} {updated.day}, {updated.year} at {updated.hour % 12 or 12}:{updated:%M %p %Z}"
     metadata = (
@@ -41,23 +47,22 @@ def main():
     destinations = ([project.parent / "casino-debug"] if args.debug else
                     [project.parent / "casino", project.parent / "casino-debug"] if args.both else
                     [project.parent / "casino"])
-    for destination in destinations:
-        destination.mkdir(parents=True, exist_ok=True)
-        (destination / "visible_viewport.js").write_text((project / "web" / "visible_viewport.js").read_text(encoding="utf-8"), encoding="utf-8")
-    if args.debug or args.both:
-        output = project.parent / "casino-debug" / "game.html"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        run_godot([args.godot, "--headless", "--path", str(project), "--export-debug", "Web", str(output)])
-        print(f"Built Pit Boss {args.version} DEVELOPMENT. F10 enables tools. Output: {output}")
-        if args.debug:
-            return
-    run_godot([args.godot, "--headless", "--path", str(project), "--export-release", "Web"])
-    wrapper = project.parent / "casino" / "index.html"
     html = (project / "web" / "index.html").read_text(encoding="utf-8")
     html, count = re.subn(r"(PIT BOSS <small>)[^<]*(</small>)", lambda match: match[1] + args.version + match[2], html, count=1)
     if count != 1:
         raise RuntimeError("Could not update the website version label")
-    wrapper.write_text(html, encoding="utf-8")
+    for destination in destinations:
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "visible_viewport.js").write_text((project / "web" / "visible_viewport.js").read_text(encoding="utf-8"), encoding="utf-8")
+        output = destination / "game.html"
+        debug = destination.name == "casino-debug"
+        run_godot([args.godot, "--headless", "--path", str(project),
+                   "--export-debug" if debug else "--export-release", "Web", str(output)])
+        # Godot derives game.icon.png from application/config/icon in the source
+        # project. Both wrappers reuse that output, without a duplicate icon copy.
+        (destination / "index.html").write_text(html, encoding="utf-8")
+        if debug:
+            print(f"Built Pit Boss {args.version} DEVELOPMENT. F10 enables tools. Output: {output}")
     print(f"Built Pit Boss {args.version}. Last updated {timestamp}")
 
 

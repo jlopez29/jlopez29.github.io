@@ -2227,13 +2227,8 @@ func walk_to_private_door() -> void:
 	cancel_placement()
 	visitor = true
 	transition_pane("floor")
-	var overlapping := sim.tables.any(func(table): return sim.bounds(table).merge(preload("res://scripts/asset_placement.gd").for_table(table).art).intersects(preload("res://scripts/floor_property.gd").private_clearance(sim.floor_chunks)))
-	if overlapping:
-		sim.log_event("Move assets overlapping the private doorway to restore owner access.")
-		refresh()
-		return
 	if not floor_view.approach_private_door():
-		sim.log_event("Private door blocked. Move overlapping assets and leave a clear approach.")
+		sim.log_event("No clear route to the Back Room door.")
 	refresh()
 
 func enter_back_room() -> void:

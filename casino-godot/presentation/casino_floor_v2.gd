@@ -320,11 +320,7 @@ func _draw() -> void:
 
 		draw_set_transform(Vector2.ZERO)
 	draw_set_transform(camera, 0, Vector2.ONE * zoom)
-	var door := sim.door_bounds()
-	draw_rect(door, Color("382817"))
-	draw_rect(door, GOLD, false, 2)
-	draw_circle(door.end - Vector2(12, 12), 3, GOLD)
-	text_at(door.position - Vector2(0, 8), "EXIT" if sim.is_private else "PRIVATE / OWNER", GOLD, 11)
+	draw_front_doors()
 	if sim.is_private:
 		draw_rect(PitBossFloorContext.KIOSK, Color("304639"))
 		draw_rect(PitBossFloorContext.KIOSK, GOLD, false, 2)

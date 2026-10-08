@@ -4,6 +4,11 @@ signal wager_requested(name: String, amount: float)
 signal denomination_changed(amount: float)
 const PitBoss = preload("res://scripts/pit_boss_theme.gd")
 const Games = preload("res://scripts/casino_games.gd")
+const Chips = preload("res://presentation/play/chip_stack.gd")
+const GUEST_STACK_POSITIONS := [Vector2(0,0), Vector2(0.5,0), Vector2(1,0), Vector2(1,0.5), Vector2(1,1), Vector2(0.5,1), Vector2(0,1)]
+var seated_players: Array = []
+var guest_wagers: Array = []
+var settled := false
 var bets := {}
 var selected := 10.0
 var minimum := 10.0
@@ -34,9 +39,11 @@ func mapped(r: Rect2) -> Rect2:
 
 func rebuild() -> void:
 	portrait = vertical_layout
-	factor = maxf(0.88, (size.x - 24) / (260.0 if portrait else 700.0))
-	custom_minimum_size.x = 284 if portrait else 640
-	custom_minimum_size.y = (700 if portrait else 260) * factor + (24 if hide_tray else 110)
+	factor = maxf(0.88, (size.x - 24) / (296.0 if portrait else 700.0))
+	custom_minimum_size.x = 320 if portrait else 640
+	var seat_columns := maxi(1, int(size.x / 140))
+	var seat_rows := ceili(seated_players.size() / float(seat_columns))
+	custom_minimum_size.y = (700 if portrait else 296) * factor + 24 + seat_rows * 100 + (0 if hide_tray else 86)
 	cells.clear(); spots.clear(); tray.clear()
 	cells["0"] = mapped(Rect2(0,0,50,156))
 	for n in range(1,37):
@@ -44,7 +51,7 @@ func rebuild() -> void:
 	for i in range(3):
 		cells["Column %d" % (3-i)] = mapped(Rect2(650,i*52,50,52))
 		cells[["1st dozen","2nd dozen","3rd dozen"][i]] = mapped(Rect2(50+i*200,176,200,40))
-	for i in range(6): cells[["1–18","Even","Red","Black","Odd","19–36"][i]] = mapped(Rect2(50+i*100,216,100,44))
+	for i in range(6): cells[["1–18","Even","Red","Black","Odd","19–36"][i]] = mapped(Rect2(50+i*100,216,100,80))
 	var options := Games.roulette_bets()
 	for name in options:
 		if cells.has(name): continue
@@ -100,12 +107,7 @@ func caption(at: Vector2, value: String, fs: int, color: Color = Color.WHITE) ->
 	draw_string(font, at + Vector2(-width/2,fs*0.35),value,HORIZONTAL_ALIGNMENT_LEFT,-1,fs,color)
 
 func chip(at: Vector2, amount: float, active: bool = false) -> void:
-	var denomination := 1
-	for value in [1, 5, 25, 100, 500, 1000]:
-		if amount >= value: denomination = value
-	var radius := 23.0 if active else 19.0
-	draw_texture_rect(PitBoss.texture("casino_play/shared/chips/chip_%d.svg" % denomination), Rect2(at - Vector2.ONE * radius, Vector2.ONE * radius * 2), false)
-	caption(at,"$%d" % amount,12)
+	Chips.draw_stack(self, at, amount, 23 if active else 19, Chips.seat_color(-1))
 
 func _draw() -> void:
 	if font == null: return
@@ -133,9 +135,29 @@ func _draw() -> void:
 	if hover != "" and not locked:
 		var at: Vector2 = (cells[hover] as Rect2).get_center() if cells.has(hover) else spots[hover]
 		draw_arc(at,23,0,TAU,40,Color("ffe397"),2)
+	# Committed snapshots exist only after the shared simulation spin.
+	for wager in guest_wagers:
+		if not cells.has(wager.key): continue
+		var cell: Rect2 = cells[wager.key]
+		var seat := int(wager.seat)
+		var inset := cell.grow(-9)
+		var position_on_rail: Vector2 = GUEST_STACK_POSITIONS[clampi(seat, 0, 6)]
+		var at := inset.position + position_on_rail * inset.size
+		Chips.draw_stack(self, at, float(wager.stake), 8, Chips.seat_color(seat), false)
 	for name in bets:
-		if cells.has(name): chip((cells[name] as Rect2).get_center()+Vector2(0,8),bets[name])
+		if cells.has(name): chip((cells[name] as Rect2).get_center(),bets[name])
 		elif spots.has(name): chip(spots[name],bets[name])
+	var columns := maxi(1, int(size.x / 140))
+	var base_y := (700 if portrait else 296) * factor + 48
+	for i in range(seated_players.size()):
+		var player: Dictionary = seated_players[i]
+		var at := Vector2((i % columns + 0.5) * size.x / columns, base_y + int(i / columns) * 100)
+		Chips.avatar(self, at, int(player.seat), 16)
+		caption(at + Vector2(0, 30), "S%d %s" % [int(player.seat) + 1, str(player.name).get_slice(" |", 0).left(10)], 12, Chips.seat_color(int(player.seat)))
+		for wager in guest_wagers:
+			if int(wager.id) != int(player.id): continue
+			caption(at + Vector2(0, 48), "%s %s" % [wager.key, Chips.Money.cash(float(wager.stake), 2)], 12)
+			if settled: caption(at + Vector2(0, 65), "Back " + Chips.Money.cash(float(wager.returned), 2), 12)
 	for amount in tray:
 		chip(tray[amount],amount,selected == amount)
 		if amount < minimum or amount > wallet or locked: draw_circle(tray[amount],23,Color(0,0,0,0.55))

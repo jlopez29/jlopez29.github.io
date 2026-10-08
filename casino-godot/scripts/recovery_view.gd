@@ -8,6 +8,7 @@ var body: VBoxContainer
 var wallet: Label
 var cash: Label
 var timer: Label
+var daily: Label
 var message: Label
 var work_min: Label
 var timer_claim: Button
@@ -27,6 +28,7 @@ func _ready() -> void:
 	wallet = label(stack, "", 20)
 	cash = label(stack, "", 14)
 	timer = label(stack, "", 14)
+	daily = label(stack, "", 14)
 	message = label(stack, "", 14)
 	button(stack, "Back to room", func(): leave_requested.emit())
 	var scroll := ScrollContainer.new()
@@ -91,6 +93,8 @@ func update_values() -> void:
 	for stake in sim.owner_account.pending.values(): exposure += float(stake)
 	var r: Dictionary = sim.recovery.state
 	timer.text = "%s support | Next guaranteed top-up: %s | Active exposure $%.2f" % [Recovery.stage(sim.casino_rating,int(r.completed)),countdown(int(r.next_time_utc)-sim.recovery.now()),exposure]
+	var remaining := sim.recovery.passive_minutes_remaining(sim.elapsed)
+	daily.text = "Daily allowance: +$%.0f automatically every 24 in-game hours. Next in %dh %02dm of game time." % [CasinoTuning.OWNER_DAILY_RECOVERY, remaining / 60, remaining % 60]
 	message.text = error
 	message.visible = not error.is_empty()
 	if is_instance_valid(work_min): work_min.text = "Three verified contracts unlock recovery after the 10-minute real-time minimum. Minimum remaining: " + countdown(int(r.last_full_utc)+CasinoTuning.RECOVERY_WORK_MIN_SECONDS-sim.recovery.now())

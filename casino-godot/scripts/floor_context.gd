@@ -116,13 +116,22 @@ func safe_public_threshold() -> Vector2:
 	var anchor := Property.private_approach(source.floor_chunks)
 	var grid := source.floor_navigation()
 	var connected := Placement.connected_cells(grid)
-	if Placement.reachable(grid, connected, anchor): return anchor
+	if Placement.reachable(grid, connected, anchor) and public_threshold_free(anchor): return anchor
 	var best := source.player
 	var distance := INF
 	for x in range(grid.region.position.x, grid.region.end.x):
 		for y in range(grid.region.position.y, grid.region.end.y):
 			var at := Vector2(x, y) * CasinoTuning.FLOOR_NAV_CELL
-			if Placement.reachable(grid, connected, at) and at.distance_squared_to(anchor) < distance:
+			if Placement.reachable(grid, connected, at) and public_threshold_free(at) and at.distance_squared_to(anchor) < distance:
 				best = at
 				distance = at.distance_squared_to(anchor)
 	return best
+
+func public_threshold_free(at: Vector2) -> bool:
+	# Return beside the doorway without landing on current lobby traffic.
+	var radius := CasinoTuning.ASSET_NAV_RADIUS
+	for actor in source.guests + source.staff:
+		if at.distance_to(Vector2(actor.get("x", -1000), actor.get("y", -1000))) < radius * 2: return false
+	for amenity in [Catalog.amenity_visual_bounds("cashier_cage", CasinoSimulation.CAGE_PICKUP), Catalog.amenity_visual_bounds("bar", source.bar_guest_position(2))]:
+		if amenity.grow(radius).has_point(at): return false
+	return true
