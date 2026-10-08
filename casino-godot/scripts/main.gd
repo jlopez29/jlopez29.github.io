@@ -43,7 +43,11 @@ var building := false
 var desktop_build_category := "slots"
 var build_kind := "slots"
 var build_slot_profile := "starter"
-var back_room_view: Control
+var back_room_floor: Control
+var recovery_view: Control
+var private_play := false
+var resume_private: Button
+var room_tools: HBoxContainer
 var in_back_room := false
 var game_view: Control
 var moving := -1
@@ -136,16 +140,37 @@ func _ready() -> void:
 	displayed_cash = sim.cash
 	treasury_target = sim.cash
 	presentation_shell.mount(self)
-	back_room_view = preload("res://scripts/back_room_view.gd").new()
-	back_room_view.sim = sim
-	back_room_view.z_index = 30
-	add_child(back_room_view)
-	back_room_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	back_room_view.hide()
-	back_room_view.leave_requested.connect(func(): in_back_room=false; back_room_view.hide(); transition_pane("floor"); layout_ui(); refresh())
-	back_room_view.changed.connect(refresh)
-	floor_view.back_room_clicked.connect(enter_back_room)
-	mobile_menu.get_popup().add_item("Back Room", 5)
+	back_room_floor = preload("res://presentation/casino_floor_v2.tscn").instantiate()
+	back_room_floor.set_script(preload("res://scripts/back_room_floor.gd"))
+	back_room_floor.sim = PitBossFloorContext.new(sim, true)
+	back_room_floor.z_index = 30
+	add_child(back_room_floor)
+	back_room_floor.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	back_room_floor.hide()
+	back_room_floor.private_door_requested.connect(func(): back_room_floor.approach_private_door())
+	back_room_floor.private_door_reached.connect(exit_back_room)
+	back_room_floor.station_reached.connect(open_private_station)
+	back_room_floor.recovery_reached.connect(func(): recovery_view.open(); apply_visibility())
+	recovery_view = preload("res://scripts/recovery_view.gd").new()
+	recovery_view.sim = sim
+	recovery_view.z_index = 32
+	add_child(recovery_view)
+	recovery_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	recovery_view.hide()
+	recovery_view.leave_requested.connect(func(): recovery_view.hide(); apply_visibility())
+	recovery_view.changed.connect(refresh)
+	resume_private = add_button(self, "Resume active game", resume_private_game)
+	resume_private.z_index = 31
+	resume_private.hide()
+	room_tools = HBoxContainer.new()
+	room_tools.z_index = 31
+	add_child(room_tools)
+	add_button(room_tools, "Pause / Play", toggle_pause)
+	add_button(room_tools, "Save", save_game)
+	add_button(room_tools, "Load", load_game)
+	room_tools.hide()
+	floor_view.private_door_requested.connect(walk_to_private_door)
+	floor_view.private_door_reached.connect(enter_back_room)
 	get_viewport().size_changed.connect(queue_viewport_sync)
 	visible_viewport.connect_web(queue_viewport_sync)
 	queue_viewport_sync()
@@ -194,6 +219,9 @@ func layout_ui() -> void:
 	mobile = w < 1180 or h < 650
 	responsive_state = "desktop" if not mobile else "mobile landscape" if landscape else "mobile portrait" if w < h else "compact"
 	floor_view.configure_view(mobile, landscape)
+	if is_instance_valid(back_room_floor):
+		back_room_floor.configure_view(mobile, landscape)
+		back_room_floor.mobile_viewport = Rect2(Vector2.ZERO, dimensions)
 	presentation_shell.layout(self, dimensions)
 	apply_visibility()
 	if is_instance_valid(developer_panel): developer_panel._layout()
@@ -240,13 +268,19 @@ func cancel_placement() -> void:
 
 func apply_visibility() -> void:
 	normalize_interaction_ui()
-	if is_instance_valid(back_room_view):
-		back_room_view.visible = in_back_room
-		back_room_view.sim = sim
-	var at_table := sim.joined >= 0 or not sim.owner_play.is_empty()
+	var at_table := private_play or sim.joined >= 0 or not sim.owner_play.is_empty()
+	if is_instance_valid(back_room_floor):
+		back_room_floor.visible = in_back_room and not private_play and not recovery_view.visible
+		resume_private.visible = back_room_floor.visible and sim.back_room.busy()
+		room_tools.visible = back_room_floor.visible
+		room_tools.position = Vector2(maxf(12, size.x - 290), 12)
+		room_tools.size = Vector2(278, 44)
+		resume_private.position = Vector2(12, 64 if size.x < 600 else 12)
+		resume_private.size = Vector2(210, 44)
 	var management_hidden := at_table or in_back_room
-	var is_craps := at_table and sim.owner_play.is_empty() and sim.table_kind(sim.get_table(sim.joined)) == "craps"
+	var is_craps: bool = at_table and game_view.sim.owner_play.is_empty() and game_view.sim.table_kind(game_view.current_table()) == "craps"
 	if at_table and play_context.is_empty(): remember_management_context()
+	game_view.z_index = 33 if private_play else 0
 	game_view.visible = at_table
 	table_scroll.visible = false
 	felt.visible = is_craps
@@ -480,7 +514,6 @@ func global_action(id: int) -> void:
 		2: show_help()
 		3: confirm_reset()
 		4: toggle_dev_panel()
-		5: enter_back_room()
 
 func toggle_dev_panel() -> void:
 	if not OS.is_debug_build() or not is_instance_valid(developer_panel) or modal != null: return
@@ -505,11 +538,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event.keycode == KEY_ESCAPE:
 		if building:
 			cancel_placement()
-		elif sim.joined >= 0 or not sim.owner_play.is_empty():
+		elif private_play or sim.joined >= 0 or not sim.owner_play.is_empty():
 			leave_table()
 		else: close_context()
 		refresh()
-	if event.keycode == KEY_E and visitor and sim.joined < 0:
+	if event.keycode == KEY_E and visitor and sim.joined < 0 and not in_back_room:
 		join_table()
 
 func money(amount: float) -> String:
@@ -614,7 +647,7 @@ func refresh(structural: bool = true) -> void:
 	else:
 		apply_visibility()
 	floor_view.invalidate_presentation()
-	felt.chip = chip_value
+	if not private_play: felt.chip = chip_value
 	felt.locked = rolling > 0 or speed == 0 or table_options or modal != null
 	felt.queue_redraw()
 	add_label(feed, "HOUSE ACTIVITY", 12, MUTED)
@@ -1433,6 +1466,12 @@ func row(parent: Node, columns: int = 0) -> Container:
 	return container
 
 func table_action(action: String) -> void:
+	if private_play:
+		if action.begins_with("chip:"): felt.chip = float(action.substr(5))
+		elif action == "shoot": begin_player_roll()
+		elif action == "leave": leave_table()
+		refresh()
+		return
 	if action.begins_with("chip:"):
 		chip_value = int(action.substr(5))
 	elif action == "more": table_options = not table_options
@@ -1452,16 +1491,17 @@ func table_action(action: String) -> void:
 	refresh()
 
 func place_chip(kind: String) -> void:
-	if rolling > 0 or felt.busy() or speed == 0 or sim.joined < 0: return
-	sim.bet(sim.joined, kind, chip_value)
+	if rolling > 0 or felt.busy() or speed == 0 or felt.sim.joined < 0: return
+	felt.sim.bet(felt.sim.joined, kind, felt.chip)
 	refresh()
 
 func begin_player_roll() -> void:
-	var table := sim.get_table(sim.joined)
-	if rolling > 0 or speed == 0 or not felt.can_throw() or table.is_empty() or int(table.shooter) != 0 or not sim.ready_for_play(table): return
-	active_roll_table = sim.joined
+	var context: PitBossGameContext = felt.sim
+	var table := context.get_table(context.joined)
+	if rolling > 0 or speed == 0 or not felt.can_throw() or table.is_empty() or int(table.shooter) != 0 or not context.ready_for_play(table): return
+	active_roll_table = context.joined
 	felt.prepare_roll(table)
-	if not sim.shoot_player(active_roll_table):
+	if not context.shoot_player(active_roll_table):
 		active_roll_table = -1
 		refresh()
 		return
@@ -1696,6 +1736,15 @@ func join_table() -> void:
 	refresh()
 
 func leave_table() -> void:
+	if private_play:
+		if game_view.locked(): return
+		private_play = false
+		sim.location.station = -1
+		game_view.sim = PitBossGameContext.new(sim)
+		felt.sim = game_view.sim
+		checkpoint_owner_play()
+		refresh()
+		return
 	if is_instance_valid(game_view) and game_view.visible and game_view.art.spinning > 0: return
 	if not sim.owner_play.is_empty():
 		if not sim.exit_owner_event(): return
@@ -1759,8 +1808,7 @@ func load_game() -> bool:
 	var data = JSON.parse_string(FileAccess.get_file_as_string(CasinoTuning.SAVE_PATH))
 	var restored: bool = data is Dictionary and sim.restore(data)
 	if not restored:
-		var removal := DirAccess.remove_absolute(CasinoTuning.SAVE_PATH)
-		sim.log_event("Invalid or incompatible development save deleted. Start a new casino." if removal == OK else "Save is invalid or incompatible and could not be deleted. Start a new casino.")
+		sim.log_event("Save could not be loaded. The file and current casino were retained.")
 	else:
 		play_context.clear()
 		milestone_notice.reset()
@@ -1770,7 +1818,19 @@ func load_game() -> bool:
 		if is_instance_valid(developer_panel): developer_panel.reset_session(sim)
 		reset_treasury_display()
 		floor_view.clear_financial_feedback()
-		visitor = sim.joined >= 0
+		in_back_room = sim.location.area == "private"
+		private_play = false
+		recovery_view.hide()
+		back_room_floor.sim = PitBossFloorContext.new(sim, true)
+		game_view.sim = PitBossGameContext.new(sim)
+		felt.sim = game_view.sim
+		if in_back_room and int(sim.location.station) > 0:
+			var station: Dictionary = back_room_floor.sim.get_table(int(sim.location.station))
+			if station.get("kind") == sim.back_room.state.kind:
+				private_play = true
+				game_view.sim = PitBossGameContext.new(sim, station)
+				felt.sim = game_view.sim
+		visitor = in_back_room or sim.joined >= 0
 		page = "table"
 		selected = sim.joined if sim.joined >= 0 else (int(sim.tables[0].id) if not sim.tables.is_empty() else -1)
 		building = false
@@ -1878,16 +1938,20 @@ func show_new_game_setup(initial: bool = false) -> void:
 
 func start_casino(mode: String, preferred: Array) -> void:
 	in_back_room = false
-	back_room_view.hide()
+	private_play = false
+	back_room_floor.hide()
+	recovery_view.hide()
 	play_context.clear()
 	event_focus_staff = -1
 	sim = CasinoSimulation.new(mode, preferred)
 	sim.milestone_reached.connect(on_milestone)
 	milestone_notice.reset()
 	reset_treasury_display()
-	floor_view.sim = sim
-	felt.sim = sim
-	game_view.sim = sim
+	floor_view.sim = PitBossFloorContext.new(sim)
+	back_room_floor.sim = PitBossFloorContext.new(sim, true)
+	recovery_view.sim = sim
+	game_view.sim = PitBossGameContext.new(sim)
+	felt.sim = game_view.sim
 	bind_optional_events()
 	if is_instance_valid(developer_panel): developer_panel.reset_session(sim)
 	selected = int(sim.tables[0].id)
@@ -2157,14 +2221,64 @@ func render_build_card(kind: String, profile_id: String = "starter") -> void:
 	button.add_theme_font_size_override("font_size", 13)
 	button.tooltip_text = table_purchase_tooltip(kind) if kind != "slots" else "Purchase this machine profile using casino cash."
 
-func enter_back_room() -> void:
-	if sim.joined >= 0 or not sim.owner_play.is_empty():
-		sim.log_event("Finish public play or the owner event before entering the Back Room.")
+
+func walk_to_private_door() -> void:
+	if sim.joined >= 0 or not sim.owner_play.is_empty(): return
+	cancel_placement()
+	visitor = true
+	transition_pane("floor")
+	var overlapping := sim.tables.any(func(table): return sim.bounds(table).merge(preload("res://scripts/asset_placement.gd").for_table(table).art).intersects(preload("res://scripts/floor_property.gd").private_clearance(sim.floor_chunks)))
+	if overlapping:
+		sim.log_event("Move assets overlapping the private doorway to restore owner access.")
 		refresh()
 		return
-	cancel_placement()
+	if not floor_view.approach_private_door():
+		sim.log_event("Private door blocked. Move overlapping assets and leave a clear approach.")
+	refresh()
+
+func enter_back_room() -> void:
+	if sim.player.distance_to(floor_view.sim.door_approach()) > 8: return
+	if sim.joined >= 0 or not sim.owner_play.is_empty(): return
 	in_back_room = true
-	back_room_view.sim = sim
-	back_room_view.open()
+	sim.location.area = "private"
+	back_room_floor.visitor_mode = true
+	back_room_floor.close_view = true
+	checkpoint_owner_play()
 	layout_ui()
 	refresh()
+
+func exit_back_room() -> void:
+	if back_room_floor.sim.player.distance_to(back_room_floor.sim.door_approach()) > 8: return
+	in_back_room = false
+	sim.location.area = "public"
+	sim.location.station = -1
+	sim.player = floor_view.sim.safe_public_threshold()
+	visitor = true
+	floor_view.walk_path.clear()
+	floor_view.move_target = Vector2(INF, INF)
+	checkpoint_owner_play()
+	transition_pane("floor")
+	layout_ui()
+	refresh()
+
+func open_private_station(station: Dictionary) -> void:
+	if sim.back_room.busy() and sim.back_room.state.kind != station.kind:
+		sim.log_event("Finish the active private game before switching. Use Resume active game.")
+		refresh()
+		return
+	if sim.back_room.state.kind != station.kind or not sim.back_room.busy():
+		if not sim.private_action(int(sim.back_room.state.sequence), "choose", {"kind": station.kind}): return
+	sim.location.station = int(station.id)
+	private_play = true
+	game_view.sim = PitBossGameContext.new(sim, station)
+	felt.sim = game_view.sim
+	game_view.render_current()
+	checkpoint_owner_play()
+	layout_ui()
+	refresh()
+
+func resume_private_game() -> void:
+	for station in back_room_floor.sim.stations:
+		if station.kind == sim.back_room.state.kind:
+			back_room_floor.approach_station(station.id)
+			return

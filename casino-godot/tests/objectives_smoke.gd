@@ -20,7 +20,7 @@ func objective_ui_smoke() -> void:
 	ui.set_process(false)
 	ui.owner_checkpoint_path = "/tmp/neon-objectives-smoke.json"
 	ui.sim = objective_fixture("gaming_profit")
-	ui.floor_view.sim = ui.sim
+	ui.floor_view.sim = PitBossFloorContext.new(ui.sim)
 	ui.bind_optional_events()
 	for dimensions in [Vector2i(1440,900), Vector2i(844,390), Vector2i(390,844), Vector2i(320,568)]:
 		root.size = dimensions

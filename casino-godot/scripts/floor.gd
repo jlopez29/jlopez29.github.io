@@ -4,21 +4,23 @@ signal table_clicked(id: int)
 signal floor_clicked(at: Vector2)
 signal guest_clicked(id: int)
 signal bar_clicked()
-signal back_room_clicked()
+signal private_door_requested
+signal private_door_reached
+var approaching_private_door := false
 
 const PitBoss = preload("res://scripts/pit_boss_theme.gd")
 var selected_guest := -1
 const FinancialText = preload("res://scripts/financial_text.gd")
-var sim: CasinoSimulation:
+var sim: PitBossFloorContext:
 	set(value):
 		if sim == value: return
-		if sim != null and sim.financial_event.is_connected(_on_financial_event): sim.financial_event.disconnect(_on_financial_event)
-		if sim != null and sim.guest_thought.is_connected(_on_guest_thought): sim.guest_thought.disconnect(_on_guest_thought)
+		if sim != null and sim.source.financial_event.is_connected(_on_financial_event): sim.source.financial_event.disconnect(_on_financial_event)
+		if sim != null and sim.source.guest_thought.is_connected(_on_guest_thought): sim.source.guest_thought.disconnect(_on_guest_thought)
 		sim = value
 		clear_financial_feedback()
-		if sim != null:
-			sim.financial_event.connect(_on_financial_event)
-			sim.guest_thought.connect(_on_guest_thought)
+		if sim != null and not sim.is_private:
+			sim.source.financial_event.connect(_on_financial_event)
+			sim.source.guest_thought.connect(_on_guest_thought)
 var presentation := {}
 var redraw_count := 0
 var feedback_batch_count := 0
@@ -96,15 +98,16 @@ func screen_at(world: Vector2) -> Vector2:
 	return world * zoom + camera
 
 func blocked(at: Vector2) -> bool:
+	if sim.is_private and PitBossFloorContext.KIOSK.grow(CasinoTuning.ASSET_NAV_RADIUS).has_point(at): return true
 	if not sim.walk_area().has_point(at):
 		return true
 	for table in sim.tables:
-		if sim.bounds(table).grow(12).has_point(at):
+		if sim.bounds(table).grow(CasinoTuning.ASSET_NAV_RADIUS).has_point(at):
 			return true
 	return false
 
 func _process(delta: float) -> void:
-	if sim == null:
+	if sim == null or not is_visible_in_tree():
 		return
 	var old_camera := camera
 	var old_zoom := zoom
@@ -122,6 +125,7 @@ func _process(delta: float) -> void:
 			dir.x = float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT)) - float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT))
 			dir.y = float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)) - float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP))
 		if dir.length() > 0:
+			approaching_private_door = false
 			move_target = Vector2(INF, INF)
 			walk_path.clear()
 		elif move_target.is_finite():
@@ -137,6 +141,14 @@ func _process(delta: float) -> void:
 			sim.player.x += motion.x
 		if not blocked(sim.player + Vector2(0, motion.y)):
 			sim.player.y += motion.y
+	if approaching_private_door:
+		var anchor := sim.door_approach()
+		if move_target.is_finite() and move_target.distance_to(anchor) > 1: walk_to(anchor)
+		if sim.player.distance_to(anchor) < 6:
+			approaching_private_door = false
+			walk_path.clear()
+			move_target = Vector2(INF, INF)
+			private_door_reached.emit()
 	preview = placement_target if placement_target.is_finite() else (world_at(get_local_mouse_position()) / 10).floor() * 10
 	idle_refresh += delta
 	var state := [selected, selected_guest, building, moving_id, rotated, build_kind, build_slot_profile, visitor_mode, compact_labels, size, sim.elapsed, sim.opened, sim.tables.size(), sim.guests.size()]
@@ -189,9 +201,10 @@ func _gui_input(event: InputEvent) -> void:
 
 func select_at(screen: Vector2) -> void:
 	var at := world_at(screen)
-	if not building and Rect2(330,19,150,38).grow(6).has_point(at):
-		back_room_clicked.emit()
+	if not building and sim.door_bounds().grow(12).has_point(at):
+		private_door_requested.emit()
 		return
+	approaching_private_door = false
 	if building:
 		floor_clicked.emit((at / 10).floor() * 10)
 		return
@@ -244,8 +257,6 @@ func _draw() -> void:
 	draw_rect(Rect2(room.position + Vector2(14, 12), Vector2(room.size.x - 28, 62)), Color("101b26"))
 	draw_line(Vector2(room.position.x + 24, 75), Vector2(room.end.x - 24, 75), GOLD, 2)
 	text_at(Vector2(205, 35), "PIT BOSS", GOLD, 14)
-	draw_rect(Rect2(330,19,150,38),Color("652b38"))
-	text_at(Vector2(341,43),"BACK ROOM >",GOLD,12)
 	# Back-of-house furniture lives outside the editable floor rectangle.
 	draw_rect(Rect2(35, 19, 160, 38), Color("344055"))
 	text_at(Vector2(65, 43), "THE CAGE", GOLD, 12)
@@ -633,3 +644,9 @@ func feedback_box(bg: Color, border: Color, radius: int) -> StyleBoxFlat:
 	var skin := PitBoss.box(bg, border)
 	skin.set_corner_radius_all(radius)
 	return skin
+
+func approach_private_door() -> bool:
+	visitor_mode = true
+	walk_to(sim.door_approach())
+	approaching_private_door = move_target.is_finite()
+	return approaching_private_door

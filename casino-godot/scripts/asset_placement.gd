@@ -38,8 +38,13 @@ static func for_table(table: Dictionary) -> Dictionary:
 	return geometry(str(table.kind), Vector2(table.x, table.y), bool(table.rotated), int(table.id))
 
 static func navigation(chunks: Dictionary, assets: Array) -> AStarGrid2D:
+	return navigation_in(Property.walking(chunks), assets)
+
+static func navigation_in(area: Rect2, assets: Array) -> AStarGrid2D:
 	var grid := AStarGrid2D.new()
-	grid.region = Property.nav_region(chunks)
+	var area_first := Vector2i(ceili(area.position.x / CasinoTuning.FLOOR_NAV_CELL), ceili(area.position.y / CasinoTuning.FLOOR_NAV_CELL))
+	var area_last := Vector2i(floori(area.end.x / CasinoTuning.FLOOR_NAV_CELL), floori(area.end.y / CasinoTuning.FLOOR_NAV_CELL))
+	grid.region = Rect2i(area_first, area_last - area_first + Vector2i.ONE)
 	grid.cell_size = Vector2.ONE * CasinoTuning.FLOOR_NAV_CELL
 	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
 	grid.default_compute_heuristic = AStarGrid2D.HEURISTIC_MANHATTAN
@@ -129,3 +134,12 @@ static func reachable(grid: AStarGrid2D, connected: PackedByteArray, point: Vect
 	if not grid.is_in_boundsv(at) or grid.is_point_solid(at): return false
 	var local := at - grid.region.position
 	return connected[local.y * grid.region.size.x + local.x] != 0
+
+static func route_grid(request: Dictionary, grid: AStarGrid2D) -> void:
+	var origin := cell_at(Vector2(request.x, request.y)).clamp(grid.region.position, grid.region.end - Vector2i.ONE)
+	var destination := cell_at(Vector2(request.tx, request.ty)).clamp(grid.region.position, grid.region.end - Vector2i.ONE)
+	var path: Array = []
+	if not grid.is_point_solid(origin) and not grid.is_point_solid(destination):
+		for at in grid.get_point_path(origin, destination): path.append([at.x, at.y])
+	if not path.is_empty(): path.append([request.tx, request.ty])
+	request.path = path

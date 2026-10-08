@@ -215,7 +215,7 @@ func presentation_checks() -> void:
 	var view := View.new()
 	root.add_child(view)
 	view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	view.sim = sim
+	view.sim = PitBossGameContext.new(sim)
 	view.paused = false
 	view.render_current()
 	var before := Vector2(sim.owner_bankroll,sim.cash)

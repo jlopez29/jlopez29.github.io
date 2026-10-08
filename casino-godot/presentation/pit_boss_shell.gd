@@ -93,7 +93,6 @@ func mount(ui: Control) -> void:
 		if ui.building: ui.toggle_build()
 		else: ui.open_page("build"))
 	ui.walk_button = ui.add_button(left, "Walk the floor", ui.toggle_walk)
-	ui.add_button(left, "Back Room", ui.enter_back_room)
 	ui.add_gap(left, 6)
 	ui.objective = VBoxContainer.new()
 	ui.objective.add_theme_constant_override("separation", 6)
@@ -107,14 +106,14 @@ func mount(ui: Control) -> void:
 	ui.add_gap(left, 10)
 	ui.button_tone(ui.add_button(left, "New casino...", ui.confirm_reset), "danger")
 	ui.floor_view = $CasinoFloorV2
-	ui.floor_view.sim = ui.sim
+	ui.floor_view.sim = PitBossFloorContext.new(ui.sim)
 	ui.floor_view.table_clicked.connect(ui.select_table)
 	ui.floor_view.floor_clicked.connect(ui.click_floor)
 	ui.floor_view.guest_clicked.connect(ui.select_guest)
 	ui.floor_view.bar_clicked.connect(func(): ui.open_page("bar"))
 
 	ui.felt = ui.FeltScript.new()
-	ui.felt.sim = ui.sim
+	ui.felt.sim = PitBossGameContext.new(ui.sim)
 	ui.felt.bet_clicked.connect(ui.place_chip)
 	ui.felt.action_requested.connect(ui.table_action)
 	ui.table_scroll = ScrollContainer.new()
@@ -134,7 +133,7 @@ func mount(ui: Control) -> void:
 	ui.rotate_button = ui.add_button(ui.floor_actions, "Rotate", func(): ui.floor_view.rotated = not ui.floor_view.rotated; ui.refresh())
 	ui.floor_fit = ui.add_button(ui.floor_actions, "Fit", func(): ui.floor_view.toggle_fit(); ui.refresh())
 	ui.game_view = ui.GameView.new()
-	ui.game_view.sim = ui.sim
+	ui.game_view.sim = ui.felt.sim
 	ui.game_view.leave_requested.connect(ui.leave_table)
 	ui.game_view.changed.connect(ui.refresh)
 	ui.game_view.pause_requested.connect(ui.toggle_pause)
@@ -402,7 +401,7 @@ func layout_desktop(ui: Control, dimensions: Vector2) -> void:
 
 func update_desktop_state(ui: Control) -> void:
 	mobile_management.update_state()
-	if ui.mobile or ui.sim.joined >= 0 or not ui.sim.owner_play.is_empty(): return
+	if ui.mobile or ui.in_back_room or ui.sim.joined >= 0 or not ui.sim.owner_play.is_empty(): return
 	ui.alert_button.visible = ui.mobile_pane != "log" and not ui.requires_floor_targeting()
 	capacity = ui.sim.usable_gaming_capacity()
 	active_staff = ui.sim.staff.filter(func(employee): return employee.duty == "Active").size()

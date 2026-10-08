@@ -2,7 +2,7 @@ extends Control
 
 signal bet_clicked(kind: String)
 signal action_requested(action: String)
-var sim: CasinoSimulation
+var sim: PitBossGameContext
 var chip := 25.0
 var locked := false
 var font: Font

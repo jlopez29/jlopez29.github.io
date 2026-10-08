@@ -52,3 +52,13 @@ static func quote(chunks: Dictionary, direction: String) -> Dictionary:
 
 static func upkeep(chunks: Dictionary) -> float:
 	return (rectangle(chunks).get_area() - CasinoTuning.STARTER_PROPERTY.get_area()) / 10000.0 * CasinoTuning.PROPERTY_UPKEEP_PER_10000
+
+static func private_door(chunks: Dictionary) -> Rect2:
+	var area := walking(chunks)
+	return Rect2(area.end - Vector2(96, 8), Vector2(80, 24))
+
+static func private_approach(chunks: Dictionary) -> Vector2:
+	return private_door(chunks).get_center() - Vector2(0, 40)
+
+static func private_clearance(chunks: Dictionary) -> Rect2:
+	return Rect2(private_approach(chunks) - Vector2(48, 30), Vector2(96, 68))

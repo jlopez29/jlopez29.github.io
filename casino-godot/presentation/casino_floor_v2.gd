@@ -218,6 +218,7 @@ func sync_world() -> void:
 		var cage_art := Catalog.amenity_visual_bounds("cashier_cage", CasinoSimulation.CAGE_PICKUP)
 		$World/Cage.position = cage_art.position
 		$World/Cage.size = cage_art.size
+	$World/Cage.visible = not sim.is_private
 	$World/Bar.visible = sim.bar_available()
 	$World/BarLabel.visible = false
 	$World/BarLabel.position = $World/Bar.position + Vector2(6, -13)
@@ -318,6 +319,18 @@ func _draw() -> void:
 		draw_placement_debug(report, valid)
 
 		draw_set_transform(Vector2.ZERO)
+	draw_set_transform(camera, 0, Vector2.ONE * zoom)
+	var door := sim.door_bounds()
+	draw_rect(door, Color("382817"))
+	draw_rect(door, GOLD, false, 2)
+	draw_circle(door.end - Vector2(12, 12), 3, GOLD)
+	text_at(door.position - Vector2(0, 8), "EXIT" if sim.is_private else "PRIVATE / OWNER", GOLD, 11)
+	if sim.is_private:
+		draw_rect(PitBossFloorContext.KIOSK, Color("304639"))
+		draw_rect(PitBossFloorContext.KIOSK, GOLD, false, 2)
+		text_at(PitBossFloorContext.KIOSK.position + Vector2(8, 28), "RECOVERY", GOLD, 12)
+		text_at(Vector2(36, 72), "THE BACK ROOM | PERSONAL PLAY", GOLD, 18)
+	draw_set_transform(Vector2.ZERO)
 	draw_financial_feedback()
 	draw_thoughts()
 

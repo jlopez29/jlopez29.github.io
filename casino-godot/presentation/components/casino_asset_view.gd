@@ -24,7 +24,7 @@ func _ready() -> void:
 	outline.add_theme_stylebox_override("panel", selection_skin)
 	set_process(false)
 
-func update_view(sim: CasinoSimulation, table: Dictionary, index: Dictionary, selected_id: int, compact: bool) -> void:
+func update_view(sim, table: Dictionary, index: Dictionary, selected_id: int, compact: bool) -> void:
 	simulation_bounds = sim.bounds(table)
 	clickable_bounds = simulation_bounds.grow(12)
 	position = simulation_bounds.get_center()
@@ -37,7 +37,7 @@ func update_view(sim: CasinoSimulation, table: Dictionary, index: Dictionary, se
 	set_process(repair_needed)
 	queue_redraw()
 	last_zoom = -1.0
-	var kind := sim.table_kind(table)
+	var kind: String = sim.table_kind(table)
 	var path := Catalog.path_for(kind, int(table.id))
 	if path != asset_path:
 		asset_path = path
