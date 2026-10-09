@@ -112,8 +112,149 @@ func run() -> void:
 	# Standard machines step by $2 above their configured $5 minimum.
 	public_sim.tables[0].slot_profile = "standard"
 	check(public_sim.join_table(int(public_sim.tables[0].id)) and public_sim.start_game(public_sim.joined, 7), "Public slots accept the tier's wager increment within limits")
+	await check_play_sessions()
 	audio.set_game_muted("slots", previous_mute)
 	audio.shutdown()
 	await create_timer(0.12).timeout
 	print("GAME_CONTROLS: %d checks, %d failures" % [checks, failures])
 	quit(1 if failures else 0)
+
+func check_play_sessions() -> void:
+	var ui = load("res://main.tscn").instantiate()
+	root.add_child(ui)
+	await settle()
+	ui.close_modal()
+	ui.set_process(false)
+	ui.owner_checkpoint_path = "user://speed_smoke.save"
+	for kind in ["slots", "blackjack", "roulette", "holdem", "craps"]:
+		for multiplier in [8, 4, 2, 1, 0]:
+			ui.start_casino("easy", [kind])
+			ui.speed = multiplier
+			ui.previous_speed = 8 if multiplier == 0 else multiplier
+			ui.refresh()
+			check(not ui.play_speed_active and ui.speed == multiplier, "Management does not override " + kind)
+			ui.selected = int(ui.sim.tables[0].id)
+			ui.visitor = true
+			ui.sim.player = ui.sim.bounds(ui.sim.tables[0]).get_center()
+			ui.join_table()
+			check(ui.play_speed_active and ui.speed == (0 if multiplier == 0 else 1), "Public entry speed " + kind + str(multiplier))
+			ui.refresh()
+			ui.toggle_pause()
+			check(ui.speed == (1 if multiplier == 0 else 0), "Session pause/resume " + kind)
+			ui.leave_table()
+			check(not ui.play_speed_active and ui.speed == multiplier and ui.previous_speed == (8 if multiplier == 0 else multiplier), "Public exit restores " + kind + str(multiplier))
+		for multiplier in [8, 0]:
+			ui.start_casino("easy", [kind])
+			ui.speed = multiplier
+			ui.previous_speed = 8
+			ui.in_back_room = true
+			ui.open_private_station({"id": 9001, "kind": kind})
+			check(ui.play_speed_active and ui.speed == (0 if multiplier == 0 else 1), "Private entry " + kind)
+			ui.leave_table()
+			check(ui.speed == multiplier and not ui.play_speed_active and ui.in_back_room, "Private exit restores " + kind)
+	ui.start_casino("easy", ["blackjack"])
+	ui.speed = 8
+	ui.selected = int(ui.sim.tables[0].id)
+	ui.visitor = true
+	ui.sim.player = ui.sim.bounds(ui.sim.tables[0]).get_center()
+	ui.join_table()
+	ui.sim.tables[0].round = {"phase": "player"}
+	ui.leave_table()
+	check(ui.sim.joined >= 0 and ui.play_speed_active and ui.speed == 1, "Unresolved exit retains override")
+	ui.sim.tables[0].round = {}
+	ui.speed = 4
+	ui.refresh()
+	check(ui.speed == 4, "Explicit temporary speed allowed")
+	ui.leave_table()
+	check(ui.speed == 8, "Temporary change does not replace original")
+	ui.start_casino("easy", ["craps"])
+	ui.speed = 8
+	ui.selected = int(ui.sim.tables[0].id)
+	ui.visitor = true
+	ui.sim.player = ui.sim.bounds(ui.sim.tables[0]).get_center()
+	ui.join_table()
+	ui.sim.opened = true
+	ui.sim.pass_dice(ui.sim.joined)
+	ui.felt.initialize_table(ui.sim.tables[0])
+	ui.felt.set_process(false)
+	ui.game_view.set_process(false)
+	var view = ui.game_view
+	for dimensions in [Vector2i(1440, 900), Vector2i(390, 844), Vector2i(844, 390)]:
+		root.size = dimensions
+		root.content_scale_size = dimensions
+		view.size = dimensions
+		view.layout_play()
+		view.signature.clear()
+		view.render_current()
+		await settle()
+		check(view.header.size.y == (92 if dimensions.x < 760 else 48), "Existing header height " + str(dimensions))
+		check(not view.roll_countdown.get_global_rect().intersects(view.bet_indicator.get_global_rect()) and not view.roll_progress.get_global_rect().intersects(view.wallet.get_global_rect()) and not view.roll_countdown.get_global_rect().intersects(view.return_button.get_global_rect()), "Timer shares header without overlap " + str(dimensions))
+		var hold: Button = view.actions.get_child(0)
+		check(view.ready_button.get_parent() == view.actions and is_equal_approx(hold.position.y, view.ready_button.position.y) and view.ready_button.size.y >= 44, "Ready beside Hold in existing row " + str(dimensions))
+	var table: Dictionary = ui.sim.tables[0]
+	view.countdown_interval = 8
+	table.timer = 2
+	view.effective_speed = 1
+	view.simulation_fraction = 0.5
+	view.update_craps_countdown()
+	check(view.roll_countdown.text.contains("06") and is_equal_approx(view.roll_progress.value, 31.25), "Timer uses authoritative fractional tick")
+	view.effective_speed = 2
+	view.update_craps_countdown()
+	check(view.roll_countdown.text.contains("03"), "Timer converts current speed")
+	view.paused = true
+	view.simulation_fraction = 0.9
+	view.update_craps_countdown()
+	check(view.roll_countdown.text == "PAUSED" and view.roll_progress.value == 31.25 and view.ready_button.disabled, "Paused timer and Ready freeze")
+	view.paused = false
+	table.betting_hold = true
+	view.update_craps_countdown()
+	check(view.roll_countdown.text == "BETTING HELD" and view.ready_button.disabled and view.roll_progress.value == 31.25, "Held timer and Ready freeze")
+	table.betting_hold = false
+	table.timer = 0
+	view.simulation_fraction = 0
+	view.update_craps_countdown()
+	check(view.roll_progress.value == 0, "Timer reset follows simulation")
+	table.shooter = 0
+	view.signature.clear()
+	view.render_current()
+	view.update_craps_countdown()
+	check(not view.roll_progress.visible and view.roll_countdown.text == "PLACE LINE BET" and not view.actions.get_children().any(func(n): return n.visible and n is Button and n.text.begins_with("Ready")), "Manual turn has no CPU action or countdown")
+	check(view.roll_progress.size.y >= 4 and view.roll_progress.size.y <= 6, "Slim progress bar")
+	check(ui.sim.bet(int(table.id), "pass", 25), "Manual line funded")
+	view.update_craps_countdown()
+	check(view.roll_countdown.text == "YOUR TURN / READY", "Manual ready status")
+	ui.felt.animation = ui.felt.animation_duration
+	view.update_craps_countdown()
+	check(view.roll_countdown.text == "ROLLING...", "Throw status")
+	ui.felt.animation = ui.felt.SETTLE_SECONDS
+	view.update_craps_countdown()
+	check(view.roll_countdown.text == "SETTLING...", "Settlement status")
+	ui.felt.animation = 0
+	# Save contains no speed override; load establishes a fresh transient session.
+	var had_save := FileAccess.file_exists(CasinoTuning.SAVE_PATH)
+	var original_save := FileAccess.get_file_as_string(CasinoTuning.SAVE_PATH) if had_save else ""
+	ui.save_game()
+	check(ui.load_game() and ui.play_speed_active and ui.play_speed_original == 1 and ui.speed == 1 and ui.sim.craps_roll_blocked == -1, "Load clears old override and establishes resumed session")
+	ui.felt.initialize_table(ui.sim.tables[0])
+	ui.leave_table()
+	check(ui.speed == 1 and not ui.play_speed_active, "Loaded exit has no orphaned original speed")
+	if had_save:
+		var restore_save := FileAccess.open(CasinoTuning.SAVE_PATH, FileAccess.WRITE)
+		restore_save.store_string(original_save)
+		restore_save.close()
+	else: DirAccess.remove_absolute(CasinoTuning.SAVE_PATH)
+	for kind in ["slots", "blackjack"]:
+		ui.start_casino("easy", [kind])
+		ui.speed = 8
+		ui.sim.opened = true
+		check(ui.sim.optional_events.spawn(ui.sim, "owner_" + kind, true), "Speed owner event available " + kind)
+		ui.refresh()
+		ui.event_cards.engage.pressed.emit()
+		ui.event_cards.commit.pressed.emit()
+		check(ui.play_speed_active and ui.speed == 1, "Owner event entry speed " + kind)
+		ui.leave_table()
+		check(ui.sim.owner_play.is_empty() and ui.speed == 8 and not ui.play_speed_active, "Owner event exit speed " + kind)
+	ui.start_casino("easy", ["slots"])
+	check(not ui.play_speed_active and ui.speed == 1, "New casino clears session override")
+	ui.queue_free()
+	await settle()

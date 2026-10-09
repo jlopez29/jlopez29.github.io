@@ -341,10 +341,11 @@ func capture_roll(table: Dictionary) -> void:
 		resting_dice = shooter_pocket()
 		queue_redraw()
 		return
-	# Seven-out shows the rake, point OFF and next shooter together, then delivery.
-	animation = SETTLE_SECONDS if seven_out else animation_duration
+	# Manual seven-out retains its immediate rake; observed CPU rolls show the throw.
+	var manual_seven_out := seven_out and int(before.get("table", {}).get("shooter", 0)) == 0
+	animation = SETTLE_SECONDS if manual_seven_out else animation_duration
 	resting_dice = landing
-	if seven_out:
+	if manual_seven_out:
 		audio_settled = true
 		AudioManager.play_game("craps", "seven_out")
 	else: AudioManager.play_game("craps", "throw")

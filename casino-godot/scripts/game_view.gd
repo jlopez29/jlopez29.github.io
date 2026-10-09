@@ -51,6 +51,13 @@ var art: Control
 var felt: Control
 var craps: Control
 var header: Panel
+var roll_countdown: Label
+var roll_progress: ProgressBar
+var effective_speed := 1
+var simulation_fraction := 0.0
+var countdown_interval := CasinoTuning.VISITOR_ROLL_SECONDS
+var countdown_available := true
+var ready_button: Button
 var brand: Label
 var wallet: Label
 var wallet_value: Label
@@ -114,6 +121,18 @@ func _ready() -> void:
 	audio_button.expand_icon = true
 	audio_button.add_theme_constant_override("icon_max_width", 22)
 	bet_indicator = make_label(header, "", 13, PitBoss.GOLD)
+	roll_countdown = make_label(header, "", 13, PitBoss.GOLD)
+	roll_countdown.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	roll_countdown.clip_text = true
+	roll_countdown.mouse_filter = MOUSE_FILTER_IGNORE
+	roll_progress = ProgressBar.new()
+	roll_progress.show_percentage = false
+	roll_progress.mouse_filter = MOUSE_FILTER_IGNORE
+	roll_progress.add_theme_stylebox_override("background", PitBoss.box(Color("20332a"), Color.TRANSPARENT, 0))
+	roll_progress.add_theme_stylebox_override("fill", PitBoss.box(PitBoss.GOLD, Color.TRANSPARENT, 0))
+	header.add_child(roll_progress)
+	roll_countdown.hide()
+	roll_progress.hide()
 	bet_indicator.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bet_indicator.clip_text = true
 	surface_scroll = ScrollContainer.new()
@@ -297,6 +316,21 @@ func layout_play() -> void:
 	put(game_title, Vector2(8, 2), Vector2(maxf(80, minf(200, size.x - 210)), 19))
 	put(wallet, Vector2(8, 70 if tall_header else 24), Vector2(size.x - 16 if tall_header else maxf(80, size.x - 210), 20))
 	put(bet_indicator, Vector2(8, 48) if tall_header else Vector2(210, 2), Vector2(size.x - 24 if tall_header else maxf(0, size.x - 420), 22))
+	var craps_header: bool = art.kind == "craps"
+	roll_countdown.visible = craps_header
+	roll_progress.visible = craps_header
+	if craps_header:
+		var lane_start := 8.0 if tall_header else 210.0
+		var lane_width := size.x - 24.0 if tall_header else maxf(0, header.size.x - 200.0 - lane_start)
+		var timer_width := lane_width * 0.54 - 8.0 if tall_header else minf(180, lane_width * 0.54 - 8.0)
+		var timer_start := lane_start + lane_width * 0.46 + 8.0 if tall_header else lane_start + (lane_width - timer_width) / 2.0
+		var wager_width := timer_start - lane_start - 8.0
+		var lane_y := 48.0 if tall_header else 2.0
+		put(bet_indicator, Vector2(lane_start, lane_y), Vector2(wager_width, 20))
+		put(roll_countdown, Vector2(timer_start, lane_y), Vector2(timer_width, 16))
+		var bar_width := minf(180, timer_width)
+		put(roll_progress, Vector2(roll_countdown.position.x + (timer_width - bar_width) / 2, lane_y + 18), Vector2(bar_width, 4))
+		roll_countdown.add_theme_font_size_override("font_size", 12 if tall_header or landscape else 13)
 	wallet.add_theme_font_size_override("font_size", 14)
 	put(return_button, Vector2(header.size.x - 192, 2), Vector2(44, 44))
 	return_button.text = "<"
@@ -416,12 +450,17 @@ func _process(delta: float) -> void:
 	if not is_visible_in_tree() or sim == null or (sim.joined < 0 and sim.owner_play.is_empty()): return
 	update_result_hold(delta)
 	if art.kind in ["craps", "roulette"]: update_bet_indicator()
+	if art.kind == "craps": update_craps_countdown()
 	if roulette_display_remaining > 0:
 		roulette_display_remaining = maxf(0, roulette_display_remaining - delta)
 		if roulette_display_remaining == 0: roulette_guests.clear()
 	poll += delta
 	if poll < 0.1: return
 	poll = 0
+	if art.kind == "craps" and not sim.is_private:
+		var table := current_table()
+		countdown_interval = sim.source.roll_interval(table, sim.source.craps_dealer_energy(table))
+		countdown_available = sim.ready_for_play(table) and sim.opened
 	render_current()
 
 func current_table() -> Dictionary:
@@ -578,6 +617,9 @@ func render_current() -> void:
 	cursors[details] = 0
 	actions.size_flags_horizontal = SIZE_EXPAND_FILL
 	actions.maximum_columns = 2 if kind == "slots" else 3 if size.x < 600 else 6
+	actions.custom_minimum_size.x = (210 if size.x < 600 else 250) if kind == "craps" and int(table.shooter) != 0 else 0
+	actions.size_flags_horizontal = SIZE_SHRINK_END if kind == "craps" else SIZE_EXPAND_FILL
+	wager_label.size_flags_horizontal = SIZE_EXPAND_FILL
 	var disabled := locked() or not sim.ready_for_play(table)
 	var amount := bet
 	if kind == "roulette":
@@ -585,7 +627,7 @@ func render_current() -> void:
 	elif kind == "craps": amount = CrapsRules.exposure(table.owner)
 	elif pending: amount = float(table.round.get("staked", bet))
 	wager_label.text = ("Event committed " + FinancialText.cash(float(sim.owner_play.staked), 0)) if event else ("On felt " if kind in ["roulette", "craps"] else "Wager ") + FinancialText.cash(amount, 2)
-	wager_label.add_theme_font_size_override("font_size", 13 if kind == "slots" else 16)
+	wager_label.add_theme_font_size_override("font_size", 13 if kind == "slots" or (kind == "craps" and size.x < 600) else 16)
 	if kind == "slots":
 		wager_label.text = "Min %s | Max %s" % [FinancialText.cash(float(table.minimum), 2), FinancialText.cash(sim.maximum_wager(table), 2)]
 		render_slot_controls(table, event, disabled)
@@ -702,11 +744,38 @@ func finish_audio_result() -> void:
 	AudioManager.play_game(kind, "natural" if natural and net > 0 else "win" if net > 0 else "push" if is_zero_approx(net) else "loss")
 	if net > 0: AudioManager.play_game(kind, "payout")
 
+# Read-only presentation of the authoritative schedule; never advances gameplay.
+func update_craps_countdown() -> void:
+	var table := current_table()
+	if table.is_empty(): return
+	var caption := ""
+	var cpu := int(table.shooter) != 0
+	var busy: bool = is_instance_valid(craps) and (craps.busy() or craps.delivery > 0)
+	if busy:
+		caption = "ROLLING..." if craps.animation > craps.ROLL_END else "SETTLING..."
+	elif paused or effective_speed == 0: caption = "PAUSED"
+	elif cpu and table.betting_hold: caption = "BETTING HELD"
+	elif not cpu:
+		caption = "YOUR TURN / READY" if sim.shooter_has_line(table) else "PLACE LINE BET"
+	elif not countdown_available: caption = "WAITING FOR TABLE"
+	else:
+		var elapsed := float(table.timer) + clampf(simulation_fraction, 0, 1)
+		var seconds := ceili(maxf(0, countdown_interval - elapsed) / maxf(1, effective_speed))
+		caption = "CPU %02ds" % seconds if compact or landscape else "CPU ROLL / %02d:%02d" % [seconds / 60, seconds % 60]
+		roll_progress.value = clampf(elapsed / maxf(0.001, countdown_interval), 0, 1) * 100
+	if roll_countdown.text != caption: roll_countdown.text = caption
+	roll_progress.visible = cpu and not busy
+	if is_instance_valid(ready_button) and ready_button.visible:
+		ready_button.disabled = locked() or busy or effective_speed == 0 or table.betting_hold or not countdown_available or not cpu
+
 func render_craps_actions(table: Dictionary, disabled: bool) -> void:
 	if int(table.shooter) == 0:
 		button("Dice", func(): craps_action_requested.emit("shoot"), actions, disabled or not craps.can_throw(), true)
 	else:
-		button("Resume rolls" if table.betting_hold else "Hold rolls", func(): craps_action_requested.emit("shoot"), actions, disabled)
+		var hold_text := ("Resume" if table.betting_hold else "Hold") if size.x < 600 else ("Resume rolls" if table.betting_hold else "Hold rolls")
+		button(hold_text, func(): craps_action_requested.emit("shoot"), actions, disabled)
+		ready_button = button("Ready" if size.x < 600 else "Ready / Roll", func(): craps_action_requested.emit("ready"), actions, disabled or table.betting_hold or not sim.operating(table), true)
+		ready_button.tooltip_text = "Complete NPC betting decisions and roll once"
 	if show_details and not sim.is_private: button("Pass dice" if table.shooter == 0 else "Skip turn" if table.owner_queued else "Queue dice", func(): craps_action_requested.emit("pass"), details, craps.busy())
 	if not show_details: return
 	button("Working ON" if table.owner_working else "Working OFF", func():

@@ -59,6 +59,11 @@ var game_view: Control
 var moving := -1
 var speed := 1
 var previous_speed := 1
+# Transient controller state; never serialized with the casino.
+var play_speed_active := false
+var play_speed_original := 1
+var play_speed_was_paused := false
+var play_previous_speed := 1
 var dev_time_pending := 0.0
 const DEV_TIME_STEP := 0.1 # Movement stays below one navigation-cell distance per update.
 const DEV_FRAME_BUDGET_USEC := 8000
@@ -367,7 +372,9 @@ func open_page(value: String) -> void:
 
 func switch_mobile(value: String) -> void:
 	if rolling > 0: return
-	if value == "floor" and sim.joined >= 0: leave_table()
+	if value == "floor" and (private_play or sim.joined >= 0 or not sim.owner_play.is_empty()):
+		leave_table()
+		if private_play or sim.joined >= 0 or not sim.owner_play.is_empty(): return
 	transition_pane(value)
 	inspector_open = value == "table"
 	context_expanded = false
@@ -495,6 +502,10 @@ func _process(delta: float) -> void:
 		if debug_snapshot_timer >= CasinoTuning.DEBUG_SNAPSHOT_SECONDS:
 			debug_snapshot_timer = 0
 			publish_debug()
+	sync_play_speed()
+	sync_craps_presentation()
+	game_view.effective_speed = speed if modal == null else 0
+	game_view.simulation_fraction = tick
 	floor_view.set_presentation_speed(speed if modal == null else 0)
 	if modal != null:
 		return
@@ -507,8 +518,10 @@ func _process(delta: float) -> void:
 		tick += delta * speed
 		while tick >= 1:
 			tick -= 1
+			sync_craps_presentation()
 			sim.step()
 			floor_view.presentation_step()
+	game_view.simulation_fraction = tick
 	if rolling > 0:
 		rolling -= delta
 		if rolling <= 0:
@@ -528,7 +541,14 @@ func set_dev_speed(multiplier: int) -> void:
 	dev_time_pending = 0
 	refresh()
 
+func clear_play_speed() -> void:
+	play_speed_active = false
+	play_speed_original = 1
+	play_speed_was_paused = false
+	play_previous_speed = 1
+
 func reset_dev_speed() -> void:
+	clear_play_speed()
 	speed = 1
 	previous_speed = 1
 	dev_time_pending = 0
@@ -648,7 +668,32 @@ func render_asset_financial_activity(parent: Node, asset_id: int = -1, limit: in
 		shown += 1
 		if shown >= limit: break
 
+func sync_play_speed() -> void:
+	var playing := private_play or sim.joined >= 0 or not sim.owner_play.is_empty()
+	if playing and not play_speed_active:
+		play_speed_original = speed
+		play_speed_was_paused = speed == 0
+		play_previous_speed = previous_speed
+		play_speed_active = true
+		previous_speed = 1
+		if not play_speed_was_paused: speed = 1
+		dev_time_pending = 0
+	elif not playing and play_speed_active:
+		speed = 0 if play_speed_was_paused else play_speed_original
+		previous_speed = play_previous_speed
+		clear_play_speed()
+		dev_time_pending = 0
+
+func sync_craps_presentation() -> void:
+	sim.craps_roll_blocked = -1
+	if private_play or sim.joined < 0 or not felt.visible: return
+	var table := sim.get_table(sim.joined)
+	if sim.table_kind(table) != "craps": return
+	if felt.busy() or felt.delivery > 0 or int(table.rolls) != felt.last_roll:
+		sim.craps_roll_blocked = sim.joined
+
 func refresh(structural: bool = true) -> void:
+	sync_play_speed()
 	floor_view.set_presentation_speed(speed if modal == null else 0)
 	normalize_interaction_ui()
 	if not sim.optional_events.action_requested.is_connected(on_optional_event_action): bind_optional_events()
@@ -689,6 +734,8 @@ func refresh(structural: bool = true) -> void:
 	floor_view.build_slot_profile = build_slot_profile
 	floor_view.moving_id = moving
 	game_view.paused = speed == 0
+	game_view.effective_speed = speed if modal == null else 0
+	game_view.simulation_fraction = tick
 	floor_view.selected = selected
 	floor_view.selected_guest = selected_guest
 	mode_hint.text = "Click to place | R to rotate | Esc to cancel" if building else ("Tap to walk | tap a table to approach | E or Join to play" if visitor else "Select a table or guest to inspect | build and staff to expand")
@@ -1603,6 +1650,19 @@ func table_action(action: String) -> void:
 		chip_value = float(action.substr(5))
 	elif action == "more": table_options = not table_options
 	elif action == "leave": leave_table()
+	elif action == "ready":
+		var table := sim.get_table(sim.joined)
+		if table.is_empty(): return
+		sync_craps_presentation()
+		var reason := sim.ready_craps_roll(sim.joined, int(table.rolls), speed == 0 or modal != null)
+		if reason.is_empty():
+			game_view.feedback = ""
+			felt.capture_roll(table)
+			rolling = felt.animation
+			active_roll_table = sim.joined
+		else:
+			game_view.feedback = reason
+			AudioManager.play_ui("invalid")
 	elif action == "shoot":
 		var table := sim.get_table(sim.joined)
 		if table.is_empty() or speed == 0 or felt.busy(): return
@@ -1868,7 +1928,7 @@ func join_table() -> void:
 
 func leave_table() -> void:
 	if private_play:
-		if game_view.locked(): return
+		if game_view.result_pending or game_view.result_hold > 0 or game_view.art.spinning > 0 or (felt.visible and felt.busy()): return
 		private_play = false
 		sim.location.station = -1
 		game_view.sim = PitBossGameContext.new(sim)
@@ -1876,7 +1936,7 @@ func leave_table() -> void:
 		checkpoint_owner_play()
 		refresh()
 		return
-	if is_instance_valid(game_view) and game_view.visible and game_view.art.spinning > 0: return
+	if is_instance_valid(game_view) and game_view.visible and (game_view.result_pending or game_view.result_hold > 0 or game_view.art.spinning > 0 or (felt.visible and felt.busy())): return
 	if not sim.owner_play.is_empty():
 		if not sim.exit_owner_event(): return
 		sim.owner_play.clear()
@@ -1949,6 +2009,8 @@ func load_game() -> bool:
 		play_context.clear()
 		milestone_notice.reset()
 		reset_dev_speed()
+		rolling = 0
+		active_roll_table = -1
 		event_focus_staff = -1
 		bind_optional_events()
 		bind_audio_events()

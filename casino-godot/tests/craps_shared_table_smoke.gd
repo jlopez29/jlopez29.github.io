@@ -164,6 +164,81 @@ func run() -> void:
 		check(felt.animation == 0 and felt.flights.is_empty() and felt.previous.table.owner == t.owner and felt.reference_dice == t.dice and felt.shooter_seen == t.shooter, "Skipped rolls reconcile at %dx" % speed)
 		felt._process(4)
 		check(felt.previous.table.rolls == t.rolls, "Presentation catches up at %dx" % speed)
+	# Ready completes funded/declined decisions once, then uses canonical settlement.
+	var ready_sim := CasinoSimulation.new("easy", ["craps"])
+	var ready_table: Dictionary = ready_sim.tables[0]
+	ready_sim.opened = true
+	ready_sim.join_table(int(ready_table.id))
+	var shooter := guest_at(ready_sim, ready_table, 0)
+	var declined := guest_at(ready_sim, ready_table, 1)
+	declined.wallet = 1
+	ready_sim.pass_dice(int(ready_table.id))
+	check(ready_sim.roll_interval(ready_table, 100) == 8 and ready_sim.roll_interval(ready_table, 50) == 10, "Attended interval plus fatigue")
+	check(ready_sim.bet(int(ready_table.id), "pass", 25), "Ready owner funded Pass")
+	var ready_id := int(ready_table.id)
+	var reference := saved_copy(ready_sim, "Ready reference")
+	reference.npc_craps_betting(reference.get_table(ready_id))
+	reference.roll(ready_id, [2, 3])
+	attach(ready_sim)
+	check(ready_sim.ready_craps_roll(ready_id, 0, false, [2, 3]).is_empty(), "Ready rolls immediately after decisions")
+	check(ready_table.rolls == 1 and ready_table.point == 5 and ready_table.dice == [2, 3], "Exactly one shared outcome")
+	check(ready_sim.cash == reference.cash and ready_sim.owner_bankroll == reference.owner_bankroll and ready_sim.rng.state == reference.rng.state and shooter.bets == reference.guests[0].bets and shooter.wallet == reference.guests[0].wallet, "Ready matches normal funded accounting and RNG")
+	check(declined.craps_betting_window == [ready_id, 0, 0] and declined.wallet == 1, "Declined decision completes without blocking")
+	felt.capture_roll(ready_table)
+	check(felt.animation > felt.ROLL_END, "Ready displays actual throw")
+	var state := ready_sim.rng.state
+	check(ready_sim.ready_craps_roll(ready_id, 1) == "Dice settling" and ready_sim.ready_craps_roll(ready_id, 0) == "Dice settling" and ready_table.rolls == 1 and ready_sim.rng.state == state, "Double click cannot bet or roll again")
+	ready_sim.craps_roll_blocked = -1
+	check(ready_sim.ready_craps_roll(ready_id, 1, true) == "Resume time first", "Paused Ready rejected")
+	ready_table.betting_hold = true
+	check(ready_sim.ready_craps_roll(ready_id, 1) == "Resume rolls first", "Held Ready rejected")
+	ready_table.betting_hold = false
+	ready_sim.opened = false
+	check(ready_sim.ready_craps_roll(ready_id, 1) == "Waiting for table", "Closed Ready rejected")
+	ready_sim.opened = true
+	var crew_member: Dictionary = ready_sim.crew(ready_id)[0]
+	crew_member.duty = "Break"
+	check(ready_sim.ready_craps_roll(ready_id, 1) == "Table not staffed", "Unstaffed Ready rejected")
+	crew_member.duty = "Active"
+	check(ready_sim.bet(ready_id, "odds", 50), "Ready funded owner odds")
+	var arrival := guest_at(ready_sim, ready_table, 2)
+	var winning := saved_copy(ready_sim, "Ready payout reference")
+	winning.npc_craps_betting(winning.get_table(ready_id))
+	winning.roll(ready_id, [2, 3])
+	check(ready_sim.ready_craps_roll(ready_id, 1, false, [2, 3]).is_empty(), "Ready revalidates arrival and changed wager")
+	check(arrival.craps_betting_window == [ready_id, 1, 5] and ready_sim.owner_bankroll == winning.owner_bankroll and ready_sim.cash == winning.cash and shooter.wallet == winning.guests[0].wallet, "Ready canonical owner and NPC payouts")
+	ready_sim.craps_roll_blocked = -1
+	check(ready_sim.bet(ready_id, "pass", 25), "New CPU hand line")
+	check(ready_sim.ready_craps_roll(ready_id, 2, false, [2, 3]).is_empty(), "CPU establishes next point")
+	ready_sim.craps_roll_blocked = -1
+	check(ready_sim.ready_craps_roll(ready_id, 3, false, [4, 3]).is_empty(), "Ready seven-out")
+	check(ready_table.point == 0 and ready_table.owner.pass == 0 and shooter.bets.pass == 0 and ready_table.shooter == declined.id, "Ready seven-out clears and rotates")
+	felt._process(10)
+	felt.initialize_table(ready_table)
+	declined.wallet = 1000 # Keep this seated participant through the scheduling check.
+	ready_table.timer = 7
+	ready_sim.step()
+	check(ready_table.timer == 7 and ready_table.rolls == 4, "Animation lock freezes automatic schedule")
+	ready_sim.craps_roll_blocked = -1
+	ready_table.timer = ceilf(ready_sim.roll_interval(ready_table, ready_sim.craps_dealer_energy(ready_table)))
+	ready_sim.step()
+	check(ready_table.rolls == 5, "CPU still rolls automatically without Ready")
+	# Forty extra guests must not become Ready participants or receive wager attempts.
+	var bystanders: Array = []
+	for i in range(40):
+		ready_sim.spawn_guest()
+		var bystander: Dictionary = ready_sim.guests[-1]
+		bystander.state = "Watching"
+		bystander.table = -1
+		bystander.wallet = 1000
+		bystanders.append(bystander)
+	ready_sim.craps_roll_blocked = -1
+	var ready_started := Time.get_ticks_usec()
+	check(ready_sim.ready_craps_roll(ready_id, 5, false, [2, 3]).is_empty(), "Ready with forty extra guests")
+	check(bystanders.all(func(g): return g.wallet == 1000 and not g.has("craps_betting_window")), "Only seated participating guests decide")
+	print("Ready with 40 extra guests: %.2f ms" % ((Time.get_ticks_usec() - ready_started) / 1000.0))
+	ready_sim.leave_table()
+	check(ready_sim.roll_interval(ready_table, 100) == CasinoTuning.ROLL_SECONDS, "Background cadence unchanged")
 	# Real step cadence at all supported speeds, with identical seeded economics.
 	var economy: Array = []
 	var started := Time.get_ticks_usec()

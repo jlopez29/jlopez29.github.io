@@ -16,6 +16,9 @@ const Bar = preload("res://scripts/drink_economy.gd")
 const TechService = preload("res://scripts/tech_service.gd")
 const DrinkService = preload("res://scripts/drink_service.gd")
 
+# Transient observed-table animation lock supplied by the controller.
+var craps_roll_blocked := -1
+
 var cash := CasinoTuning.STARTING_CASH
 const OwnerAccount = preload("res://scripts/owner_bankroll.gd")
 const OwnerPlay = preload("res://scripts/owner_event_play.gd")
@@ -1800,12 +1803,10 @@ func step() -> void:
 			continue
 		ensure_shooter(table)
 		npc_craps_betting(table)
-		if joined == int(table.id) and (int(table.shooter) == 0 or table.betting_hold):
+		if joined == int(table.id) and (int(table.shooter) == 0 or table.betting_hold or craps_roll_blocked == int(table.id)):
 			continue
 		table.timer += 1.0
-		var energy := 0.0
-		for employee in crew(int(table.id)):
-			energy += employee.energy / 2
+		var energy := craps_dealer_energy(table)
 		var interval := roll_interval(table, energy)
 		var activity: bool = not seated(int(table.id)).is_empty() or CrapsRules.exposure(table.owner) > 0 or joined == int(table.id)
 		if joined == int(table.id):
@@ -2083,6 +2084,34 @@ func npc_craps_bet(table: Dictionary, guest: Dictionary, key: String, stake: flo
 	if not is_finite(amount) or amount > minf(maximum_wager(table), float(guest.wager_limit)) or amount > float(guest.wallet): return false
 	if key == "odds" and amount > float(guest.bets.pass) * 3.0: return false
 	return take_bet(table, guest, key, amount, false)
+
+func craps_dealer_energy(table: Dictionary) -> float:
+	var energy := 0.0
+	for employee in crew(int(table.id)):
+		energy += float(employee.energy) / 2.0
+	return energy
+
+# Complete the same one-decision-per-window betting pass used by automatic rolls.
+# expected_roll rejects stale requests; the synchronous lock rejects double clicks.
+func ready_craps_roll(id: int, expected_roll: int, paused: bool = false, forced: Array = []) -> String:
+	var table := get_table(id)
+	if table.is_empty() or joined != id or table_kind(table) != "craps": return "Waiting for table"
+	if paused: return "Resume time first"
+	if int(table.shooter) == 0: return "Your turn"
+	if table.betting_hold: return "Resume rolls first"
+	if craps_roll_blocked == id or int(table.rolls) != expected_roll: return "Dice settling"
+	if crew(id).size() < required_crew(table): return "Table not staffed"
+	if not operating(table): return "Waiting for table"
+	ensure_shooter(table)
+	if int(table.shooter) == 0: return "Your turn"
+	npc_craps_betting(table)
+	var window := [id, int(table.rolls), int(table.point)]
+	for guest in seated(id):
+		if guest.get("craps_betting_window", []).map(func(value): return int(value)) != window:
+			return "Waiting for table"
+	craps_roll_blocked = id
+	roll(id, forced)
+	return ""
 
 func roll_interval(table: Dictionary, energy: float = 100.0) -> float:
 	return (CasinoTuning.VISITOR_ROLL_SECONDS + (100 - energy) * CasinoTuning.VISITOR_ROLL_FATIGUE) if joined == int(table.id) else (CasinoTuning.ROLL_SECONDS + (100 - energy) * CasinoTuning.NPC_ROLL_FATIGUE)
@@ -2655,6 +2684,7 @@ func restore(data: Dictionary) -> bool:
 	table_interest.clear()
 	roulette_presentation.clear()
 	craps_presentation.clear()
+	craps_roll_blocked = -1
 	cashout_effects.clear()
 	recent_financial_events.clear()
 	house_activity.clear()
