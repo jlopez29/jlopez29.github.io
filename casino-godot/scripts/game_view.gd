@@ -3,6 +3,7 @@ extends Control
 # Shared play shell. Simulation methods remain the sole owners of wagers/results.
 signal leave_requested
 signal changed
+signal audio_settings_requested
 signal pause_requested
 signal craps_action_requested(action: String)
 const FinancialText = preload("res://scripts/financial_text.gd")
@@ -17,6 +18,8 @@ var sim: PitBossGameContext:
 	set(value):
 		if sim == value: return
 		sim = value
+		audio_result_kind = ""
+		audio_result = {}
 		current_id = -1
 		player_round = {}
 		result_hold = 0
@@ -26,6 +29,8 @@ var sim: PitBossGameContext:
 		signature.clear()
 		surface_signature.clear()
 		roulette_signature.clear()
+var audio_result_kind := ""
+var audio_result: Dictionary = {}
 var paused := false
 var bet := 10.0
 var slot_step := 1.0
@@ -91,6 +96,7 @@ var compact := false
 var landscape := false
 
 func _ready() -> void:
+	AudioManager.settings_changed.connect(update_audio_icon)
 	mouse_filter = MOUSE_FILTER_STOP
 	header = Panel.new()
 	header.add_theme_stylebox_override("panel", PitBoss.box(Color("101315"), PitBoss.GOLD, 0))
@@ -121,6 +127,7 @@ func _ready() -> void:
 	menu_button = MenuButton.new()
 	header.add_child(menu_button)
 	menu_button.text = "..."
+	menu_button.about_to_popup.connect(func(): AudioManager.play_ui("menu"))
 	menu_button.tooltip_text = "Wallet, bets, rules and table options"
 	menu_button.get_popup().id_pressed.connect(menu_action)
 	rack_scroll = ScrollContainer.new()
@@ -143,7 +150,10 @@ func _ready() -> void:
 	stage.add_child(felt)
 	felt.wager_requested.connect(func(name: String, amount: float):
 		if locked(): return
-		feedback = "" if sim.roulette_bet(sim.joined, name, amount) else "Wager unavailable. Check wallet and table limits."
+		var ok: bool = sim.roulette_bet(sim.joined, name, amount)
+		feedback = "" if ok else "Wager unavailable. Check wallet and table limits."
+		if ok: AudioManager.play_game("roulette", "chip")
+		else: AudioManager.play_ui("invalid")
 		notify_change())
 	felt.denomination_changed.connect(func(amount: float): bet = amount; notify_change())
 	controls_scroll = ScrollContainer.new()
@@ -345,6 +355,7 @@ func select_chip(amount: float) -> void:
 		composition.append(bet)
 		bet = snappedf(bet + amount, 0.01)
 	else: bet = amount
+	if kind in ["blackjack", "holdem"]: AudioManager.play_game(kind, "chip")
 	if is_instance_valid(craps): craps.chip = bet
 	notify_change()
 
@@ -362,6 +373,10 @@ func reset_staged() -> void:
 	notify_change()
 
 func menu_action(id: int) -> void:
+	AudioManager.play_ui("confirm")
+	if id == 9:
+		audio_settings_requested.emit()
+		return
 	var table := current_table()
 	var kind := sim.table_kind(table)
 	match id:
@@ -380,6 +395,7 @@ func menu_action(id: int) -> void:
 func update_menu(kind: String, event: bool) -> void:
 	var popup := menu_button.get_popup()
 	popup.clear()
+	popup.add_item("Audio Settings", 9)
 	popup.add_item("Rules / help", 0)
 	popup.add_item("Close options" if show_details else "Wallet / bets / options", 1)
 	if kind != "slots" and not event:
@@ -444,7 +460,20 @@ func transact(start: bool, action: String = "") -> void:
 			art.sponsored = not sim.owner_play.is_empty() and sim.owner_play.funding == "sponsor"
 			art.begin_slot_reveal(previous_stops)
 		else: art.spinning = 0
-	elif ok: art.animate(2.8 if sim.table_kind(current_table()) == "roulette" else 0.2)
+	elif ok:
+		var kind := sim.table_kind(current_table())
+		art.animate(2.8 if kind == "roulette" else 0.2)
+		audio_result_kind = kind
+		audio_result = current_table().round.duplicate(true)
+		if kind == "roulette": AudioManager.start_wheel()
+		else:
+			if start: AudioManager.play_game(kind, "chip")
+			var cue := "deal" if start else "hit" if action.to_lower() == "hit" else "split" if "split" in action.to_lower() else "double" if "double" in action.to_lower() else "stand" if "stand" in action.to_lower() else "fold" if "fold" in action.to_lower() else "check" if "check" in action.to_lower() else "raise"
+			AudioManager.play_game(kind, cue)
+			if cue == "double": AudioManager.play_game(kind, "deal")
+			elif cue == "split": AudioManager.play_game(kind, "chip")
+			if audio_result.get("phase", "") == "done" or kind == "holdem" and not start: AudioManager.play_game(kind, "flip")
+	elif not ok: AudioManager.play_ui("invalid")
 	notify_change()
 
 func render_current() -> void:
@@ -631,6 +660,7 @@ func change_slot_bet(direction: int) -> void:
 	notify_change()
 
 func update_result_hold(delta: float) -> void:
+	if not audio_result_kind.is_empty() and art.spinning <= 0: finish_audio_result()
 	if not paused: result_hold = maxf(0, result_hold - delta)
 	if result_pending and (art.timeline.revealed if art.kind == "slots" else art.spinning <= 0):
 		result_pending = false
@@ -644,14 +674,33 @@ func update_bet_indicator() -> void:
 	bet_indicator.tooltip_text = bet_indicator.text
 
 func toggle_audio() -> void:
-	art.slot_audio.volume = 0.65 if art.slot_audio.volume == 0 else 0.0
-	if art.slot_audio.volume == 0: art.slot_audio.player.stop()
-	update_audio_icon()
+	var kind := sim.table_kind(current_table())
+	AudioManager.set_game_muted(kind, not AudioManager.is_game_muted(kind))
 
 func update_audio_icon() -> void:
-	var enabled: bool = art.slot_audio.volume > 0
+	if not is_instance_valid(audio_button) or sim == null: return
+	var kind := sim.table_kind(current_table())
+	var bus: String = AudioManager.GAME_BUSES.get(kind, "Games")
+	var enabled: bool = AudioManager.audible(bus)
 	audio_button.icon = PitBoss.texture("casino_play/shared/ui/music_on.svg" if enabled else "casino_play/shared/ui/music_off.svg")
-	audio_button.tooltip_text = "Game audio on" if enabled else "Game audio off"
+	var caption: String = {"slots": "Slots", "blackjack": "Blackjack", "roulette": "Roulette", "craps": "Craps", "holdem": "Ultimate Texas Hold'em"}.get(kind, kind.capitalize())
+	audio_button.tooltip_text = ("Unmute " if AudioManager.is_game_muted(kind) else "Mute ") + caption + " sounds"
+	if not enabled and not AudioManager.is_game_muted(kind): audio_button.tooltip_text += " (currently silent through volume or parent mute)"
+
+func finish_audio_result() -> void:
+	if audio_result_kind.is_empty(): return
+	var kind := audio_result_kind
+	var result := audio_result
+	audio_result_kind = ""
+	audio_result = {}
+	if kind == "roulette":
+		AudioManager.stop_wheel()
+		AudioManager.play_game(kind, "land")
+	if result.get("phase", "") != "done": return
+	var net := float(result.get("credit", 0)) - float(result.get("staked", 0))
+	var natural: bool = kind == "blackjack" and result.get("hands", []).any(func(hand_data): return not hand_data.get("split", false) and hand_data.get("cards", []).size() == 2 and Games.total(hand_data.cards) == 21)
+	AudioManager.play_game(kind, "natural" if natural and net > 0 else "win" if net > 0 else "push" if is_zero_approx(net) else "loss")
+	if net > 0: AudioManager.play_game(kind, "payout")
 
 func render_craps_actions(table: Dictionary, disabled: bool) -> void:
 	if int(table.shooter) == 0:
@@ -708,8 +757,9 @@ func render_details(table: Dictionary, event: bool, disabled: bool) -> void:
 		var error := sim.bet_error(sim.joined, selected_wager, bet) if kind == "craps" else ""
 		var stake: float = sim.bet_amount(table, selected_wager, bet) if kind == "craps" else bet
 		button("Add " + FinancialText.cash(stake, 2), func():
-			if kind == "craps": sim.bet(sim.joined, selected_wager, bet)
-			else: sim.roulette_bet(sim.joined, selected_wager, bet)
+			var ok: bool = sim.bet(sim.joined, selected_wager, bet) if kind == "craps" else sim.roulette_bet(sim.joined, selected_wager, bet)
+			if ok: AudioManager.play_game(kind, "chip")
+			else: AudioManager.play_ui("invalid")
 			notify_change(), details, disabled or not error.is_empty(), true)
 		if kind == "craps":
 			button("Remove selected", func(): sim.remove_bet(sim.joined, selected_wager); notify_change(), details, disabled or not CrapsRules.removable(selected_wager, int(table.point)) or float(table.owner.get(selected_wager, 0)) <= 0)

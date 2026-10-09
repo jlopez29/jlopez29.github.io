@@ -1,4 +1,5 @@
 extends RefCounted
+const Property = preload("res://scripts/floor_property.gd")
 const Art = preload("res://scripts/pit_boss_theme.gd")
 static var furniture := {}
 
@@ -36,8 +37,8 @@ const DEALER_ANCHORS := {
 }
 
 # Art anchors describe the public/customer side, not additional gameplay locations.
-const AMENITY_WIDTHS := {"bar": 220.0, "cashier_cage": 170.0}
-const AMENITY_CUSTOMER_ANCHORS := {"bar": Vector2(0.53, 0.87), "cashier_cage": Vector2(0.5, 1.0)}
+const AMENITY_WIDTHS := {"bar": Property.BAR_WIDTH, "cashier_cage": Property.CAGE_WIDTH}
+const AMENITY_CUSTOMER_ANCHORS := {"bar": Property.BAR_ANCHOR, "cashier_cage": Property.CAGE_ANCHOR}
 
 static func local_seat_anchors(kind: String, artwork_size: Vector2) -> PackedVector2Array:
 	var result := PackedVector2Array()

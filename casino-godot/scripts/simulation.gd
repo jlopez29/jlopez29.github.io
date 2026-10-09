@@ -95,7 +95,6 @@ var indexed_step := false
 var thought_last := {} # Transient emission cooldowns, not saved guest history.
 var roulette_presentation := {} # Last actual shared spin only; transient, never saved.
 var table_interest := {} # Bounded recent actual guest wagers, never an odds input.
-const CAGE_PICKUP := Vector2(120, 90)
 var staff: Array = []
 var alerts: Array = []
 var incidents: Array = []
@@ -419,9 +418,12 @@ func purchase_expansion(direction: String) -> bool:
 	if cash < float(quote.cost):
 		log_event("Expansion needs $%.0f in casino cash." % float(quote.cost))
 		return false
+	if not Placement.validate(quote.chunks, placement_geometry(), placement_access_points(bar_owned, quote.chunks)).valid:
+		log_event("Expansion would block the repositioned entrance or service access. Move nearby furniture first.")
+		return false
 	spend_nonpayroll(float(quote.cost), "construction")
 	floor_chunks = quote.chunks.duplicate()
-	emit_financial_event(-float(quote.cost), "construction", {}, -1, {"position": CasinoTuning.ENTRY, "source": "floor_expansion", "direction": direction, "added_area": float(quote.added_area)})
+	emit_financial_event(-float(quote.cost), "construction", {}, -1, {"position": entry_position(), "source": "floor_expansion", "direction": direction, "added_area": float(quote.added_area)})
 	reroute()
 	refresh_progression()
 	award_milestone("expansion", "Floor expanded", "More space also adds property overhead. Income requires operating assets.", 2)
@@ -649,11 +651,19 @@ func placement_geometry() -> Array:
 		placement_world_revision = geometry_revision
 	return placement_world
 
-func placement_access_points(owns_bar: bool) -> PackedVector2Array:
-	var points := PackedVector2Array([CAGE_PICKUP])
+func entry_position() -> Vector2:
+	return Property.entry(floor_chunks)
+
+func cage_pickup() -> Vector2:
+	return Property.cage_pickup(floor_chunks)
+
+func placement_access_points(owns_bar: bool, chunks: Dictionary = {}) -> PackedVector2Array:
+	var property_chunks := floor_chunks if chunks.is_empty() else chunks
+	var counter := Property.bar_counter(property_chunks)
+	var points := PackedVector2Array([Property.cage_pickup(property_chunks), Property.private_approach(property_chunks)])
 	if owns_bar:
-		points.append(bar_pickup())
-		for slot in range(CasinoTuning.BAR_GUEST_OFFSETS.size()): points.append(bar_guest_position(slot))
+		points.append(counter.position + CasinoTuning.BAR_PICKUP_OFFSET)
+		for slot in range(CasinoTuning.BAR_GUEST_OFFSETS.size()): points.append(counter.position + CasinoTuning.BAR_GUEST_OFFSETS[slot])
 	return points
 
 func placement_report(at: Vector2, rotated: bool, ignore_id: int = -1, kind: String = "craps") -> Dictionary:
@@ -670,7 +680,6 @@ func placement_report(at: Vector2, rotated: bool, ignore_id: int = -1, kind: Str
 		if int(asset.id) != ignore_id: assets.append(asset)
 	assets.append(candidate)
 	var access := placement_access_points(bar_owned)
-	access.append(Property.private_approach(floor_chunks))
 	placement_result = Placement.validate(floor_chunks, assets, access)
 	placement_result.candidate = candidate
 	if ignore_id < 0 and tables.size() >= CasinoTuning.MAX_ASSETS:
@@ -803,7 +812,7 @@ func spawn_guest(vip: bool = false) -> void:
 	var profile: Dictionary = CasinoTuning.GUEST_ARCHETYPES[archetype_id]
 	var bankroll := float(rng.randi_range(budget.bankroll.x, budget.bankroll.y)) if not vip else 5000.0
 	if not vip: bankroll = clampf(roundf(bankroll * float(profile.bankroll_scale)), budget.bankroll.x, budget.bankroll.y)
-	guests.append({"archetype": archetype_id, "id": next_id, "name": CasinoTuning.NAMES[rng.randi_range(0, 11)] + (" | VIP" if vip else ""), "x": CasinoTuning.ENTRY.x, "y": CasinoTuning.ENTRY.y, "tx": CasinoTuning.ENTRY.x, "ty": CasinoTuning.ENTRY.y + 20, "table": -1, "seat": -1, "state": "Arriving", "wallet": bankroll, "start": bankroll, "rounds": 0, "last_wager_minute": -1, "bar_slot": -1, "drink_spending": 0.0, "drink_order": "", "drink_quote": 0.0, "drink_request_at": 0, "wager_limit": 100.0 if vip else float(budget.wager), "satisfaction": 80.0, "thirst": 0.0, "age": 0, "session_left": 0.0, "activities": 0, "activity_since": elapsed, "decision_at": elapsed + rng.randi_range(1, 5), "wait_since": -1, "last_table": -1, "explored_without_game": false, "preference": profile.games[rng.randi_range(0, profile.games.size() - 1)], "patience": roundi(rng.randi_range(profile.patience.x, profile.patience.y) * float(CasinoTuning.TRAFFIC_RULES[difficulty].patience)), "demand_blocked": false, "unmet_visit_recorded": false, "demand_wait": 0, "demand_attempts": 0, "demand_failure_wait": 0, "operational_failure": "", "repair_wait_table": -1, "repair_frustrated": false, "watch_left": 0, "watch_style": rng.randi_range(0, 2), "vip": vip, "bets": CrapsRules.empty_bets(), "thought": "Looking for an open game."})
+	guests.append({"archetype": archetype_id, "id": next_id, "name": CasinoTuning.NAMES[rng.randi_range(0, 11)] + (" | VIP" if vip else ""), "x": entry_position().x, "y": entry_position().y, "tx": entry_position().x, "ty": entry_position().y + 20, "table": -1, "seat": -1, "state": "Arriving", "wallet": bankroll, "start": bankroll, "rounds": 0, "last_wager_minute": -1, "bar_slot": -1, "drink_spending": 0.0, "drink_order": "", "drink_quote": 0.0, "drink_request_at": 0, "wager_limit": 100.0 if vip else float(budget.wager), "satisfaction": 80.0, "thirst": 0.0, "age": 0, "session_left": 0.0, "activities": 0, "activity_since": elapsed, "decision_at": elapsed + rng.randi_range(1, 5), "wait_since": -1, "last_table": -1, "explored_without_game": false, "preference": profile.games[rng.randi_range(0, profile.games.size() - 1)], "patience": roundi(rng.randi_range(profile.patience.x, profile.patience.y) * float(CasinoTuning.TRAFFIC_RULES[difficulty].patience)), "demand_blocked": false, "unmet_visit_recorded": false, "demand_wait": 0, "demand_attempts": 0, "demand_failure_wait": 0, "operational_failure": "", "repair_wait_table": -1, "repair_frustrated": false, "watch_left": 0, "watch_style": rng.randi_range(0, 2), "vip": vip, "bets": CrapsRules.empty_bets(), "thought": "Looking for an open game."})
 	traffic_totals.arrivals += 1
 	if vip: award_milestone("first_vip", "First VIP arrival", "A real VIP guest has entered. Higher wagers also mean greater payout exposure.", 2, "positive", {"guest_id": next_id})
 	DrinkService.initialize(guests[-1], elapsed)
@@ -1362,8 +1371,8 @@ func leave(guest: Dictionary, reason: String, departure: String = "visit") -> vo
 	guest.table = -1
 	guest.seat = -1
 	guest.bar_slot = -1
-	guest.tx = CAGE_PICKUP.x if int(guest.rounds) > 0 else CasinoTuning.ENTRY.x
-	guest.ty = CAGE_PICKUP.y if int(guest.rounds) > 0 else CasinoTuning.ENTRY.y
+	guest.tx = cage_pickup().x if int(guest.rounds) > 0 else entry_position().x
+	guest.ty = cage_pickup().y if int(guest.rounds) > 0 else entry_position().y
 	think(guest, reason, 3)
 	route(guest)
 
@@ -1400,7 +1409,14 @@ func reroute() -> void:
 	geometry_revision += 1
 	placement_signature.clear()
 	for employee in staff:
-		if (employee.role == "Service" and employee.has("service_state")) or (employee.role == "Tech" and int(employee.get("repair_target", -1)) > 0): route(employee)
+		if employee.role == "Service" and employee.has("service_state"):
+			if employee.service_state in ["To bar", "At bar"]:
+				var pickup := bar_pickup()
+				employee.tx = pickup.x
+				employee.ty = pickup.y
+				if Vector2(employee.x, employee.y).distance_to(pickup) > 3: employee.service_state = "To bar"
+			route(employee)
+		elif employee.role == "Tech" and int(employee.get("repair_target", -1)) > 0: route(employee)
 	for guest in guests:
 		if guest.state in ["Walking", "Playing"]:
 			var table := get_table(int(guest.table))
@@ -1418,6 +1434,10 @@ func reroute() -> void:
 				guest.ty = target.y
 				guest.state = "To bar"
 				guest.activity_since = elapsed
+		if guest.state in ["To cage", "Leaving", "Arriving"]:
+			var target := cage_pickup() if guest.state == "To cage" else entry_position() + (Vector2(0, 20) if guest.state == "Arriving" else Vector2.ZERO)
+			guest.tx = target.x
+			guest.ty = target.y
 		if guest.state in ["Arriving", "Walking", "Browsing", "Exploring", "To bar", "To cage", "Leaving"]:
 			route(guest)
 
@@ -1464,8 +1484,8 @@ func move_guests(delta: float) -> void:
 				# Wagers already settled against treasury. Do not pay/debit twice here.
 				presentation_revision += 1
 				guest.state = "Leaving"
-				guest.tx = CasinoTuning.ENTRY.x
-				guest.ty = CasinoTuning.ENTRY.y
+				guest.tx = entry_position().x
+				guest.ty = entry_position().y
 				think(guest, "Cashed out. Heading home.")
 				route(guest)
 			continue
@@ -1489,7 +1509,7 @@ func move_guests(delta: float) -> void:
 		if guest.state == "Exploring" and Vector2(guest.x, guest.y).distance_to(Vector2(guest.tx, guest.ty)) < 3: continue
 		# Hold at the exit until the next economic tick removes this guest.
 		# Rerouting here can pull them back to the rounded navigation-grid point.
-		if guest.state == "Leaving" and Vector2(guest.x, guest.y).distance_to(CasinoTuning.ENTRY) < 3:
+		if guest.state == "Leaving" and Vector2(guest.x, guest.y).distance_to(entry_position()) < 3:
 			continue
 		if not guest.has("path"):
 			route(guest)
@@ -1522,7 +1542,7 @@ func move_guests(delta: float) -> void:
 				guest.decision_at = elapsed + rng.randi_range(1, 5)
 
 func bar_bounds() -> Rect2:
-	return CasinoTuning.BAR_COUNTER
+	return Property.bar_counter(floor_chunks)
 
 func bar_available() -> bool:
 	return bar_owned
@@ -1744,7 +1764,7 @@ func step() -> void:
 		if bar_available(): guest.thirst = minf(100, guest.thirst + CasinoTuning.THIRST_PER_MINUTE)
 		DrinkService.tick(self, guest)
 		guest_lifecycle_step(guest)
-	guests = guests.filter(func(g): return not (g.state == "Leaving" and Vector2(g.x, g.y).distance_to(CasinoTuning.ENTRY) < 3))
+	guests = guests.filter(func(g): return not (g.state == "Leaving" and Vector2(g.x, g.y).distance_to(entry_position()) < 3))
 	for table in tables:
 		# Closed tables finish contracts and allow owner play; guests place no new bets.
 		if table.broken or (required_crew(table) > 0 and crew(int(table.id)).size() < required_crew(table)):
@@ -2393,7 +2413,7 @@ func restore(data: Dictionary) -> bool:
 			return false
 	var saved_geometry: Array = []
 	for table in data.tables: saved_geometry.append(Placement.for_table(table))
-	if not Placement.validate(data.floor_chunks, saved_geometry, placement_access_points(bool(data.bar_owned))).valid: return false
+	if not Placement.validate(data.floor_chunks, saved_geometry, placement_access_points(bool(data.bar_owned), data.floor_chunks)).valid: return false
 	if int(data.joined) != -1 and int(data.joined) not in ids:
 		return false
 	var reserved_bar_slots := {}

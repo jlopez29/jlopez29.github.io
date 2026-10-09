@@ -9,7 +9,8 @@ func _ready() -> void:
 	table_clicked.connect(approach_station)
 
 func select_at(screen: Vector2) -> void:
-	if PitBossFloorContext.KIOSK.grow(10).has_point(world_at(screen)):
+	# The larger decorative nook routes to the same original kiosk approach.
+	if recovery_art_bounds().has_point(world_at(screen)) or PitBossFloorContext.KIOSK.grow(10).has_point(world_at(screen)):
 		destination = 0
 		walk_to(PitBossFloorContext.KIOSK.get_center() + Vector2(0, 60))
 		return

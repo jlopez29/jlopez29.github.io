@@ -90,7 +90,7 @@ func run() -> void:
 	check(not floor.has_node("World/Lounge") and not floor.has_node("World/Entrance"), "Prototype decor removed")
 	check(floor.get_node("World/Cage") is TextureRect, "Cage uses artwork")
 	var cage: TextureRect = floor.get_node("World/Cage")
-	check(is_equal_approx(cage.position.y + cage.size.y, CasinoSimulation.CAGE_PICKUP.y), "Cage public side at pickup")
+	check(is_equal_approx(cage.position.y + cage.size.y, ui.sim.cage_pickup().y), "Cage public side at pickup")
 	var bar: TextureRect = floor.get_node("World/Bar")
 	check(bar.size.x > ui.sim.bar_bounds().size.x and bar.size.y > ui.sim.bar_bounds().size.y, "Substantial independent bar art")
 	check((bar.position + bar.size * Catalog.AMENITY_CUSTOMER_ANCHORS.bar).is_equal_approx(ui.sim.bar_guest_position(2)), "Bar customer row aligned")
@@ -109,7 +109,7 @@ func run() -> void:
 	ui.sim.roll(int(craps.id), [1, 6])
 	check(gambler.rounds > 0, "Actual settled guest round")
 	ui.sim.leave(gambler, "Acceptance cash-out")
-	check(Vector2(gambler.tx, gambler.ty) == CasinoSimulation.CAGE_PICKUP, "Authoritative cage target")
+	check(Vector2(gambler.tx, gambler.ty) == ui.sim.cage_pickup(), "Authoritative cage target")
 	var cash: float = ui.sim.cash
 	for i in range(250):
 		ui.sim.move_guests(0.25)

@@ -13,6 +13,9 @@ func settle() -> void:
 	for i in range(8): await process_frame
 
 func run() -> void:
+	var audio = root.get_node("AudioManager")
+	var previous_mute: bool = audio.is_game_muted("slots")
+	audio.set_game_muted("slots", false)
 	for kind in ["slots", "roulette", "blackjack", "holdem", "craps"]:
 		var sim := CasinoSimulation.new()
 		sim.back_room.rng.seed = 3
@@ -41,7 +44,7 @@ func run() -> void:
 			check(view.bet == 10, "Minus subtracts selected unit")
 			check(not view.actions.get_children().any(func(node): return node is SpinBox), "No slot wager text editor")
 			view.toggle_audio()
-			check(view.art.slot_audio.volume == 0 and view.audio_button.icon != null, "Header audio icon mutes")
+			check(root.get_node("AudioManager").is_game_muted("slots") and view.audio_button.icon != null, "Header audio icon mutes")
 		elif kind == "roulette":
 			check(view.sim.roulette_bet(view.sim.joined, "Red", 1), "Real roulette wager")
 		elif kind == "craps":
@@ -109,5 +112,8 @@ func run() -> void:
 	# Standard machines step by $2 above their configured $5 minimum.
 	public_sim.tables[0].slot_profile = "standard"
 	check(public_sim.join_table(int(public_sim.tables[0].id)) and public_sim.start_game(public_sim.joined, 7), "Public slots accept the tier's wager increment within limits")
+	audio.set_game_muted("slots", previous_mute)
+	audio.shutdown()
+	await create_timer(0.12).timeout
 	print("GAME_CONTROLS: %d checks, %d failures" % [checks, failures])
 	quit(1 if failures else 0)

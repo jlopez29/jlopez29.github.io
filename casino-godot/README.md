@@ -1,4 +1,4 @@
-# Pit Boss — playable 0.4.2.6
+# Pit Boss — playable 0.5
 
 A Godot/GDScript casino tycoon prototype with craps, slots, roulette, blackjack, and Ultimate Texas Hold’em.
 Manage the business, walk its floor, and play at your own tables. The goal is to

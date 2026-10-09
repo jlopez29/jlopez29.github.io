@@ -63,7 +63,9 @@ func _ready() -> void:
 	stakes.item_selected.connect(func(_index): update_terms())
 	commit = make_button(card, "Commit personal stake", func():
 		var stake := float(stakes.get_item_metadata(stakes.selected)) if stakes.selected >= 0 else 0.0
-		message.text = "" if sim.start_owner_event(current_id, stake) else "Cannot commit: check personal bankroll, availability, or finish your current game."
+		var ok: bool = sim.start_owner_event(current_id, stake)
+		message.text = "" if ok else "Cannot commit: check personal bankroll, availability, or finish your current game."
+		AudioManager.play_ui("confirm" if ok else "invalid")
 		changed.emit())
 	message = Label.new()
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

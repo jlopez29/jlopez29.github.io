@@ -1,6 +1,8 @@
 class_name CasinoTuning
 extends RefCounted
 
+const MAX_GAME_SPEED := 8
+
 # Character presentation only; sizes refer to the visible dot diameter in pixels.
 const GUEST_BASE_SCREEN_SIZE := 24.0
 const GUEST_MIN_SCREEN_SIZE := 18.0
@@ -419,9 +421,9 @@ const GUEST_VISIT_FATIGUE_SPAN := 600.0
 
 # Owner account and optional happenings (game minutes, not wall-clock timers).
 const OWNER_STARTING_BANKROLL := 1000.0
-const OWNER_ALLOWANCE_AMOUNT := 50.0
-const OWNER_ALLOWANCE_INTERVAL_MINUTES := 720
-const GAME_START_MINUTE := 1080 # 18:00; allowance boundaries are midnight and noon.
+const OWNER_ALLOWANCE_AMOUNT := 10.0
+const OWNER_ALLOWANCE_INTERVAL_MINUTES := 60
+const GAME_START_MINUTE := 1080 # 18:00; allowance pays on each in-game hour.
 const OWNER_MAX_REWARD := 1000.0
 const OWNER_MONEY_LIMIT := 1.0e12
 const OWNER_HISTORY_LIMIT := 64

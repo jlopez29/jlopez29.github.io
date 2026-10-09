@@ -56,6 +56,7 @@ func mount(ui: Control) -> void:
 	ui.pause_button = ui.add_button(ui.header_actions, "Pause", ui.toggle_pause)
 	ui.mobile_menu = MenuButton.new()
 	ui.mobile_menu.text = "Menu"
+	ui.mobile_menu.about_to_popup.connect(func(): AudioManager.play_ui("menu"))
 	ui.mobile_menu.flat = false
 	ui.mobile_menu.custom_minimum_size = Vector2(64, 44)
 	ui.add_child(ui.mobile_menu)
@@ -65,11 +66,13 @@ func mount(ui: Control) -> void:
 	for title in ["Save", "Load", "Help", "New casino"]: global_menu.add_item(title)
 	if OS.is_debug_build(): global_menu.add_item("Developer tools")
 	global_menu.add_item("Transfer personal wallet to casino", 5)
+	global_menu.add_item("Audio Settings", 6)
 	global_menu.id_pressed.connect(ui.global_action)
 	ui.mobile_speed = ui.add_button(self, "1x", func():
 		if ui.speed == 0: ui.speed = 1
 		elif ui.speed == 1: ui.speed = 2
 		elif ui.speed == 2: ui.speed = 4
+		elif ui.speed == 4: ui.speed = 8
 		else: ui.speed = 0
 		if ui.speed > 0: ui.previous_speed = ui.speed
 		ui.refresh())
@@ -179,7 +182,7 @@ func mount(ui: Control) -> void:
 		nav_button.set_meta("shell_page", entry.page)
 		if entry.page == "more": ui.event_nav = nav_button
 	ui.nav_rail = $NavigationRail
-	for entry in [{"title": "Floor", "icon": "gameplay/spade", "page": "floor"}, {"title": "Overview", "icon": "navigation/events", "page": "manage"}, {"title": "Build", "icon": "navigation/build", "page": "build"}, {"title": "Staff", "icon": "navigation/staff", "page": "staff"}, {"title": "Guests", "icon": "navigation/guests", "page": "guests"}, {"title": "Finance", "icon": "navigation/finance", "page": "finance"}, {"title": "Incidents", "icon": "navigation/security", "page": "incidents"}, {"title": "Events", "icon": "navigation/events", "page": "log"}]:
+	for entry in [{"title": "Floor", "icon": "gameplay/spade", "page": "floor"}, {"title": "Overview", "icon": "navigation/overview", "page": "manage"}, {"title": "Build", "icon": "navigation/build", "page": "build"}, {"title": "Staff", "icon": "navigation/staff", "page": "staff"}, {"title": "Guests", "icon": "navigation/guests", "page": "guests"}, {"title": "Finance", "icon": "navigation/finance", "page": "finance"}, {"title": "Incidents", "icon": "navigation/security", "page": "incidents"}, {"title": "Events", "icon": "navigation/events", "page": "log"}]:
 		var button: Button = preload("res://presentation/components/nav_button.tscn").instantiate()
 		ui.nav_rail.add_child(button)
 		button.text = entry.title

@@ -49,7 +49,9 @@ func _process(delta: float) -> void:
 	if not is_visible_in_tree(): return
 	idle_time += delta
 	particles.advance(delta)
+	var was_active := timeline.active
 	timeline.advance(delta)
+	if was_active and not timeline.active and sponsored: slot_audio.cue("free")
 	spinning = maxf(0,timeline.finish_at-timeline.elapsed) if timeline.active else 0.0
 	if timeline.revealed: last_win = float(timeline.info.credit)
 	queue_redraw()
@@ -75,6 +77,7 @@ func can_skip_slot_reveal() -> bool:
 
 func skip_slot_reveal() -> bool:
 	if not timeline.skip(): return false
+	if sponsored: slot_audio.cue("free")
 	particles.clear()
 	spinning = 0
 	last_win = float(timeline.info.credit)

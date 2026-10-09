@@ -91,6 +91,8 @@ func route(request: Dictionary) -> void:
 	else: source.route(request)
 func bar_available() -> bool:
 	return false if is_private else source.bar_available()
+func cage_pickup() -> Vector2:
+	return source.cage_pickup()
 func bar_bounds() -> Rect2:
 	return source.bar_bounds()
 func bar_guest_position(index: int) -> Vector2:
@@ -115,7 +117,7 @@ func door_approach() -> Vector2:
 func safe_public_threshold() -> Vector2:
 	var anchor := Property.private_approach(source.floor_chunks)
 	var grid := source.floor_navigation()
-	var connected := Placement.connected_cells(grid)
+	var connected := Placement.connected_cells(grid, source.entry_position())
 	if Placement.reachable(grid, connected, anchor) and public_threshold_free(anchor): return anchor
 	var best := source.player
 	var distance := INF
@@ -132,6 +134,6 @@ func public_threshold_free(at: Vector2) -> bool:
 	var radius := CasinoTuning.ASSET_NAV_RADIUS
 	for actor in source.guests + source.staff:
 		if at.distance_to(Vector2(actor.get("x", -1000), actor.get("y", -1000))) < radius * 2: return false
-	for amenity in [Catalog.amenity_visual_bounds("cashier_cage", CasinoSimulation.CAGE_PICKUP), Catalog.amenity_visual_bounds("bar", source.bar_guest_position(2))]:
+	for amenity in [Catalog.amenity_visual_bounds("cashier_cage", source.cage_pickup()), Catalog.amenity_visual_bounds("bar", source.bar_guest_position(2))]:
 		if amenity.grow(radius).has_point(at): return false
 	return true

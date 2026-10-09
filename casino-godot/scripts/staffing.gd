@@ -10,7 +10,7 @@ static func new_employee(sim, role: String, table_id: int = -1) -> Dictionary:
 		"available_at": sim.elapsed, "rest_due": "", "service_product": ""}
 	if role == "Tech":
 		employee.duty = "On Call"
-		employee.merge({"call_speed": CasinoTuning.ENTITY_WALK_SPEED, "repair_target": -1, "repair_minutes": 0, "x": CasinoTuning.ENTRY.x, "y": CasinoTuning.ENTRY.y, "tx": CasinoTuning.ENTRY.x, "ty": CasinoTuning.ENTRY.y})
+		employee.merge({"call_speed": CasinoTuning.ENTITY_WALK_SPEED, "repair_target": -1, "repair_minutes": 0, "x": sim.entry_position().x, "y": sim.entry_position().y, "tx": sim.entry_position().x, "ty": sim.entry_position().y})
 	return employee
 
 static func wage(role: String) -> float:

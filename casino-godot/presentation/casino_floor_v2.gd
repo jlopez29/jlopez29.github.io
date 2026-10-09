@@ -16,6 +16,12 @@ var inspector_occlusion := Rect2()
 var framing_signature: Array = []
 var room_signature := Rect2()
 var amenity_signature: Array = []
+var architecture_signature: Array = []
+# Visible alpha bounds inspected in the supplied 1254px images. Keep the full
+# texture and its aspect ratio; transparent margins are not world geometry.
+const PUBLIC_ENTRANCE_INK := Rect2(31, 86, 1192, 997)
+const BACK_ROOM_DOOR_INK := Rect2(34, 88, 1185, 1010)
+const RECOVERY_NOOK_INK := Rect2(114, 98, 1058, 1034)
 var asset_views := {}
 var guest_views := {}
 var staff_views := {}
@@ -193,7 +199,38 @@ func prune(views: Dictionary, live: Dictionary) -> void:
 			views[id].queue_free()
 			views.erase(id)
 
+# Presentation bounds only: collision, approach and reach checks still use KIOSK.
+func recovery_art_bounds() -> Rect2:
+	# Keep the whole nook visible above the owner in the landscape walk camera.
+	var approach := PitBossFloorContext.KIOSK.get_center() + Vector2(0, 60)
+	return Rect2(Vector2(approach.x - 65, approach.y - 118), Vector2(130, 130))
+
+func place_architecture(view: TextureRect, ink: Rect2, width: float, threshold: Vector2) -> void:
+	var ratio := width / ink.size.x
+	view.size = view.texture.get_size() * ratio
+	view.position = threshold - Vector2(ink.get_center().x, ink.end.y) * ratio
+
+func sync_architecture() -> void:
+	var entrance := PitBossFloorContext.Property.public_door(sim.source.floor_chunks)
+	var door := sim.door_bounds()
+	var signature := [sim.is_private, entrance, door]
+	if architecture_signature == signature: return
+	architecture_signature = signature
+	$World/PublicEntrance.visible = not sim.is_private
+	$World/RecoveryNook.visible = sim.is_private
+	$World/RecoveryLabel.visible = sim.is_private
+	place_architecture($World/PublicEntrance, PUBLIC_ENTRANCE_INK, 60, Vector2(entrance.get_center().x, entrance.end.y))
+	place_architecture($World/BackRoomDoor, BACK_ROOM_DOOR_INK, door.size.x, Vector2(door.get_center().x, door.end.y))
+	$World/BackRoomDoorLabel.position = Vector2(door.position.x - 6, door.end.y + 1)
+	$World/BackRoomDoorLabel.size = Vector2(door.size.x + 12, 14)
+	$World/BackRoomDoorLabel.text = "EXIT" if sim.is_private else "BACK ROOM"
+	var nook := recovery_art_bounds()
+	place_architecture($World/RecoveryNook, RECOVERY_NOOK_INK, nook.size.x, Vector2(nook.get_center().x, nook.end.y))
+	$World/RecoveryLabel.position = Vector2(nook.position.x, nook.end.y + 1)
+	$World/RecoveryLabel.size = Vector2(nook.size.x, 14)
+
 func sync_world() -> void:
+	sync_architecture()
 	var room := sim.floor_rect()
 	if room_signature != room:
 		room_signature = room
@@ -209,13 +246,13 @@ func sync_world() -> void:
 		$World/RoomTrim.points = PackedVector2Array([room.position + Vector2(3, 112), Vector2(room.end.x - 3, room.position.y + 112), room.end - Vector2(3, 3), Vector2(room.position.x + 3, room.end.y - 3), room.position + Vector2(3, 112)])
 		$World/LobbyTrim.points = PackedVector2Array([room.position + Vector2(0, 110), Vector2(room.end.x, room.position.y + 110)])
 	# Retain logical counter/pickup positions; only the artwork has separate bounds.
-	var amenities := [sim.bar_bounds(), CasinoSimulation.CAGE_PICKUP]
+	var amenities := [sim.bar_bounds(), sim.cage_pickup()]
 	if amenity_signature != amenities:
 		amenity_signature = amenities
 		var bar_art := Catalog.amenity_visual_bounds("bar", sim.bar_guest_position(2))
 		$World/Bar.position = bar_art.position
 		$World/Bar.size = bar_art.size
-		var cage_art := Catalog.amenity_visual_bounds("cashier_cage", CasinoSimulation.CAGE_PICKUP)
+		var cage_art := Catalog.amenity_visual_bounds("cashier_cage", sim.cage_pickup())
 		$World/Cage.position = cage_art.position
 		$World/Cage.size = cage_art.size
 	$World/Cage.visible = not sim.is_private
@@ -320,11 +357,7 @@ func _draw() -> void:
 
 		draw_set_transform(Vector2.ZERO)
 	draw_set_transform(camera, 0, Vector2.ONE * zoom)
-	draw_front_doors()
 	if sim.is_private:
-		draw_rect(PitBossFloorContext.KIOSK, Color("304639"))
-		draw_rect(PitBossFloorContext.KIOSK, GOLD, false, 2)
-		text_at(PitBossFloorContext.KIOSK.position + Vector2(8, 28), "RECOVERY", GOLD, 12)
 		text_at(Vector2(36, 72), "THE BACK ROOM | PERSONAL PLAY", GOLD, 18)
 	draw_set_transform(Vector2.ZERO)
 	draw_financial_feedback()
@@ -340,7 +373,7 @@ func placement_is_valid() -> bool:
 
 func _on_financial_event(event: Dictionary) -> void:
 	super._on_financial_event(event)
-	if presentation_speed <= 0 or presentation_speed > 4 or not is_visible_in_tree(): return
+	if presentation_speed <= 0 or presentation_speed > CasinoTuning.MAX_GAME_SPEED or not is_visible_in_tree(): return
 	if str(event.get("category", "")) == "gaming" and int(event.get("guest_id", -1)) < 0:
 		# An aggregate house net cannot describe each craps player's own result.
 		for participant in event.get("participants", []):
@@ -356,7 +389,7 @@ func react_guest_event(event: Dictionary) -> void:
 
 func _on_guest_thought(event: Dictionary) -> void:
 	super._on_guest_thought(event)
-	if presentation_speed <= 0 or presentation_speed > 4 or not is_visible_in_tree(): return
+	if presentation_speed <= 0 or presentation_speed > CasinoTuning.MAX_GAME_SPEED or not is_visible_in_tree(): return
 	var marker = guest_views.get(int(event.get("guest_id", -1)))
 	if marker == null: return
 	# Reuse real, rate-limited qualitative events, leaving their useful text intact.

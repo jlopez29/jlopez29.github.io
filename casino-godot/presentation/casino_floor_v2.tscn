@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=11 format=3]
 [ext_resource type="Script" path="res://presentation/casino_floor_v2.gd" id="1"]
 [ext_resource type="Texture2D" path="res://assets/pit_boss/flooring/burgundy_carpet.png" id="2"]
 [ext_resource type="Texture2D" path="res://assets/pit_boss/flooring/marble_light.png" id="3"]
@@ -6,6 +6,9 @@
 [ext_resource type="Texture2D" path="res://assets/pit_boss/flooring/wood_floor.png" id="5"]
 [ext_resource type="Texture2D" path="res://assets/pit_boss/casino/amenities/cashier_cage.png" id="6"]
 [ext_resource type="PackedScene" path="res://presentation/components/staff_marker.tscn" id="player_marker"]
+[ext_resource type="Texture2D" path="res://assets/pit_boss/casino/architecture/public_entrance.png" id="public_entrance"]
+[ext_resource type="Texture2D" path="res://assets/pit_boss/casino/architecture/back_room_door.png" id="back_room_door"]
+[ext_resource type="Texture2D" path="res://assets/pit_boss/casino/back_room/recovery_room.png" id="recovery_room"]
 [node name="CasinoFloorV2" type="Control"]
 clip_contents = true
 script = ExtResource("1")
@@ -37,6 +40,32 @@ default_color = Color(0.65, 0.48, 0.22, 0.38)
 [node name="LobbyTrim" type="Line2D" parent="World"]
 width = 1.5
 default_color = Color(0.8, 0.61, 0.30, 0.50)
+[node name="PublicEntrance" type="TextureRect" parent="World"]
+mouse_filter = 2
+texture = ExtResource("public_entrance")
+expand_mode = 1
+stretch_mode = 5
+[node name="BackRoomDoor" type="TextureRect" parent="World"]
+mouse_filter = 2
+texture = ExtResource("back_room_door")
+expand_mode = 1
+stretch_mode = 5
+[node name="BackRoomDoorLabel" type="Label" parent="World"]
+mouse_filter = 2
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 9
+theme_override_colors/font_color = Color(0.85, 0.75, 0.52, 1)
+[node name="RecoveryNook" type="TextureRect" parent="World"]
+mouse_filter = 2
+texture = ExtResource("recovery_room")
+expand_mode = 1
+stretch_mode = 5
+[node name="RecoveryLabel" type="Label" parent="World"]
+mouse_filter = 2
+horizontal_alignment = 1
+text = "RECOVERY"
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.85, 0.75, 0.52, 1)
 [node name="Cage" type="TextureRect" parent="World"]
 mouse_filter = 2
 texture = ExtResource("6")

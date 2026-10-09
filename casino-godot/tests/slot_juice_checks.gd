@@ -2,7 +2,7 @@ extends SceneTree
 const Games = preload("res://scripts/casino_games.gd")
 const Result = preload("res://scripts/slot_result.gd")
 const State = preload("res://scripts/slot_presentation_state.gd")
-const View = preload("res://scripts/game_view.gd")
+var View: GDScript
 var checks := 0
 var failures := 0
 
@@ -22,6 +22,9 @@ func fixture(stops: Array, lines: int = 5) -> Dictionary:
 	return result
 
 func run() -> void:
+	View = load("res://scripts/game_view.gd")
+	var audio = root.get_node("AudioManager")
+	var previous_mute: bool = audio.is_game_muted("slots")
 	var even := fixture([2,7,12])
 	var partial := fixture([6,12,16])
 	var big := fixture([3,3,3])
@@ -68,6 +71,9 @@ func run() -> void:
 	check(not state.all_lines() and not state.active,"Full paths clear to edge markers at ready")
 	await view_checks(even)
 	await create_timer(0.15).timeout
+	audio.set_game_muted("slots", previous_mute)
+	audio.shutdown()
+	await create_timer(0.12).timeout
 	print("SLOT JUICE: %d checks, %d failures" % [checks,failures])
 	quit(1 if failures else 0)
 
@@ -76,12 +82,12 @@ func view_checks(even: Dictionary) -> void:
 	sim.opened = true
 	sim.join_table(int(sim.tables[0].id))
 	sim.tables[0].round = even
-	var view := View.new()
+	var view = View.new()
 	view.sim = PitBossGameContext.new(sim)
 	root.add_child(view)
 	view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	view.render_current()
-	view.art.slot_audio.volume = 0
+	root.get_node("AudioManager").set_game_muted("slots", true)
 	view.art.begin_slot_reveal()
 	view.result_pending = true
 	view.balance_before = Vector2(sim.owner_bankroll,sim.cash)

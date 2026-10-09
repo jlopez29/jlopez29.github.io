@@ -20,6 +20,8 @@ func walk(view: Control, seconds: float = 15) -> void:
 		view._process(1.0 / 30)
 
 func run() -> void:
+	var audio = root.get_node("AudioManager")
+	var previous_mute: bool = audio.is_game_muted("slots")
 	root.size = Vector2i(1440, 900)
 	var scene := load("res://main.tscn") as PackedScene
 	var ui := scene.instantiate()
@@ -30,8 +32,8 @@ func run() -> void:
 	ui.set_process(false)
 	ui.floor_view.set_process(false)
 	ui.back_room_floor.set_process(false)
-	check(CasinoTuning.ENTRANCE_CLEARANCE.has_point(ui.floor_view.sim.door_approach()), "Private approach uses existing entrance clearance")
-	check(not Property.public_door().intersects(ui.floor_view.sim.door_bounds()), "Front door targets are separate")
+	check(Property.entrance_clearance(ui.sim.floor_chunks).has_point(ui.floor_view.sim.door_approach()), "Private approach uses existing entrance clearance")
+	check(not Property.public_door(ui.sim.floor_chunks).intersects(ui.floor_view.sim.door_bounds()), "Front door targets are separate")
 	check(ui.sim.can_place(Vector2(420, 480), false, -1, "slots"), "Old south doorway reservation accepts ordinary slot placement")
 	ui.sim.player = CasinoTuning.ENTRY + Vector2(0, 300)
 	var public_counts := [ui.sim.tables.size(), ui.sim.staff.size()]
@@ -52,7 +54,7 @@ func run() -> void:
 	walk(ui.back_room_floor)
 	check(ui.private_play and ui.game_view.visible and ui.game_view.sim.is_private, "Fixture opens authoritative shared play view")
 	check(ui.game_view.art.get_script() == load("res://scripts/casino_surface.gd") and ui.felt.get_script() == load("res://presentation/play/craps_surface.gd"), "Shared public game components")
-	ui.game_view.art.slot_audio.volume = 0
+	audio.set_game_muted("slots", true)
 	ui.game_view.bet = 1.0
 	var wallet: float = ui.sim.owner_bankroll
 	var cash: float = ui.sim.cash
@@ -82,8 +84,8 @@ func run() -> void:
 	walk(ui.back_room_floor)
 	check(not ui.in_back_room and ui.floor_view.visible and not ui.floor_view.blocked(ui.sim.player), "Physical exit returns safely")
 	var original := Property.private_door(ui.sim.floor_chunks)
-	check(Property.private_door({"left": 1, "right": 0, "bottom": 0}).get_center().is_equal_approx(original.get_center()), "Left expansion retains fixed frontage")
-	check(Property.private_door({"left": 0, "right": 1, "bottom": 1}) == original, "Right/bottom expansion retains fixed frontage")
+	check(Property.private_door({"left": 1, "right": 0, "bottom": 0}).get_center().x < original.get_center().x, "Left expansion recenters frontage")
+	check(Property.private_door({"left": 0, "right": 1, "bottom": 1}).get_center().x > original.get_center().x, "Right expansion recenters frontage; bottom expansion leaves its height unchanged")
 	# One deterministic money example supplements the random shared spin above.
 	var money_sim := Sim.new()
 	var initial_cash: float = money_sim.cash
@@ -107,5 +109,8 @@ func run() -> void:
 	DirAccess.remove_absolute("user://back_room_smoke.save")
 	ui.queue_free()
 	await process_frame
+	audio.set_game_muted("slots", previous_mute)
+	audio.shutdown()
+	await create_timer(0.12).timeout
 	print("BACK_ROOM_SMOKE: %d checks, %d failures" % [checks, failures])
 	quit(1 if failures else 0)

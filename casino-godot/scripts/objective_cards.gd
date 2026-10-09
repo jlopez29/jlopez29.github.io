@@ -71,6 +71,7 @@ func refresh(simulation: CasinoSimulation) -> void:
 				var current: Dictionary = sim.optional_objectives.find_goal(id)
 				var ok: bool = sim.optional_objectives.claim(sim, id) if current.get("state") == "ready" else sim.optional_objectives.start(sim, id)
 				message.text = "Start only goals you want. Ignore or expire safely." if ok else "Unavailable: check current conditions, bankroll cap, reward budget or save storage."
+				AudioManager.play_ui("win" if ok and current.get("state") == "claimed" else "confirm" if ok else "invalid")
 				changed.emit())
 			card.dismiss = button(actions, "Ignore", func(): sim.optional_objectives.dismiss(sim, id); changed.emit())
 			cards[id] = card

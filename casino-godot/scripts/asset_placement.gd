@@ -65,13 +65,13 @@ static func navigation_in(area: Rect2, assets: Array) -> AStarGrid2D:
 static func cell_at(point: Vector2) -> Vector2i:
 	return Vector2i(roundi(point.x / CasinoTuning.FLOOR_NAV_CELL), roundi(point.y / CasinoTuning.FLOOR_NAV_CELL))
 
-static func connected_cells(grid: AStarGrid2D) -> PackedByteArray:
+static func connected_cells(grid: AStarGrid2D, entry_point: Vector2 = CasinoTuning.ENTRY) -> PackedByteArray:
 	# One flood fill verifies all guest/dealer approaches, including existing assets.
 	# Exact same solids, cell rounding and four-way movement as gameplay navigation.
 	var region := grid.region
 	var connected := PackedByteArray()
 	connected.resize(region.size.x * region.size.y)
-	var entry := cell_at(CasinoTuning.ENTRY)
+	var entry := cell_at(entry_point)
 	if not grid.is_in_boundsv(entry) or grid.is_point_solid(entry): return connected
 	var width := region.size.x
 	var first := (entry.y - region.position.y) * width + entry.x - region.position.x
@@ -102,7 +102,7 @@ static func validate(chunks: Dictionary, assets: Array, extra_access: PackedVect
 			error(errors, "Furniture outside build area", asset.furniture.get_center(), asset.id)
 		if not walk.encloses(asset.collision):
 			error(errors, "Required clearance crosses walkable edge", asset.collision.get_center(), asset.id)
-		if asset.furniture.merge(asset.art).intersects(CasinoTuning.ENTRANCE_CLEARANCE):
+		if asset.furniture.merge(asset.art).intersects(Property.entrance_clearance(chunks)):
 			error(errors, "Furniture/art blocks the entrance", asset.furniture.get_center(), asset.id)
 		for group in ["seats", "approaches", "dealers", "dealer_approaches"]:
 			for point in asset[group]:
@@ -117,7 +117,7 @@ static func validate(chunks: Dictionary, assets: Array, extra_access: PackedVect
 				error(errors, "Asset #%d blocks clearance for #%d" % [b.id, a.id], a.furniture.get_center(), a.id)
 	if errors.is_empty():
 		var grid := navigation(chunks, assets)
-		var connected := connected_cells(grid)
+		var connected := connected_cells(grid, Property.entry(chunks))
 		for asset in assets:
 			for group in ["approaches", "dealer_approaches"]:
 				for i in range(asset[group].size()):

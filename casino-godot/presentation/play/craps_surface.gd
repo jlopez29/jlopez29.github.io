@@ -20,6 +20,13 @@ var pan_distance := 0.0
 var mouse_down := false
 var drag_stack := false
 var reference_dice: Array = []
+var audio_wall := false
+var audio_settled := false
+var audio_bounced := false
+var audio_point := 0
+var audio_credit := 0.0
+var audio_sum := 0
+var audio_held := false
 var rebound := Vector2.ZERO
 var dice_bounds := Rect2(20, 20, 1160, 650)
 
@@ -229,7 +236,23 @@ func _process(delta: float) -> void:
 	var table := sim.get_table(sim.joined)
 	if observed_sim != sim or table_id != sim.joined:
 		initialize_table(table)
+	if dice_held and not audio_held: AudioManager.play_game("craps", "pickup")
+	audio_held = dice_held
 	animation = maxf(0, animation - delta)
+	if animation > 0:
+		var progress := clampf((animation_duration - animation) / ROLL_SECONDS, 0, 1)
+		var hit := 0.58 - throw_power * 0.12
+		if not audio_wall and progress >= hit:
+			audio_wall = true
+			AudioManager.play_game("craps", "wall")
+		if not audio_bounced and progress >= hit + (1 - hit) / 3:
+			audio_bounced = true
+			AudioManager.play_game("craps", "bounce")
+		if not audio_settled and animation <= ROLL_END:
+			audio_settled = true
+			AudioManager.play_game("craps", "settle")
+			var cue := "seven_out" if audio_point > 0 and audio_sum == 7 else "point_made" if audio_point > 0 and audio_sum == audio_point else "point" if audio_point == 0 and int(table.point) > 0 else "payout" if audio_credit > 0 else ""
+			if not cue.is_empty(): AudioManager.play_game("craps", cue)
 	if int(table.rolls) != last_roll: capture_roll(table)
 	if animation <= ROLL_END and int(table.rolls) > 0:
 		reference_dice = table.dice.duplicate()
@@ -312,6 +335,13 @@ func capture_roll(table: Dictionary) -> void:
 			if result.bets == current.bets and is_equal_approx(float(result.credit), float(current.wallet) - float(guest.wallet) + added):
 				guest.bets = bets
 				settlement(bets, int(before.point), table.dice, false, int(guest.seat))
+	audio_point = int(previous.get("table", {}).get("point", table.point))
+	audio_credit = float(table.history[0].credit) if not table.history.is_empty() else 0.0
+	audio_sum = int(table.dice[0]) + int(table.dice[1])
+	audio_wall = false
+	audio_bounced = false
+	audio_settled = false
+	AudioManager.play_game("craps", "throw")
 	last_roll = int(table.rolls)
 	animation = animation_duration
 	resting_dice = landing

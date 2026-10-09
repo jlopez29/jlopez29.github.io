@@ -1,6 +1,6 @@
 extends SceneTree
 const Games = preload("res://scripts/casino_games.gd")
-const View = preload("res://scripts/game_view.gd")
+var View: GDScript
 var checks := 0
 var failures := 0
 
@@ -20,6 +20,7 @@ func close(a: float, b: float) -> bool:
 	return absf(a-b) < 0.00001
 
 func run() -> void:
+	View = load("res://scripts/game_view.gd")
 	model_checks()
 	if "--quick" not in OS.get_cmdline_user_args(): math_checks()
 	accounting_checks()
@@ -212,7 +213,7 @@ func presentation_checks() -> void:
 	var sim := CasinoSimulation.new()
 	sim.opened = true
 	sim.join_table(int(sim.tables[0].id))
-	var view := View.new()
+	var view = View.new()
 	root.add_child(view)
 	view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	view.sim = PitBossGameContext.new(sim)

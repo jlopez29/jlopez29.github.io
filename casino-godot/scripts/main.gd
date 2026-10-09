@@ -16,6 +16,12 @@ const TEXT := Color("eae4d6")
 
 @onready var presentation_shell: Control = $PitBossShell
 
+var audio_settings: Control
+var audio_input_states := {}
+var audio_poll := 0.0
+var audio_incidents := {}
+var audio_arrivals := 0
+var audio_departures := 0
 var visible_viewport := VisibleViewport.new()
 var viewport_dimensions := Vector2.ZERO
 var viewport_insets := Vector4.ZERO
@@ -140,6 +146,11 @@ func _ready() -> void:
 	displayed_cash = sim.cash
 	treasury_target = sim.cash
 	presentation_shell.mount(self)
+	audio_settings = preload("res://presentation/audio_settings.gd").new()
+	add_child(audio_settings)
+	audio_settings.visibility_changed.connect(on_audio_overlay_visibility)
+	game_view.audio_settings_requested.connect(open_audio_settings)
+	bind_audio_events()
 	back_room_floor = preload("res://presentation/casino_floor_v2.tscn").instantiate()
 	back_room_floor.set_script(preload("res://scripts/back_room_floor.gd"))
 	back_room_floor.sim = PitBossFloorContext.new(sim, true)
@@ -168,10 +179,12 @@ func _ready() -> void:
 	add_button(room_tools, "Pause / Play", toggle_pause)
 	var room_menu := MenuButton.new()
 	room_menu.text = "Menu"
+	room_menu.about_to_popup.connect(func(): AudioManager.play_ui("menu"))
 	room_menu.custom_minimum_size = Vector2(72, 44)
 	room_tools.add_child(room_menu)
 	room_menu.get_popup().add_item("Save", 0)
 	room_menu.get_popup().add_item("Load", 1)
+	room_menu.get_popup().add_item("Audio Settings", 6)
 	room_menu.get_popup().add_item("Transfer personal wallet to casino", 5)
 	room_menu.get_popup().id_pressed.connect(global_action)
 	room_tools.hide()
@@ -283,6 +296,7 @@ func apply_visibility() -> void:
 		room_tools.size = Vector2(278, 44)
 		resume_private.position = Vector2(12, 64 if size.x < 600 else 12)
 		resume_private.size = Vector2(210, 44)
+	AudioManager.set_context("back_room" if in_back_room else "public", game_view.sim.table_kind(game_view.current_table()) if at_table else "")
 	var management_hidden := at_table or in_back_room
 	var is_craps: bool = at_table and game_view.sim.owner_play.is_empty() and game_view.sim.table_kind(game_view.current_table()) == "craps"
 	if at_table and play_context.is_empty(): remember_management_context()
@@ -449,11 +463,28 @@ func clear(parent: Node) -> void:
 		child.queue_free()
 
 func on_milestone(event: Dictionary) -> void:
+	AudioManager.play_ui("unlock" if event.get("tone", "positive") == "positive" else "warning")
 	var notice := event.duplicate(true)
 	notice.dev = OS.is_debug_build() and is_instance_valid(developer_panel) and (developer_panel.actions.used or not sim.debug_forced_unlocks.is_empty())
 	milestone_notice.enqueue(notice)
 
 func _process(delta: float) -> void:
+	audio_poll += delta
+	if audio_poll >= 1:
+		audio_poll = 0
+		# Existing floor geometry/camera, sampled once per wall-clock second.
+		var view := Rect2(floor_view.world_at(Vector2.ZERO), floor_view.size / maxf(0.01, floor_view.zoom))
+		AudioManager.update_floor(sim.opened, sim.guests.size(), sim.player, sim.bar_bounds().get_center(), sim.bar_owned, view)
+		if int(sim.traffic_totals.arrivals) > audio_arrivals or audio_departure_count() > audio_departures:
+			AudioManager.play_world("door", sim.entry_position())
+		audio_arrivals = int(sim.traffic_totals.arrivals)
+		audio_departures = audio_departure_count()
+		var live_incidents := {}
+		for incident in sim.incidents:
+			var key := str(incident.type) + ":" + str(incident.table)
+			live_incidents[key] = true
+			if not audio_incidents.has(key): AudioManager.play_ui("warning")
+		audio_incidents = live_incidents
 	milestone_notice.enabled = modal == null and not requires_floor_targeting() and sim.joined < 0 and sim.owner_play.is_empty() and not (is_instance_valid(developer_panel) and developer_panel.visible)
 	animate_treasury(delta)
 	if OS.has_feature("web") and OS.is_debug_build():
@@ -464,8 +495,8 @@ func _process(delta: float) -> void:
 	floor_view.set_presentation_speed(speed if modal == null else 0)
 	if modal != null:
 		return
-	if not OS.is_debug_build() and (speed > 4 or previous_speed > 4): reset_dev_speed()
-	if speed > 4 and OS.is_debug_build():
+	if not OS.is_debug_build() and (speed > CasinoTuning.MAX_GAME_SPEED or previous_speed > CasinoTuning.MAX_GAME_SPEED): reset_dev_speed()
+	if speed > CasinoTuning.MAX_GAME_SPEED and OS.is_debug_build():
 		advance_dev_time(delta)
 	elif speed > 0:
 		dev_time_pending = 0
@@ -513,7 +544,11 @@ func advance_dev_time(delta: float) -> void:
 			tick = 0
 			sim.step()
 
+func open_audio_settings() -> void:
+	audio_settings.open()
+
 func global_action(id: int) -> void:
+	AudioManager.play_ui("confirm")
 	match id:
 		0: save_game()
 		1: load_game()
@@ -521,6 +556,7 @@ func global_action(id: int) -> void:
 		3: confirm_reset()
 		4: toggle_dev_panel()
 		5: show_wallet_transfer()
+		6: open_audio_settings()
 
 func toggle_dev_panel() -> void:
 	if not OS.is_debug_build() or not is_instance_valid(developer_panel) or modal != null: return
@@ -528,6 +564,7 @@ func toggle_dev_panel() -> void:
 	refresh()
 
 func _input(event: InputEvent) -> void:
+	if is_instance_valid(audio_settings) and audio_settings.visible: return
 	if not OS.is_debug_build() or not is_instance_valid(developer_panel): return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F10:
 		if modal != null: return
@@ -535,6 +572,7 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if is_instance_valid(audio_settings) and audio_settings.visible: return
 	if is_instance_valid(developer_panel) and developer_panel.visible: return
 	if not event is InputEventKey or not event.pressed or event.echo or modal != null:
 		return
@@ -614,16 +652,16 @@ func refresh(structural: bool = true) -> void:
 	var event_category := "" if sim.optional_events.active.is_empty() else str(sim.optional_events.DEFINITIONS[sim.optional_events.active[0].type].category)
 	event_nav.tooltip_text = "Optional goals, events and House Activity" if event_category.is_empty() else event_category + " event available in Log"
 	event_nav.add_theme_color_override("font_color", Color("ff9486") if event_category == "EMERGENCY" else GOLD if event_category == "MANAGEMENT" else TEAL if event_category == "OPPORTUNITY" else TEXT)
-	var dev_active: bool = OS.is_debug_build() and is_instance_valid(developer_panel) and (developer_panel.visible or developer_panel.actions.used or speed > 4 or previous_speed > 4)
+	var dev_active: bool = OS.is_debug_build() and is_instance_valid(developer_panel) and (developer_panel.visible or developer_panel.actions.used or speed > CasinoTuning.MAX_GAME_SPEED or previous_speed > CasinoTuning.MAX_GAME_SPEED)
 	subtitle.text = ("DEV MODE | " if dev_active else "") + "CASINO TYCOON / " + BuildInfo.VERSION
 	render_treasury()
-	var time_state := "Paused" if speed == 0 else ("DEV %dx" % speed if speed > 4 else "%dx speed" % speed)
-	if dev_active and speed <= 4: time_state = "DEV MODE - " + time_state
+	var time_state := "Paused" if speed == 0 else ("DEV %dx" % speed if speed > CasinoTuning.MAX_GAME_SPEED else "%dx speed" % speed)
+	if dev_active and speed <= CasinoTuning.MAX_GAME_SPEED: time_state = "DEV MODE - " + time_state
 	status.text = "Day %d   %02d:%02d
 %s" % [sim.day, sim.minute / 60, sim.minute % 60, time_state]
 	mobile_speed.text = "Stop" if speed == 0 else "%dx" % speed
-	if is_instance_valid(mobile_dev): mobile_dev.add_theme_color_override("font_color", GOLD if speed > 4 else TEXT)
-	if mobile: status.text = "DEV %dx" % speed if speed > 4 else "D%d %02d:%02d" % [sim.day, sim.minute / 60, sim.minute % 60]
+	if is_instance_valid(mobile_dev): mobile_dev.add_theme_color_override("font_color", GOLD if speed > CasinoTuning.MAX_GAME_SPEED else TEXT)
+	if mobile: status.text = "DEV %dx" % speed if speed > CasinoTuning.MAX_GAME_SPEED else "D%d %02d:%02d" % [sim.day, sim.minute / 60, sim.minute % 60]
 	else: status.text = "Day %d\n%02d:%02d" % [sim.day, sim.minute / 60, sim.minute % 60]
 	status.tooltip_text = "Financial performance and operating costs are available in Finance."
 	if not structural and not visitor and refreshed_elapsed == sim.elapsed: return
@@ -1249,7 +1287,9 @@ func render_bar_purchase() -> void:
 	finance_short_metric(inspector, "Recommended continuous roster", str(sim.Staffing.continuous_roster(1, 1)))
 	add_label(inspector, "Drink expectations begin after purchase. Delaying purchase has no missing-service penalty.", 13, MUTED)
 	render_amenity_requirements("service")
-	add_button(inspector, "Bar owned" if sim.bar_owned else "Purchase Bar | " + money(CasinoTuning.BAR_PURCHASE_COST), func(): sim.purchase_bar(); refresh(), not sim.unlocked("service") or sim.bar_owned or sim.cash < CasinoTuning.BAR_PURCHASE_COST)
+	add_button(inspector, "Bar owned" if sim.bar_owned else "Purchase Bar | " + money(CasinoTuning.BAR_PURCHASE_COST), func():
+		AudioManager.play_ui("build" if sim.purchase_bar() else "invalid")
+		refresh(), not sim.unlocked("service") or sim.bar_owned or sim.cash < CasinoTuning.BAR_PURCHASE_COST)
 
 func render_bar_menu() -> void:
 	add_label(inspector, "DRINK MENU", 12, GOLD)
@@ -1386,7 +1426,7 @@ func render_finance_advanced(parent: Node) -> void:
 		var states: Dictionary = sim.payroll_by_state
 		for state in [{"key": "active", "name": "Active (incl. assigned idle)"}, {"key": "relief", "name": "Relief"}, {"key": "break", "name": "Break"}]:
 			finance_row(parent, state.name, -float(states[state.key]))
-	if speed > 4: add_label(parent, "DEV: leave manual games during long-run comparisons.", 12, GOLD)
+	if speed > CasinoTuning.MAX_GAME_SPEED: add_label(parent, "DEV: leave manual games during long-run comparisons.", 12, GOLD)
 
 func render_finance_reserve(parent: Node, report: Dictionary) -> void:
 	finance_short_metric(parent, "Treasury less pending stakes", FinancialText.cash(float(report.available)))
@@ -1561,7 +1601,8 @@ func table_action(action: String) -> void:
 
 func place_chip(kind: String) -> void:
 	if rolling > 0 or felt.busy() or speed == 0 or felt.sim.joined < 0: return
-	felt.sim.bet(felt.sim.joined, kind, felt.chip)
+	if felt.sim.bet(felt.sim.joined, kind, felt.chip): AudioManager.play_game("craps", "chip")
+	else: AudioManager.play_ui("invalid")
 	refresh()
 
 func begin_player_roll() -> void:
@@ -1717,9 +1758,11 @@ func commit_placement(at: Vector2) -> void:
 			building = false
 			transition_pane("floor")
 			sim.reroute()
+			AudioManager.play_ui("confirm")
 			sim.log_event("Table moved. Clear aisles help guests reach the rail.")
 	else:
 		var id := sim.place(at, floor_view.rotated, build_kind, build_slot_profile)
+		if id <= 0: AudioManager.play_ui("invalid")
 		if id > 0:
 			selected = id
 			selected_guest = -1
@@ -1890,6 +1933,7 @@ func load_game() -> bool:
 		reset_dev_speed()
 		event_focus_staff = -1
 		bind_optional_events()
+		bind_audio_events()
 		if is_instance_valid(developer_panel): developer_panel.reset_session(sim)
 		reset_treasury_display()
 		floor_view.clear_financial_feedback()
@@ -1975,7 +2019,10 @@ func show_wallet_transfer() -> void:
 	amount.prefix = "$"
 	amount.custom_minimum_size.y = 44
 	var layout := dialog("Transfer to casino", "Personal wallet: $%.2f\nChoose how much to add to Casino Cash." % sim.owner_bankroll, "Transfer", func():
-		if not sim.transfer_personal_to_casino(amount.value):
+		if sim.transfer_personal_to_casino(amount.value):
+			AudioManager.play_ui("transfer")
+		else:
+			AudioManager.play_ui("invalid")
 			sim.log_event("Transfer failed. Check your available personal funds and local storage.")
 		refresh())
 	if layout == null:
@@ -2041,6 +2088,7 @@ func start_casino(mode: String, preferred: Array) -> void:
 	event_focus_staff = -1
 	sim = CasinoSimulation.new(mode, preferred)
 	sim.milestone_reached.connect(on_milestone)
+	bind_audio_events()
 	milestone_notice.reset()
 	reset_treasury_display()
 	floor_view.sim = PitBossFloorContext.new(sim)
@@ -2329,6 +2377,7 @@ func walk_to_private_door() -> void:
 func enter_back_room() -> void:
 	if sim.player.distance_to(floor_view.sim.door_approach()) > 8: return
 	if sim.joined >= 0 or not sim.owner_play.is_empty(): return
+	AudioManager.play_world("door", sim.player)
 	in_back_room = true
 	sim.location.area = "private"
 	back_room_floor.visitor_mode = true
@@ -2372,3 +2421,48 @@ func resume_private_game() -> void:
 		if station.kind == sim.back_room.state.kind:
 			back_room_floor.approach_station(station.id)
 			return
+
+func bind_audio_events() -> void:
+	audio_arrivals = int(sim.traffic_totals.arrivals)
+	audio_departures = audio_departure_count()
+	audio_incidents.clear()
+	if not sim.financial_event.is_connected(on_audio_financial): sim.financial_event.connect(on_audio_financial)
+	if not sim.owner_event_completed.is_connected(on_audio_owner_event): sim.owner_event_completed.connect(on_audio_owner_event)
+
+func on_audio_owner_event(result: Dictionary) -> void:
+	# Foreground game results have their own reveal cues. Navigation settlement is silent.
+	if not game_view.visible and float(result.get("bankroll_change", 0)) > 0: AudioManager.play_ui("win")
+
+func on_audio_financial(event: Dictionary) -> void:
+	var category := str(event.category)
+	var at: Vector2 = event.get("position", sim.player)
+	match category:
+		"bar": AudioManager.play_world("glass", at)
+		"comp":
+			if event.get("source", "") == "drink": AudioManager.play_world("glass", at)
+		"construction": AudioManager.play_ui("build")
+		"repair": AudioManager.play_world("repair", at)
+		"gaming":
+			# Ignore owner settlement: its reveal owns foreground audio.
+			if int(event.guest_id) == 0 or not sim.opened: return
+			if game_view.visible and not private_play and int(event.asset_id) == int(game_view.current_table().get("id", -2)): return
+			if event.game == "slots" and float(event.amount) <= -CasinoTuning.EVENT_GUEST_BIG_WIN:
+				AudioManager.play_world("jackpot", at, true)
+			elif event.game == "slots": AudioManager.play_ambience("slot_stop3", at)
+			else: AudioManager.play_world("chip", at)
+
+func audio_departure_count() -> int:
+	var count := 0
+	for value in sim.traffic_totals.departures.values(): count += int(value)
+	return count
+
+func on_audio_overlay_visibility() -> void:
+	if audio_settings.visible:
+		for control in [game_view, felt, floor_view, back_room_floor]:
+			if not is_instance_valid(control): continue
+			audio_input_states[control] = control.is_processing_input()
+			control.set_process_input(false)
+	else:
+		for control in audio_input_states:
+			if is_instance_valid(control): control.set_process_input(audio_input_states[control])
+		audio_input_states.clear()

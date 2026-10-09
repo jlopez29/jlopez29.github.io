@@ -94,7 +94,7 @@ func update_values() -> void:
 	var r: Dictionary = sim.recovery.state
 	timer.text = "%s support | Next guaranteed top-up: %s | Active exposure $%.2f" % [Recovery.stage(sim.casino_rating,int(r.completed)),countdown(int(r.next_time_utc)-sim.recovery.now()),exposure]
 	var remaining := sim.recovery.passive_minutes_remaining(sim.elapsed)
-	daily.text = "Wallet allowance: +$%.0f automatically at 00:00 and 12:00 each game day. Next in %dh %02dm of game time." % [CasinoTuning.OWNER_ALLOWANCE_AMOUNT, remaining / 60, remaining % 60]
+	daily.text = "Wallet allowance: +$%.0f automatically every in-game hour. Next in %dh %02dm of game time." % [CasinoTuning.OWNER_ALLOWANCE_AMOUNT, remaining / 60, remaining % 60]
 	message.text = error
 	message.visible = not error.is_empty()
 	if is_instance_valid(work_min): work_min.text = "Three verified contracts unlock recovery after the 10-minute real-time minimum. Minimum remaining: " + countdown(int(r.last_full_utc)+CasinoTuning.RECOVERY_WORK_MIN_SECONDS-sim.recovery.now())
@@ -152,7 +152,7 @@ func recovery_panel() -> void:
 			var response := {"choice":choice.selected,"reason":reason.selected,"number":number.value,"mask":mask,"aisle":aisle.button_pressed}
 			var ok := sim.private_transaction(func(): return sim.recovery.submit(sim,str(c.id),response))
 			error="" if ok else "Contract locked: already complete, retry cooldown, or save unavailable."
-			pass
+			AudioManager.play_ui("win" if ok and c.done else "invalid")
 			rebuild(); changed.emit())
 	for t in r.tickets:
 		var ticket_art := preload("res://scripts/recovery_ticket.gd").new()
@@ -175,10 +175,13 @@ func recovery_panel() -> void:
 
 func recover(source: String) -> void:
 	var ok := sim.private_transaction(func(): return sim.recovery.claim(sim,source))
+	AudioManager.play_ui("win" if ok else "invalid")
 	error="" if ok else "Not ready: check real-time eligibility, completed work, wallet gap and outstanding wagers."
 	rebuild(); changed.emit()
 
 func ticket(id: String) -> void:
+	var before: float = sim.owner_bankroll
 	var ok := sim.private_transaction(func(): return sim.recovery.claim_ticket(sim,id))
+	AudioManager.play_ui("win" if ok and sim.owner_bankroll > before else "confirm" if ok else "invalid")
 	error="" if ok else "Drawing not ready, already claimed, outstanding wagers, or local save unavailable."
 	rebuild(); changed.emit()

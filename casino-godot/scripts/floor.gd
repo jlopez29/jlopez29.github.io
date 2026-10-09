@@ -285,7 +285,7 @@ func _draw() -> void:
 		draw_circle(at, 18, Color(0.9, 0.73, 0.43, 0.06))
 		draw_circle(at, 8, Color("ac8c4f"))
 		draw_circle(at, 5, Color("ead398"))
-	draw_rect(CasinoTuning.ENTRANCE_CLEARANCE, Color("283b4d"))
+	draw_rect(PitBossFloorContext.Property.entrance_clearance(sim.source.floor_chunks), Color("283b4d"))
 	draw_front_doors()
 	for table in sim.tables:
 		draw_table(table)
@@ -471,7 +471,7 @@ func set_presentation_speed(value: int) -> void:
 	thought_flush = false
 
 func presentation_step() -> void:
-	if presentation_speed <= 0 or presentation_speed > 4: return
+	if presentation_speed <= 0 or presentation_speed > CasinoTuning.MAX_GAME_SPEED: return
 	presentation_tick += 1
 	if presentation_tick < CasinoTuning.FLOOR_PRESENTATION_SECONDS * presentation_speed: return
 	presentation_tick = 0
@@ -488,7 +488,7 @@ func flush_presentation() -> void:
 	thought_flush = true
 
 func _on_financial_event(event: Dictionary) -> void:
-	if presentation_speed <= 0 or presentation_speed > 4: return
+	if presentation_speed <= 0 or presentation_speed > CasinoTuning.MAX_GAME_SPEED: return
 	if event.category not in ["gaming", "bar", "comp"] or absf(float(event.amount)) < 0.005: return
 	presentation_amount += float(event.amount)
 	presentation_anchor = event.position
@@ -550,7 +550,7 @@ func _money_box(importance: int, alpha: float) -> StyleBoxFlat:
 	return box
 
 func _on_guest_thought(event: Dictionary) -> void:
-	if presentation_speed <= 0 or presentation_speed > 4: return
+	if presentation_speed <= 0 or presentation_speed > CasinoTuning.MAX_GAME_SPEED: return
 	var previous: Dictionary = pending_thoughts.get(int(event.guest_id), {})
 	if previous.is_empty() or int(event.priority) >= int(previous.priority):
 		var item := event.duplicate()
@@ -667,7 +667,7 @@ func approach_private_door() -> bool:
 
 func draw_front_doors() -> void:
 	if not sim.is_private:
-		var entrance := PitBossFloorContext.Property.public_door()
+		var entrance := PitBossFloorContext.Property.public_door(sim.source.floor_chunks)
 		draw_rect(entrance, Color("283b4d"))
 		draw_rect(entrance, TEAL, false, 2)
 		text_at(entrance.position + Vector2(6, 16), "PUBLIC", TEAL, 10)

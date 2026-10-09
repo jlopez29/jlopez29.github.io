@@ -1,6 +1,6 @@
 extends RefCounted
 ## Active recovery uses a real clock and independent promotional RNG.
-## The allowance follows saved game time, paying at midnight and noon.
+## The allowance follows saved game time, paying on each in-game hour.
 const Account = preload("res://scripts/owner_bankroll.gd")
 const TARGET := CasinoTuning.OWNER_STARTING_BANKROLL
 const CATEGORIES := ["Cage reconciliation", "Security investigation", "Slot technician", "Operations planning"]
