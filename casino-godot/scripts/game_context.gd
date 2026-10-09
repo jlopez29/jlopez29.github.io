@@ -40,6 +40,9 @@ func get_table(id: int) -> Dictionary:
 		"result": s.result, "history": [{"credit": s.round.get("credit", 0)}], "broken": false,
 		"slot_profile": "starter"}
 
+func craps_roll_before(table: Dictionary) -> Dictionary:
+	return {} if is_private else source.craps_presentation.get(int(table.id), {})
+
 func table_kind(table: Dictionary) -> String:
 	return source.table_kind(table)
 func game_pending(table: Dictionary) -> bool:

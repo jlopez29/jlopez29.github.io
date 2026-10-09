@@ -307,45 +307,55 @@ func prepare_roll(table: Dictionary) -> void:
 
 func capture_roll(table: Dictionary) -> void:
 	if int(table.rolls) == last_roll: return
+	var skip := animation > 0 or int(table.rolls) != last_roll + 1
+	var before := sim.craps_roll_before(table)
+	if before.is_empty(): before = previous # Private games share the same presentation.
 	if not throw_pending:
 		throw_power = 0.55
 		throw_aim = 0.0
-		plan_throw(int(previous.table.shooter) if not previous.is_empty() else int(table.shooter))
+		plan_throw(int(before.table.shooter) if not before.is_empty() else int(table.shooter))
 	throw_pending = false
 	reset_dice()
 	flights.clear()
-	# Reuse the existing deterministic presentation resolver, never settle accounts here.
-	# A skipped simulation roll has no trustworthy pre-roll snapshot to animate.
-	if not previous.is_empty() and int(previous.table.rolls) == int(table.rolls) - 1:
-		var before: Dictionary = previous.table
-		var expected := CrapsRules.resolve(int(before.point), before.owner, int(table.dice[0]), int(table.dice[1]), bool(before.owner_working))
-		if expected.bets == table.owner and is_equal_approx(float(expected.credit), float(table.history[0].credit)):
-			settlement(before.owner, int(before.point), table.dice, bool(before.owner_working), -1)
-		var seated_by_id := {}
-		for guest in sim.seated(int(table.id)): seated_by_id[int(guest.id)] = guest
-		for guest in previous.guests:
-			var current: Dictionary = seated_by_id.get(int(guest.id), {})
-			if current.is_empty(): continue
-			var bets: Dictionary = guest.bets.duplicate(true)
-			var added := 0.0
-			if sim.operating(table) and int(before.point) == 0 and bets.pass == 0 and float(guest.wallet) >= float(before.minimum):
-				added = minf(sim.guest_wager(table, current), float(guest.wallet))
-				bets.pass = added
-			var result := CrapsRules.resolve(int(before.point), bets, int(table.dice[0]), int(table.dice[1]))
-			if result.bets == current.bets and is_equal_approx(float(result.credit), float(current.wallet) - float(guest.wallet) + added):
-				guest.bets = bets
-				settlement(bets, int(before.point), table.dice, false, int(guest.seat))
-	audio_point = int(previous.get("table", {}).get("point", table.point))
+	# Only the latest contiguous roll may animate. Overlap/gaps finish visually
+	# immediately instead of restarting an old snapshot for another 3.45 seconds.
+	if not skip and not before.is_empty() and int(before.table.rolls) == int(table.rolls) - 1:
+		settlement(before.table.owner, int(before.table.point), table.dice, bool(before.table.owner_working), -1)
+		for guest in before.guests:
+			settlement(guest.bets, int(before.table.point), table.dice, false, int(guest.seat))
+	audio_point = int(before.get("table", {}).get("point", table.point))
 	audio_credit = float(table.history[0].credit) if not table.history.is_empty() else 0.0
 	audio_sum = int(table.dice[0]) + int(table.dice[1])
 	audio_wall = false
 	audio_bounced = false
 	audio_settled = false
-	AudioManager.play_game("craps", "throw")
 	last_roll = int(table.rolls)
-	animation = animation_duration
-	resting_dice = landing
+	previous = snapshot(table)
+	reference_dice = table.dice.duplicate()
 	message = str(table.result).replace("·", "|").replace("’", "'")
+	var seven_out := audio_point > 0 and audio_sum == 7
+	if skip:
+		animation = 0
+		shooter_seen = int(table.shooter)
+		dice_ready = true
+		resting_dice = shooter_pocket()
+		queue_redraw()
+		return
+	# Seven-out shows the rake, point OFF and next shooter together, then delivery.
+	animation = SETTLE_SECONDS if seven_out else animation_duration
+	resting_dice = landing
+	if seven_out:
+		audio_settled = true
+		AudioManager.play_game("craps", "seven_out")
+	else: AudioManager.play_game("craps", "throw")
+	queue_redraw()
+
+# Active chips and hit targets always use the same authoritative wager state.
+# Collection/payout flights are disposable decoration, never live wagers.
+func active_wagers(table: Dictionary) -> Array:
+	var active: Array = [{"seat": -1, "bets": table.owner}]
+	active.append_array(sim.seated(int(table.id)))
+	return active
 
 func reset_dice() -> void:
 	cancel_throw()
@@ -465,10 +475,7 @@ func _draw() -> void:
 	if side_open: centered(Rect2(0, 8, PLAY_SIZE.x, 42), "HARDWAYS / ONE-ROLL BETS", 23, GOLD)
 	draw_players(table)
 	if not side_open: draw_dice(table)
-	var shown: Dictionary = previous.table if animation > SETTLE_SECONDS and not previous.is_empty() else table
-	draw_wagers(shown.owner, -1)
-	var guests: Array = previous.guests if animation > SETTLE_SECONDS and not previous.is_empty() else sim.seated(sim.joined)
-	for guest in guests: draw_wagers(guest.bets, int(guest.seat))
+	for participant in active_wagers(table): draw_wagers(participant.bets, int(participant.seat))
 	if animation > 0 and animation <= SETTLE_SECONDS:
 		var t := smoothstep(0, 1, 1 - animation / SETTLE_SECONDS)
 		for flight in flights:
@@ -589,10 +596,6 @@ func draw_ellipse_shadow(at: Vector2) -> void:
 func draw_wagers(bets: Dictionary, seat: int) -> void:
 	for kind in bets:
 		var amount := float(bets[kind])
-		if animation > 0 and animation <= SETTLE_SECONDS:
-			for flight in flights:
-				if int(flight.seat) == seat and flight.to == kind and not flight.pay:
-					amount -= float(flight.amount)
 		if amount <= 0 or not spots.has(kind) or (portrait and ((kind in SIDE_KEYS) != side_open)): continue
 		var at := endpoint(kind, seat)
 		var radius := wager_radius(kind, seat)

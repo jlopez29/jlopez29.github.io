@@ -95,6 +95,7 @@ var step_tables := {}
 var step_crew := {}
 var indexed_step := false
 var thought_last := {} # Transient emission cooldowns, not saved guest history.
+var craps_presentation := {} # Latest explicit pre-roll snapshot per table; transient, never saved.
 var roulette_presentation := {} # Last actual shared spin only; transient, never saved.
 var table_interest := {} # Bounded recent actual guest wagers, never an odds input.
 var staff: Array = []
@@ -749,6 +750,7 @@ func sell(id: int) -> bool:
 	table_interest.erase(int(table.id))
 	clear_repair_waiters(id)
 	tables.erase(table)
+	craps_presentation.erase(int(table.id))
 	Staffing.rebalance(self)
 	reroute()
 	incidents = incidents.filter(func(incident): return int(incident.table) != id)
@@ -1518,6 +1520,7 @@ func move_guests(delta: float) -> void:
 			guest.y = at.y
 			if at.is_equal_approx(seat):
 				guest.state = "Playing"
+				if table_kind(table) == "craps": npc_craps_betting(table)
 				presentation_revision += 1
 				think(guest, "Ready to play %s!" % Games.NAMES[table_kind(table)])
 			continue
@@ -1796,6 +1799,7 @@ func step() -> void:
 				if operating(table): npc_games(table)
 			continue
 		ensure_shooter(table)
+		npc_craps_betting(table)
 		if joined == int(table.id) and (int(table.shooter) == 0 or table.betting_hold):
 			continue
 		table.timer += 1.0
@@ -1816,6 +1820,7 @@ func step() -> void:
 		# Carry fractional NPC dice time. Never replay an old manual/empty backlog.
 		table.timer = minf(float(table.timer), interval + 1.0)
 		while table.timer >= interval and (not seated(int(table.id)).is_empty() or CrapsRules.exposure(table.owner) > 0):
+			npc_craps_betting(table)
 			var remaining := float(table.timer) - interval
 			roll(int(table.id))
 			table.timer = remaining
@@ -2048,6 +2053,37 @@ func shoot_player(id: int, forced: Array = []) -> bool:
 	roll(id, forced)
 	return true
 
+# Once per guest/table/roll/point betting window, including arrivals during a point.
+# Stored with the guest so saving/loading cannot repeat a declined decision.
+func npc_craps_betting(table: Dictionary) -> void:
+	if table_kind(table) != "craps" or not operating(table): return
+	for guest in seated(int(table.id)):
+		var window := [int(table.id), int(table.rolls), int(table.point)]
+		if guest.get("craps_betting_window", []).map(func(value): return int(value)) == window: continue
+		guest.craps_betting_window = window
+		var stake := guest_wager(table, guest)
+		if stake < float(table.minimum): continue
+		if int(table.point) == 0:
+			if guest.bets.pass == 0 and guest.bets.dont_pass == 0 and (int(table.shooter) == int(guest.id) or rng.randf() < 0.85):
+				npc_craps_bet(table, guest, "pass", stake)
+		else:
+			if guest.bets.pass > 0 and guest.bets.odds == 0 and rng.randf() < 0.5:
+				npc_craps_bet(table, guest, "odds", minf(stake, float(guest.bets.pass)))
+			for key in ["six", "eight"]:
+				if guest.bets[key] == 0 and rng.randf() < 0.25:
+					npc_craps_bet(table, guest, key, stake)
+
+func npc_craps_bet(table: Dictionary, guest: Dictionary, key: String, stake: float) -> bool:
+	# Use the existing rounding, per-bet maximum, odds limit and debit path.
+	if not operating(table) or guest.state != "Playing" or int(guest.table) != int(table.id): return false
+	if key not in ["pass", "odds", "six", "eight"] or guest.bets[key] > 0: return false
+	if key == "pass" and (int(table.point) != 0 or guest.bets.dont_pass > 0): return false
+	if key == "odds" and (int(table.point) == 0 or guest.bets.pass <= 0): return false
+	var amount := bet_amount(table, key, stake)
+	if not is_finite(amount) or amount > minf(maximum_wager(table), float(guest.wager_limit)) or amount > float(guest.wallet): return false
+	if key == "odds" and amount > float(guest.bets.pass) * 3.0: return false
+	return take_bet(table, guest, key, amount, false)
+
 func roll_interval(table: Dictionary, energy: float = 100.0) -> float:
 	return (CasinoTuning.VISITOR_ROLL_SECONDS + (100 - energy) * CasinoTuning.VISITOR_ROLL_FATIGUE) if joined == int(table.id) else (CasinoTuning.ROLL_SECONDS + (100 - energy) * CasinoTuning.NPC_ROLL_FATIGUE)
 
@@ -2058,10 +2094,15 @@ func roll(id: int, forced: Array = []) -> void:
 	ensure_shooter(table)
 	var rolled_by := shooter_name(table)
 	var old_point := int(table.point)
-	for guest in seated(id):
-		if operating(table) and old_point == 0 and guest.bets.pass == 0 and guest.wallet >= table.minimum:
-			var stake := guest_wager(table, guest)
-			take_bet(table, guest, "pass", minf(stake, guest.wallet), false)
+	# Only an observed table needs a presentation snapshot; unattended fast rolls
+	# keep their normal accounting/history without copying all wager dictionaries.
+	if joined == id:
+		var before_guests: Array = []
+		for guest in seated(id):
+			before_guests.append({"id": guest.id, "seat": guest.seat, "bets": guest.bets.duplicate(true)})
+		craps_presentation[id] = {"table": {"owner": table.owner.duplicate(true), "point": old_point,
+			"owner_working": table.owner_working, "rolls": table.rolls, "shooter": table.shooter}, "guests": before_guests}
+	else: craps_presentation.erase(id)
 	var dice := [rng.randi_range(1, 6), rng.randi_range(1, 6)] if forced.is_empty() else forced
 	table.dice = dice
 	var guest_staked := 0.0
@@ -2462,6 +2503,11 @@ func restore(data: Dictionary) -> bool:
 		if not guest.archetype is String or not CasinoTuning.GUEST_ARCHETYPES.has(guest.archetype): return false
 		if bool(guest.vip) != (guest.archetype == "vip"): return false
 		if not guest.preference is String or not Games.NAMES.has(guest.preference): return false
+		if guest.has("craps_betting_window"):
+			var window = guest.craps_betting_window
+			if not window is Array or window.size() != 3: return false
+			for value in window:
+				if not valid_number(value) or value < 0 or value != int(value): return false
 		if float(guest.wallet) < 0 or float(guest.rounds) < 0 or float(guest.wager_limit) <= 0 or not valid_bets(guest.bets) or not guest.vip is bool:
 			return false
 		if int(guest.table) != -1 and int(guest.table) not in ids:
@@ -2608,6 +2654,7 @@ func restore(data: Dictionary) -> bool:
 	thought_last.clear()
 	table_interest.clear()
 	roulette_presentation.clear()
+	craps_presentation.clear()
 	cashout_effects.clear()
 	recent_financial_events.clear()
 	house_activity.clear()
@@ -2762,43 +2809,63 @@ func npc_games(table: Dictionary) -> void:
 		table.round.paid = true
 		table.rolls += 1
 		return
+	var kind := table_kind(table)
+	var bettors: Array = []
 	for guest in seated(int(table.id)):
-		var bet := guest_wager(table, guest, true)
-		var kind := table_kind(table)
+		var bet := guest_wager(table, guest, kind == "slots")
 		if guest.wallet < bet * (6 if kind == "holdem" else 1):
 			finish_guest_session(guest)
 			continue
-		var cost := bet * 2 if kind == "holdem" else bet
-		if bet < float(table.minimum) or not game_debit(table, cost, guest): continue
-		var staked := cost
-		var round := {}
-		match kind:
-			"slots": round = Games.spin_slots(bet, rng, slot_profile(table))
-			"roulette": round = Games.spin_roulette({"Red" if int(guest.id) % 2 else "Black": bet}, rng)
-			"blackjack": round = Games.blackjack(bet, rng)
-			"holdem": round = Games.holdem(bet, 0, rng)
-		while round.get("phase", "done") != "done":
-			var action := ""
-			if kind == "blackjack":
-				action = "Decline insurance" if round.phase == "insurance" else ("Hit" if Games.total(round.hands[int(round.active)].cards) < 17 else "Stand")
-			else:
-				if round.phase != "river": action = "Check"
-				else: action = "Raise 1×" if int(Games.poker_rank(round.player + round.board)[0]) >= 1 else "Fold"
-			var options := Games.actions(round, float(guest.wallet))
-			if not options.has(action): action = options.keys()[0]
-			var extra := float(options[action])
-			if not game_debit(table, extra, guest): break
-			staked += extra
-			Games.act(round, action)
-		game_credit(table, float(round.credit), guest)
-		emit_gaming_result(table, staked, float(round.credit), int(guest.id))
-		round.paid = true # NPC-only rounds have already credited the guest, never the owner.
-		round.staked = staked
-		record_guest_round(guest, staked)
-		table.rolls += 1
-		table.result = "%s · %s" % [guest.name, round.message]
-		think(guest, "A win!" if round.credit > staked else "One more round?")
-		if joined != int(table.id): table.round = round
+		if bet >= float(table.minimum): bettors.append({"guest": guest, "bet": bet})
+	if bettors.is_empty(): return
+	# Slots are individual machines. Card tables deal one shoe/dealer/board,
+	# using the same participant support as owner-led public rounds.
+	var primary: Dictionary = bettors[0].guest
+	var bet: float = bettors[0].bet
+	var cost := bet * 2 if kind == "holdem" else bet
+	if not game_debit(table, cost, primary): return
+	var participants: Array = []
+	for bettor in bettors.slice(1):
+		participants.append({"id": bettor.guest.id, "name": bettor.guest.name, "bet": bettor.bet})
+	var round := {}
+	match kind:
+		"slots": round = Games.spin_slots(bet, rng, slot_profile(table))
+		"blackjack": round = Games.blackjack(bet, rng, participants)
+		"holdem": round = Games.holdem(bet, 0, rng, participants)
+	for npc in round.get("npcs", []):
+		for bettor in bettors:
+			if int(bettor.guest.id) == int(npc.id): game_debit(table, float(npc.staked), bettor.guest)
+	var staked := cost
+	while round.get("phase", "done") != "done":
+		var action := ""
+		if kind == "blackjack":
+			action = "Decline insurance" if round.phase == "insurance" else ("Hit" if Games.total(round.hands[int(round.active)].cards) < 17 else "Stand")
+		else:
+			if round.phase != "river": action = "Check"
+			else: action = "Raise 1×" if int(Games.poker_rank(round.player + round.board)[0]) >= 1 else "Fold"
+		var options := Games.actions(round, float(primary.wallet))
+		if not options.has(action): action = options.keys()[0]
+		var extra := float(options[action])
+		if not game_debit(table, extra, primary): break
+		staked += extra
+		Games.act(round, action)
+	game_credit(table, float(round.credit), primary)
+	emit_gaming_result(table, staked, float(round.credit), int(primary.id))
+	record_guest_round(primary, staked)
+	for npc in round.get("npcs", []):
+		for bettor in bettors:
+			var guest: Dictionary = bettor.guest
+			if int(guest.id) != int(npc.id): continue
+			game_credit(table, float(npc.returned), guest)
+			emit_gaming_result(table, float(npc.staked), float(npc.returned), int(guest.id))
+			record_guest_round(guest, float(npc.staked))
+			think(guest, "Our dealer paid my win!" if npc.returned > npc.staked else "Next hand, please.")
+	round.paid = true # Guest-only rounds never credit the owner.
+	round.staked = staked
+	table.rolls += 1
+	table.result = "%s | %s" % [primary.name, round.message]
+	think(primary, "A win!" if round.credit > staked else "One more round?")
+	if joined != int(table.id): table.round = round
 
 func game_liability(table: Dictionary) -> float:
 	var amount := 0.0

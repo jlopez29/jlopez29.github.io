@@ -39,4 +39,6 @@ func check_startup() -> void:
 			fail("Startup control is hidden or has no size: " + key)
 			return
 	print("STARTUP_SMOKE_OK")
+	root.get_node("AudioManager").shutdown()
+	await create_timer(0.12).timeout
 	quit(0)

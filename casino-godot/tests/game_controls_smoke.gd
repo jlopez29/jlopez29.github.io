@@ -53,9 +53,9 @@ func run() -> void:
 			check(view.sim.shoot_player(view.sim.joined), "Real private roll")
 			dice.capture_roll(view.current_table())
 			dice._process(dice.ROLL_SECONDS + 0.001)
-			check(dice.animation > dice.SETTLE_SECONDS and dice.reference_dice.size() == 2 and dice.previous.table.owner.field == 1, "Settled dice retain pre-roll chips during recognition")
+			check(dice.animation > dice.SETTLE_SECONDS and dice.reference_dice.size() == 2 and dice.active_wagers(view.current_table())[0].bets.field == 0, "Settled dice show canonical chips during recognition")
 			dice._process(1.24)
-			check(dice.animation > dice.SETTLE_SECONDS and dice.busy(), "Craps holds chips for 1.25 seconds")
+			check(dice.animation > dice.SETTLE_SECONDS and dice.busy(), "Craps retains result recognition for 1.25 seconds")
 			dice.animation = 0
 			dice.hover = "come"
 			view.update_bet_indicator()

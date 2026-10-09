@@ -214,4 +214,6 @@ func run() -> void:
 	await process_frame
 	DirAccess.remove_absolute("user://felt_smoke.save")
 	print("FELT_SMOKE: %d checks, %d failures" % [checks, failures])
+	root.get_node("AudioManager").shutdown()
+	await create_timer(0.12).timeout
 	quit(1 if failures else 0)
