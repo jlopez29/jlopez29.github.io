@@ -1,187 +1,227 @@
-extends PanelContainer
+extends Control
 signal leave_requested
 signal changed
-const ThemeStyle = preload("res://scripts/pit_boss_theme.gd")
+const UI = preload("res://scripts/recovery/workbench_ui.gd")
+const WorkbenchTheme = preload("res://scripts/pit_boss_theme.gd")
 const Recovery = preload("res://scripts/recovery_system.gd")
+const Games = [preload("res://scripts/recovery/cage_game.gd"),preload("res://scripts/recovery/security_game.gd"),preload("res://scripts/recovery/slot_game.gd"),preload("res://scripts/recovery/operations_game.gd")]
 var sim: CasinoSimulation
-var body: VBoxContainer
+var frame: PanelContainer
+var content: VBoxContainer
 var wallet: Label
-var cash: Label
-var timer: Label
-var daily: Label
-var message: Label
-var work_min: Label
-var timer_claim: Button
-var work_claim: Button
-var ticket_labels := {}
-var retry_labels := {}
-var expanded_contract := ""
-var error := ""
-var revision: Array = []
+var feedback: Label
+var help: Label
+var toolbar: VBoxContainer
+var verify: Button
+var overview: Control
+var promotions: Control
+var game: Control
+var job_layout: GridContainer
+var sidebar: PanelContainer
+var job_status: Label
+var active_id := ""
+var mode := "overview"
+var drafts := {}
+var scratch_progress := {}
+var revision := ""
 var poll := 0.0
-
+var insets := Vector4.ZERO
+var result_tween: Tween
 func _ready() -> void:
-	add_theme_stylebox_override("panel", ThemeStyle.box(Color("281720"), ThemeStyle.GOLD, 12))
+	theme=WorkbenchTheme.create()
+	mouse_filter=MOUSE_FILTER_STOP
+	var shade := ColorRect.new()
+	shade.color=Color(0.025,0.035,0.035,0.94)
+	shade.mouse_filter=MOUSE_FILTER_IGNORE
+	add_child(shade)
+	shade.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	frame=PanelContainer.new()
+	frame.add_theme_stylebox_override("panel",WorkbenchTheme.box(Color("121f20"),WorkbenchTheme.GOLD,16))
+	add_child(frame)
 	var stack := VBoxContainer.new()
-	add_child(stack)
-	label(stack, "WALLET RECOVERY DESK", 20)
-	wallet = label(stack, "", 20)
-	cash = label(stack, "", 14)
-	timer = label(stack, "", 14)
-	daily = label(stack, "", 14)
-	message = label(stack, "", 14)
-	button(stack, "Back to room", func(): leave_requested.emit())
+	stack.add_theme_constant_override("separation",10)
+	frame.add_child(stack)
+	var header := HBoxContainer.new()
+	stack.add_child(header)
+	UI.button(header,"< Back",back)
+	var title := UI.text(header,"RECOVERY WORKSHOP",20)
+	title.size_flags_horizontal=SIZE_EXPAND_FILL
+	UI.button(header,"Help",func(): help.visible=not help.visible)
+	wallet=UI.text(stack,"",18)
+	help=UI.text(stack,"",16)
+	help.hide()
 	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_vertical = SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical=SIZE_EXPAND_FILL
 	stack.add_child(scroll)
-	body = VBoxContainer.new()
-	body.size_flags_horizontal = SIZE_EXPAND_FILL
-	scroll.add_child(body)
+	content=VBoxContainer.new()
+	content.size_flags_horizontal=SIZE_EXPAND_FILL
+	scroll.add_child(content)
+	toolbar=VBoxContainer.new()
+	stack.add_child(toolbar)
+	feedback=UI.text(toolbar,"",17)
+	feedback.hide()
+	verify=UI.button(toolbar,"Verify my work",submit)
+	verify.hide()
+	resized.connect(layout)
+	visibility_changed.connect(on_visibility_changed)
+	layout()
+func on_visibility_changed() -> void:
+	set_process(is_visible_in_tree())
+	set_process_unhandled_input(is_visible_in_tree())
+	if not is_visible_in_tree() and result_tween: result_tween.kill()
 
+func layout() -> void:
+	if not is_instance_valid(frame): return
+	var usable := size-Vector2(insets.x+insets.z,insets.y+insets.w)
+	var margin := 8.0 if usable.x<600 else 24.0
+	frame.size=Vector2(minf(1200,usable.x-margin*2),maxf(1,usable.y-margin*2))
+	frame.position=Vector2(insets.x+(usable.x-frame.size.x)/2,insets.y+margin)
+	if is_instance_valid(job_layout):
+		job_layout.columns=2 if frame.size.x>=1000 else 1
+		sidebar.visible=job_layout.columns==2
 func open() -> void:
 	show()
-	rebuild()
-
-func rebuild() -> void:
-	for child in body.get_children(): body.remove_child(child); child.queue_free()
-	ticket_labels.clear()
-	retry_labels.clear()
-	work_min = null
-	timer_claim = null
-	work_claim = null
-	revision = [sim.recovery.state.cycle_id, sim.recovery.successes(), sim.recovery.state.tickets.duplicate(true)]
-	recovery_panel()
+	if revision!=fingerprint(): show_overview()
+	elif content.get_child_count()==0: show_overview()
 	update_values()
-
+func fingerprint() -> String:
+	return str([sim.recovery.state.cycle_id,sim.recovery.state.contracts,sim.recovery.state.tickets])
+func clear_content() -> void:
+	for child in content.get_children(): content.remove_child(child); child.queue_free()
+	overview=null
+	promotions=null
+	game=null
+	job_layout=null
+	sidebar=null
+	job_status=null
+	verify.hide()
+func show_overview() -> void:
+	clear_content()
+	mode="overview"
+	active_id=""
+	var view := preload("res://scripts/recovery/desk_overview.gd").new()
+	view.sim=sim
+	view.started=drafts
+	view.job_requested.connect(open_job)
+	view.claim_requested.connect(recover)
+	view.promotions_requested.connect(show_promotions)
+	content.add_child(view)
+	overview=view
+	revision=fingerprint()
+	update_values()
+func open_job(id: String) -> void:
+	var c := contract(id)
+	if c.is_empty(): show_overview(); return
+	clear_content()
+	feedback.hide()
+	mode="job"
+	active_id=id
+	if not drafts.has(id): drafts[id]={}
+	job_layout=GridContainer.new()
+	job_layout.add_theme_constant_override("h_separation",16)
+	content.add_child(job_layout)
+	game=Games[int(c.category)].new()
+	game.setup(Recovery.puzzle(c),drafts[id])
+	job_layout.add_child(game)
+	var notes := UI.card(job_layout,Color("302b24"))
+	sidebar=notes.get_parent()
+	sidebar.custom_minimum_size.x=260
+	sidebar.size_flags_horizontal=SIZE_FILL
+	UI.text(notes,"WORKSHOP NOTES",20)
+	job_status=UI.text(notes,"")
+	UI.text(notes,"1. Inspect the case.\n2. Adjust your draft.\n3. Verify once.\n\nWrong attempts save a retry gate. Local taps never spend an attempt.")
+	UI.button(notes,"Back to job overview",show_overview)
+	verify.show()
+	layout()
+	update_values()
+func contract(id: String) -> Dictionary:
+	for c in sim.recovery.state.contracts:
+		if c.id==id: return c
+	return {}
+func show_promotions() -> void:
+	clear_content()
+	mode="promotions"
+	var view := preload("res://scripts/recovery/promotion_panel.gd").new()
+	view.sim=sim
+	view.scratch_progress=scratch_progress
+	view.claim_requested.connect(ticket)
+	content.add_child(view)
+	promotions=view
+	update_values()
+func back() -> void:
+	if mode!="overview": show_overview()
+	else: leave_requested.emit()
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		back()
+		get_viewport().set_input_as_handled()
 func _process(delta: float) -> void:
-	if not is_visible_in_tree() or sim == null: return
-	poll += delta
-	if poll < 0.2: return
-	poll = 0
-	if revision != [sim.recovery.state.cycle_id, sim.recovery.successes(), sim.recovery.state.tickets]: rebuild()
+	poll+=delta
+	if poll<1.0: return
+	poll=0
+	if revision!=fingerprint():
+		if mode=="overview": show_overview()
+		elif mode=="promotions": show_promotions()
+		elif contract(active_id).is_empty(): show_overview()
+		revision=fingerprint()
 	update_values()
-
-func label(parent: Node, text: String, size_value: int = 16) -> Label:
-	var node := Label.new()
-	node.text = text
-	node.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	node.size_flags_horizontal = SIZE_EXPAND_FILL
-	node.add_theme_font_size_override("font_size",size_value)
-	parent.add_child(node)
-	return node
-
-func button(parent: Node, text: String, action: Callable, disabled: bool = false) -> Button:
-	var node := Button.new()
-	node.text = text
-	node.clip_text = true
-	node.custom_minimum_size.y = 48
-	node.size_flags_horizontal = SIZE_EXPAND_FILL
-	node.disabled = disabled
-	node.pressed.connect(action)
-	parent.add_child(node)
-	if OS.is_debug_build(): node.add_to_group("debug_buttons")
-	return node
-
-static func countdown(seconds: int) -> String:
-	return "%02d:%02d" % [maxi(0,seconds)/60,maxi(0,seconds)%60]
-
 func update_values() -> void:
-	wallet.text = "PERSONAL WALLET $%.2f" % sim.owner_bankroll
-	cash.text = "Casino Cash $%.2f" % sim.cash
-	var exposure := 0.0
-	for stake in sim.owner_account.pending.values(): exposure += float(stake)
-	var r: Dictionary = sim.recovery.state
-	timer.text = "%s support | Next guaranteed top-up: %s | Active exposure $%.2f" % [Recovery.stage(sim.casino_rating,int(r.completed)),countdown(int(r.next_time_utc)-sim.recovery.now()),exposure]
-	var remaining := sim.recovery.passive_minutes_remaining(sim.elapsed)
-	daily.text = "Wallet allowance: +$%.0f automatically every in-game hour. Next in %dh %02dm of game time." % [CasinoTuning.OWNER_ALLOWANCE_AMOUNT, remaining / 60, remaining % 60]
-	message.text = error
-	message.visible = not error.is_empty()
-	if is_instance_valid(work_min): work_min.text = "Three verified contracts unlock recovery after the 10-minute real-time minimum. Minimum remaining: " + countdown(int(r.last_full_utc)+CasinoTuning.RECOVERY_WORK_MIN_SECONDS-sim.recovery.now())
-	if is_instance_valid(timer_claim): timer_claim.disabled = not sim.recovery.can_refill(sim) or sim.recovery.now()<int(r.next_time_utc)
-	if is_instance_valid(work_claim): work_claim.disabled = not sim.recovery.can_refill(sim) or sim.recovery.successes()!=3 or sim.recovery.now()<int(r.last_full_utc)+CasinoTuning.RECOVERY_WORK_MIN_SECONDS
-	for t in r.tickets:
-		if ticket_labels.has(t.id): ticket_labels[t.id].text = "Ticket %s | %s" % [t.id,"Granted $%.2f (card maximum $%.2f)" % [t.granted,t.award] if t.claimed else "Drawing in "+countdown(int(t.draw_utc)-sim.recovery.now()) if t.kind == "raffle" else "Free earned card. Scratch or use Reveal."]
-	for c in r.contracts:
-		if retry_labels.has(c.id): retry_labels[c.id].text = str(c.feedback) + (" Retry in " + countdown(int(c.retry_utc)-sim.recovery.now()) if sim.recovery.now() < int(c.retry_utc) else "")
-
-func recovery_panel() -> void:
-	var r: Dictionary = sim.recovery.state
-	label(body,"Your wallet will top up to $1000. Only the missing amount is granted.",18)
-	label(body,"Offer: %s | Full recoveries completed: %d | Work progress %d / 3" % [r.stage,r.completed,sim.recovery.successes()])
-	work_min = label(body,"Three verified contracts unlock recovery after the 10-minute real-time minimum. Minimum remaining: "+countdown(int(r.last_full_utc)+CasinoTuning.RECOVERY_WORK_MIN_SECONDS-sim.recovery.now()),14)
-	timer_claim = button(body,"Claim guaranteed timer top-up",func(): recover("timer"))
-	work_claim = button(body,"Claim completed work top-up",func(): recover("contracts"))
-	if not sim.owner_account.pending.is_empty(): label(body,"Resolve outstanding wagers before claiming wallet recovery.")
-	for c in r.contracts:
-		button(body,Recovery.CATEGORIES[int(c.category)]+(" / COMPLETE" if c.done else " / Expand"),func(): expanded_contract="" if expanded_contract==c.id else c.id; rebuild())
-		retry_labels[c.id] = label(body, str(c.feedback),14)
-		if c.done or expanded_contract!=c.id: continue
-		var p := Recovery.puzzle(c)
-		label(body,p.text,15)
-		if p.has("clues"):
-			var diagram := preload("res://scripts/recovery_clues.gd").new()
-			diagram.clues = p.clues
-			body.add_child(diagram)
-		var choice := OptionButton.new()
-		var reason := OptionButton.new()
-		var number := SpinBox.new()
-		var switches: Array = []
-		var aisle := CheckBox.new()
-		for field in [choice,reason,number,aisle]: body.add_child(field); field.hide()
-		if p.has("options"):
-			choice.fit_to_longest_item=false; choice.custom_minimum_size.y=48
-			for option in p.options: choice.add_item(option)
-			choice.show()
-		if int(c.category)==0:
-			number.min_value=-10000; number.max_value=10000; number.step=1; number.custom_minimum_size.y=48
-			number.show()
-		elif int(c.category)==1:
-			reason.fit_to_longest_item=false; reason.custom_minimum_size.y=48
-			for value in p.reasons: reason.add_item(value)
-			reason.show()
-		elif int(c.category) in [2,3]:
-			for title in (["Switch A","Switch B","Switch C"] if int(c.category)==2 else ["Worker A","Worker B","Worker C","Worker D"]):
-				var toggle := CheckBox.new(); toggle.text=title; toggle.custom_minimum_size.y=44
-				body.add_child(toggle); switches.append(toggle)
-			if int(c.category)==3: aisle.text="Keep emergency aisle open"; aisle.custom_minimum_size.y=44; aisle.show()
-		button(body,"Submit verified solution",func():
-			var mask := 0
-			for i in range(switches.size()):
-				if switches[i].button_pressed: mask |= 1<<i
-			var response := {"choice":choice.selected,"reason":reason.selected,"number":number.value,"mask":mask,"aisle":aisle.button_pressed}
-			var ok := sim.private_transaction(func(): return sim.recovery.submit(sim,str(c.id),response))
-			error="" if ok else "Contract locked: already complete, retry cooldown, or save unavailable."
-			AudioManager.play_ui("win" if ok and c.done else "invalid")
-			rebuild(); changed.emit())
-	for t in r.tickets:
-		var ticket_art := preload("res://scripts/recovery_ticket.gd").new()
-		ticket_art.ticket_id = str(t.id)
-		ticket_art.caption = "FREE " + str(t.kind).to_upper()
-		body.add_child(ticket_art)
-		ticket_labels[t.id]=label(body,"")
-		if t.kind=="scratch": label(body,"Odds: 50% $0 | 25% $100 | 15% $250 | 8% $500 | 2% $1000. Maximum top-ups.",14)
-		else: label(body,"Odds: 65% $0 | 22% $100 | 10% $250 | 3% $1000. Maximum top-ups.",14)
-		if t.claimed:
-			if t.award==0: label(body,"No award this time. Your guaranteed recovery is still available.",14)
-			continue
-		if t.kind=="scratch":
-			var card := preload("res://scripts/recovery_scratch_card.gd").new()
-			body.add_child(card)
-			card.scratched.connect(func(): ticket(str(t.id)))
-		button(body,"Reveal card" if t.kind=="scratch" else "Check drawing",func(): ticket(str(t.id)))
-	label(body,"These free rewards have no real-money value. Device time is local; offline clock manipulation cannot be fully prevented.",13)
-
-
+	if sim==null or not is_instance_valid(wallet): return
+	var gap := maxf(0,Recovery.TARGET-sim.owner_bankroll)
+	wallet.text="Personal wallet $%.2f / Target $%.0f / Eligible gap $%.2f" % [sim.owner_bankroll,Recovery.TARGET,gap]
+	var remaining: int=sim.recovery.passive_minutes_remaining(sim.elapsed)
+	help.text="Work is a virtual casino exercise. Inspect, adjust, then Verify once. Back keeps your draft while the workshop is open.\nRecovery timers use REAL TIME. Work minimum: %s. Retry: %s.\nPassive allowance +$%.0f every %d GAME minutes; next in %dh %02dm GAME time. Offline time follows the device clock. Rewards have no real-money value." % [UI.clock(CasinoTuning.RECOVERY_WORK_MIN_SECONDS),UI.clock(CasinoTuning.RECOVERY_RETRY_SECONDS),CasinoTuning.OWNER_ALLOWANCE_AMOUNT,CasinoTuning.OWNER_ALLOWANCE_INTERVAL_MINUTES,remaining/60,remaining%60]
+	if is_instance_valid(overview): overview.update_values()
+	if is_instance_valid(promotions): promotions.update_values()
+	if mode=="job":
+		var c := contract(active_id)
+		if c.is_empty(): return
+		var retry := maxi(0,int(c.retry_utc)-sim.recovery.now())
+		if is_instance_valid(job_status): job_status.text="Recovery tier: %s\n%d/3 jobs verified\nEligible gap: $%.2f\n\n%s" % [sim.recovery.state.stage,sim.recovery.successes(),gap,"[VERIFIED]" if c.done else "Retry in "+UI.clock(retry) if retry>0 else "Draft in progress"]
+		verify.disabled=c.done or retry>0 or sim.joined>=0 or not sim.owner_play.is_empty()
+		verify.text="Verified / Return with Back" if c.done else "Retry in "+UI.clock(retry) if retry>0 else "Verify my work"
+func result(value: String, success: bool) -> void:
+	feedback.text=value
+	feedback.show()
+	if result_tween: result_tween.kill()
+	feedback.modulate.a=0.25
+	result_tween=create_tween()
+	result_tween.tween_property(feedback,"modulate:a",1.0,0.25)
+	feedback.add_theme_color_override("font_color",Color("a5d6ac") if success else Color("efc27b"))
+func submit() -> void:
+	if mode!="job" or verify.disabled: return
+	var response: Dictionary=game.response()
+	var ok: bool=sim.private_transaction(func(): return sim.recovery.submit(sim,active_id,response))
+	var c := contract(active_id) # Rollback can replace the model dictionary.
+	if not ok: result("Could not save verification. Check eligibility or local save availability; your draft is kept.",false)
+	elif c.done:
+		result("[VERIFIED] %d/3 jobs complete. %s Check the overview for earned tickets and recovery readiness." % [sim.recovery.successes(),str(c.feedback)],true)
+	else: result("[INCORRECT] "+str(c.feedback),false)
+	AudioManager.play_ui("win" if ok and c.done else "invalid")
+	revision=fingerprint()
+	update_values()
+	changed.emit()
 func recover(source: String) -> void:
-	var ok := sim.private_transaction(func(): return sim.recovery.claim(sim,source))
+	var before: float=sim.owner_bankroll
+	var ok: bool=sim.private_transaction(func(): return sim.recovery.claim(sim,source))
+	if ok:
+		drafts.clear()
+		show_overview()
+	result("Saved refill +$%.2f to personal wallet. New work cycle ready." % (sim.owner_bankroll-before) if ok else "Recovery unavailable: check wallet gap, active wager, real-time wait or local save.",ok)
 	AudioManager.play_ui("win" if ok else "invalid")
-	error="" if ok else "Not ready: check real-time eligibility, completed work, wallet gap and outstanding wagers."
-	rebuild(); changed.emit()
-
+	changed.emit()
 func ticket(id: String) -> void:
-	var before: float = sim.owner_bankroll
-	var ok := sim.private_transaction(func(): return sim.recovery.claim_ticket(sim,id))
-	AudioManager.play_ui("win" if ok and sim.owner_bankroll > before else "confirm" if ok else "invalid")
-	error="" if ok else "Drawing not ready, already claimed, outstanding wagers, or local save unavailable."
-	rebuild(); changed.emit()
+	var ok: bool=sim.private_transaction(func(): return sim.recovery.claim_ticket(sim,id))
+	var claimed := {}
+	for t in sim.recovery.state.tickets:
+		if t.id==id: claimed=t
+	if ok:
+		show_promotions()
+		result("No award this time. Ticket result saved." if claimed.award==0 else "Prize $%.2f / Actual credit +$%.2f / Wallet cap $%.0f" % [claimed.award,claimed.granted,Recovery.TARGET],claimed.award>0)
+	else:
+		result("Ticket kept: need a wallet gap, settled wagers, a ready draw and a successful local save.",false)
+		if is_instance_valid(promotions): promotions.update_values()
+	revision=fingerprint()
+	AudioManager.play_ui("win" if ok and float(claimed.get("granted",0))>0 else "confirm" if ok else "invalid")
+	changed.emit()

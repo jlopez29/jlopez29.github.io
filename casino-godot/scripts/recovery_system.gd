@@ -65,24 +65,28 @@ static func puzzle(c: Dictionary) -> Dictionary:
 			var delta := (10 + (v%4)*5 + tier*10) * (-1 if v%2 else 1)
 			var recorded := receipts.duplicate()
 			recorded[error] += delta
-			return {"text": "Reconcile three cage receipts. Recorded minus verified is the discrepancy. Select the faulty receipt and enter the signed discrepancy.\nA: verified $%d / recorded $%d\nB: verified $%d / recorded $%d\nC: verified $%d / recorded $%d" % [receipts[0],recorded[0],receipts[1],recorded[1],receipts[2],recorded[2]], "options": ["Correct receipt A", "Correct receipt B", "Correct receipt C"], "answer": error, "number": delta, "hint": "Compare each recorded receipt with its verified amount; subtract verified from recorded."}
+			return {"text": "Reconcile three cage receipts. Recorded minus verified is the discrepancy. Select the faulty receipt and enter the signed discrepancy.\nA: verified $%d / recorded $%d\nB: verified $%d / recorded $%d\nC: verified $%d / recorded $%d" % [receipts[0],recorded[0],receipts[1],recorded[1],receipts[2],recorded[2]], "verified": receipts, "recorded": recorded, "options": ["Correct receipt A", "Correct receipt B", "Correct receipt C"], "answer": error, "number": delta, "hint": "Compare each recorded receipt with its verified amount; subtract verified from recorded."}
 		1:
 			var culprit := (v+tier)%3
 			var names := ["Runner A", "Runner B", "Runner C"]
 			var clue: String = ["seal", "time", "count"][v%3]
 			var lines: Array = []
+			var records: Array[Dictionary] = []
 			for i in range(3):
 				var faulty: bool = i == culprit
+				var seal := 200+v*3+i
+				var count := 4+i+tier
+				records.append({"name": names[i], "dispatch": {"seal": seal, "time": "%02d:10" % (10+i), "count": count}, "receipt": {"seal": seal+(1 if faulty and clue == "seal" else 0), "time": "%02d:%02d" % [10+i,5 if faulty and clue == "time" else 20], "count": count+(1 if faulty and clue == "count" else 0)}})
 				if clue == "seal": lines.append("%02d:00 %s: dispatch seal %d; cage receipt seal %d." % [10+i,names[i],200+v*3+i,200+v*3+i+(1 if faulty else 0)])
 				elif clue == "time": lines.append("%s: dispatch %02d:10; receipt %02d:%02d." % [names[i],10+i,10+i,5 if faulty else 20])
 				else: lines.append("%02d:00 %s: dispatch %d bundles; receipt %d bundles." % [10+i,names[i],4+i+tier,4+i+tier+(1 if faulty else 0)])
-			return {"text": "Review the dispatch timeline. Exactly one record conflicts with the paired receipt. Identify it and the evidence; no personal characteristics are clues.", "clues": lines, "options": names, "reasons": ["Seal differs", "Receipt precedes dispatch", "Bundle count differs"], "answer": culprit, "reason": ["seal","time","count"].find(clue), "hint": "Match each dispatch to its receipt. Check seal, chronological order and bundle count."}
+			return {"text": "Review the dispatch timeline. Exactly one record conflicts with the paired receipt. Identify it and the evidence; no personal characteristics are clues.", "clues": lines, "records": records, "options": names, "reasons": ["Seal differs", "Receipt precedes dispatch", "Bundle count differs"], "answer": culprit, "reason": ["seal","time","count"].find(clue), "hint": "Match each dispatch to its receipt. Check seal, chronological order and bundle count."}
 		2:
 			var target := 1 + (v*3+tier*2)%7
 			var a := target & 1
 			var b := (target >> 1)&1
 			var d := (target >> 2)&1
-			return {"text": "A virtual slot has stable power and a good reel sensor, but its controller self-test fails. Diagnose the component, then set switches A/B/C (ON=1).\nTest lamps must read: A XOR B = %d, B XOR C = %d, A = %d.\nThese switches affect only this training machine." % [a^b,b^d,a], "options": ["Power supply", "Reel sensor", "Controller circuit"], "answer": 2, "mask": target, "hint": "Power and sensor passed. Set A from the last lamp, then derive B and C with XOR."}
+			return {"text": "A virtual slot has stable power and a good reel sensor, but its controller self-test fails. Diagnose the component, then set switches A/B/C (ON=1).\nTest lamps must read: A XOR B = %d, B XOR C = %d, A = %d.\nThese switches affect only this training machine." % [a^b,b^d,a], "options": ["Power supply", "Reel sensor", "Controller circuit"], "answer": 2, "mask": target, "lamps": [a^b,b^d,a], "hint": "Power and sensor passed. Set A from the last lamp, then derive B and C with XOR."}
 		_:
 			var costs := [40+v*2,55+tier*5,70+v,90+tier*10]
 			var coverage := [[1,1,0],[0,1,1],[1,0,1],[1,1,1]]
@@ -148,7 +152,7 @@ func claim(sim, source: String) -> bool:
 	return true
 
 func claim_ticket(sim, id: String) -> bool:
-	if not sim.owner_account.pending.is_empty() or sim.owner_pending_stakes() > 0 or not sim.owner_play.is_empty(): return false
+	if not can_refill(sim): return false
 	for ticket in state.tickets:
 		if ticket.id != id: continue
 		if ticket.claimed or now() < int(ticket.draw_utc): return false

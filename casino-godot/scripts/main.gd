@@ -241,6 +241,9 @@ func layout_ui() -> void:
 	if is_instance_valid(back_room_floor):
 		back_room_floor.configure_view(mobile, landscape)
 		back_room_floor.mobile_viewport = Rect2(Vector2.ZERO, dimensions)
+	if is_instance_valid(recovery_view):
+		recovery_view.insets = viewport_insets
+		recovery_view.layout()
 	presentation_shell.layout(self, dimensions)
 	apply_visibility()
 	if is_instance_valid(developer_panel): developer_panel._layout()
@@ -581,6 +584,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event.keycode == KEY_R and building:
 		floor_view.rotated = not floor_view.rotated
 	if event.keycode == KEY_ESCAPE:
+		if recovery_view.visible:
+			recovery_view.back()
+			get_viewport().set_input_as_handled()
+			return
 		if building:
 			cancel_placement()
 		elif private_play or sim.joined >= 0 or not sim.owner_play.is_empty():

@@ -183,9 +183,9 @@ const MILESTONES := [
 ]
 const GAME_LIMITS := {
 	"blackjack": {"minimum": 10.0, "maximum": 100.0, "limits": [10.0, 25.0, 50.0]},
-	"roulette": {"minimum": 25.0, "maximum": 100.0, "limits": [10.0, 25.0, 50.0]},
-	"craps": {"minimum": 25.0, "maximum": 100.0, "limits": [25.0, 50.0]},
-	"holdem": {"minimum": 25.0, "maximum": 100.0, "limits": [10.0, 25.0, 50.0]},
+	"roulette": {"minimum": 5.0, "maximum": 100.0, "limits": [5.0, 10.0, 25.0, 50.0]},
+	"craps": {"minimum": 10.0, "maximum": 100.0, "limits": [10.0, 25.0, 50.0]},
+	"holdem": {"minimum": 10.0, "maximum": 100.0, "limits": [10.0, 25.0, 50.0]},
 }
 const DEVELOPMENT_VALUES := {"blackjack": 4.0, "roulette": 5.0, "craps": 7.0, "holdem": 8.0}
 const SLOT_DEVELOPMENT_CAP := 30.0 # A developed slot floor can reach the highest Rating; each profile also has a cap.

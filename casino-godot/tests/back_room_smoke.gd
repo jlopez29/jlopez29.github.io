@@ -106,6 +106,71 @@ func run() -> void:
 	var pending_save: Dictionary = JSON.parse_string(JSON.stringify(money_sim.snapshot()))
 	check(restored.restore(pending_save) and restored.owner_account.pending == pending_save.owner_bankroll.pending and restored.back_room.busy(), "Unfinished private escrow survives save/load")
 	check(not restored.recovery.can_refill(restored), "Recovery blocked by pending wagers")
+	# Focused recovery invariants and adapters; no random outcome sampling.
+	var recovery_sim := Sim.new()
+	var recovery_cash: float = recovery_sim.cash
+	recovery_sim.owner_account.balance = 1400
+	recovery_sim.recovery.issue("scratch")
+	var earned_id: String = recovery_sim.recovery.state.tickets[0].id
+	check(not recovery_sim.recovery.claim_ticket(recovery_sim, earned_id) and not recovery_sim.recovery.state.tickets[0].claimed, "Full wallet preserves unclaimed ticket even for zero prize")
+	for c in recovery_sim.recovery.state.contracts: c.done = true
+	check(not recovery_sim.recovery.claim(recovery_sim, "contracts") and not recovery_sim.recovery.claim(recovery_sim, "timer"), "Full wallet blocks both refill paths at 3/3")
+	recovery_sim.owner_account.balance = 125
+	recovery_sim.recovery.state.last_full_utc = recovery_sim.recovery.now()-CasinoTuning.RECOVERY_WORK_MIN_SECONDS
+	check(recovery_sim.private_transaction(func(): return recovery_sim.recovery.claim(recovery_sim,"contracts")) and recovery_sim.owner_bankroll==1000 and recovery_sim.cash==recovery_cash and recovery_sim.recovery.state.cycle_id==1, "Work credits only gap, advances once and leaves casino cash unchanged")
+	check(not recovery_sim.recovery.claim(recovery_sim,"contracts"), "Completed work cannot double claim")
+	var promo_sim := Sim.new()
+	promo_sim.owner_account.balance=100
+	promo_sim.recovery.issue("scratch")
+	promo_sim.recovery.state.scratch_issued=true
+	promo_sim.recovery.state.tickets[0].award=0
+	var promo_id: String=promo_sim.recovery.state.tickets[0].id
+	check(promo_sim.private_transaction(func(): return promo_sim.recovery.claim_ticket(promo_sim,promo_id)) and promo_sim.recovery.state.tickets[0].claimed and promo_sim.owner_bankroll==100, "Eligible zero prize is honestly revealed without credit")
+	check(not promo_sim.recovery.claim_ticket(promo_sim,promo_id), "Promotion cannot be claimed twice")
+	promo_sim.recovery.issue("raffle")
+	promo_sim.recovery.state.raffle_issued=true
+	var promo_save: Dictionary=promo_sim.recovery.snapshot()
+	var restored_promo=preload("res://scripts/recovery_system.gd").new()
+	check(restored_promo.restore(promo_save) and restored_promo.state.tickets==promo_sim.recovery.state.tickets and restored_promo.rng.state==promo_sim.recovery.rng.state, "Promotion outcomes and independent RNG survive reload")
+	var checkpoint_calls := [0]
+	promo_sim.owner_checkpoint=func(): checkpoint_calls[0]+=1; return checkpoint_calls[0]!=2
+	var attempt_before: Dictionary=promo_sim.recovery.snapshot()
+	var attempt_id: String=promo_sim.recovery.state.contracts[0].id
+	check(not promo_sim.private_transaction(func(): return promo_sim.recovery.submit(promo_sim,attempt_id,{})) and promo_sim.recovery.state.contracts==attempt_before.state.contracts, "Failed save rolls back durable incorrect attempt")
+	promo_sim.owner_checkpoint=Callable()
+	var desk = ui.recovery_view
+	desk.sim = recovery_sim
+	desk.open()
+	for category in range(4):
+		var c: Dictionary = recovery_sim.recovery.state.contracts[0]
+		c.category=category
+		c.variant=1
+		c.tier=0
+		desk.open_job(c.id)
+		var p: Dictionary = recovery_sim.recovery.puzzle(c)
+		var response := {"choice":p.get("answer",-1),"reason":p.get("reason",-1),"number":p.get("number",0),"mask":p.get("mask",3),"aisle":true}
+		for key in response: desk.drafts[c.id][key]=response[key]
+		check(recovery_sim.recovery.solved(c,desk.game.response()), "Visual adapter retains canonical response category %d" % category)
+		if category==1: check(p.records[1].dispatch.time=="11:10" and p.records[1].receipt.time=="11:05", "Structured security chronology matches curated Runner B case")
+		if category==0: check(p.number<0, "Cage negative signed discrepancy retained")
+		if category==3:
+			desk.drafts[c.id].aisle=false
+			check(not recovery_sim.recovery.solved(c,desk.game.response()), "Blocked physical aisle fails staffing verification")
+	var failed: Dictionary=recovery_sim.recovery.state.contracts[0]
+	failed.category=0
+	failed.done=false
+	desk.open_job(failed.id)
+	desk.drafts[failed.id].choice=-1
+	desk.submit()
+	check(not failed.done and failed.failures==1 and desk.feedback.text.begins_with("[INCORRECT]"), "Durably saved wrong answer never shows VERIFIED")
+	check(desk.verify.disabled and failed.retry_utc>recovery_sim.recovery.now(), "Failed verification applies authoritative retry gate")
+	var draft_before: Dictionary=desk.game.response()
+	desk.size=Vector2(390,844)
+	desk.layout()
+	check(desk.game.response()==draft_before, "Relayout preserves active draft")
+	desk.hide()
+	check(not desk.is_processing(), "Hidden workshop stops polling")
+	desk.sim=ui.sim
 	DirAccess.remove_absolute("user://back_room_smoke.save")
 	ui.queue_free()
 	await process_frame
