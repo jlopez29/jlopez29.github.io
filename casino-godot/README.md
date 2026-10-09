@@ -204,6 +204,21 @@ shooter handoff, betting, and browser save/reload. The debug export exposes
 a read-only JS snapshot and button bounds for test assertions. That hook
 is excluded by `OS.is_debug_build()` from the release game.
 
+## Windows executable export
+
+Install the matching Godot 4.7.2 standard export templates, then run from the
+repository root:
+
+```sh
+python3 casino-godot/export_windows.py --godot godot
+```
+
+The release is `casino-windows/PitBoss.exe` for Windows x86-64. Game data is
+embedded, so copy the executable to Windows and double-click it; no Godot
+installation or separate `.pck` file is needed. The generated directory is
+ignored by Git. This uses the current source version/build label and excludes
+debug developer tools. Windows gameplay should be checked on a Windows machine.
+
 ## Limits of 0.2
 
 This is a 2D overhead playable test, including a zoomed visitor view, not a
