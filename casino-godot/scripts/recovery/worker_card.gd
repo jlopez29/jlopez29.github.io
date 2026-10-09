@@ -1,4 +1,4 @@
-extends Button
+extends "res://scripts/recovery/object_button.gd"
 var worker_index := 0
 func _get_drag_data(_at: Vector2) -> Variant:
 	var preview := Label.new()

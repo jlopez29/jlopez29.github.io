@@ -10,20 +10,22 @@ var work: Label
 var payable: Label
 var claim: Button
 var cards := {}
-var actions := {}
 var source := ""
 var started := {}
 var tickets: Button
 var grid: GridContainer
+var progress: Control
 func _ready() -> void:
 	add_theme_constant_override("separation",12)
 	var feature := UI.card(self)
 	UI.text(feature,"A LITTLE WORK. A FRESH START.",24)
 	UI.text(feature,"Restore your personal wallet through time or three verified jobs. Both paths share one recovery cycle.")
-	timed=UI.text(feature,"")
-	work=UI.text(feature,"")
-	payable=UI.text(feature,"")
+	timed=UI.text(UI.card(feature,Color("252e30")),"",17)
+	work=UI.text(UI.card(feature,Color("26392f")),"",17)
+	payable=UI.text(UI.card(feature,Color("373027")),"",20)
 	claim=UI.button(feature,"Claim recovery",func(): claim_requested.emit(source))
+	progress=preload("res://scripts/recovery/progress_strip.gd").new()
+	add_child(progress)
 	UI.text(self,"THREE JOBS / Recovery tier: "+str(sim.recovery.state.stage),20)
 	grid=GridContainer.new()
 	grid.add_theme_constant_override("h_separation",12)
@@ -32,18 +34,17 @@ func _ready() -> void:
 	resized.connect(reflow)
 	for c in sim.recovery.state.contracts:
 		var category := int(c.category)
-		var card := UI.card(grid,Color(["302c23","26323d","202d35","28372d"][category]))
-		var art := preload("res://scripts/recovery/desk_art.gd").new()
-		art.category=category
-		card.add_child(art)
-		UI.text(card,["[LEDGER] Reconcile the drawer","[CASE FILE] Trace the cash delivery","[CIRCUIT] Controller diagnostic","[SHIFT BOARD] Staff the cage shifts"][category],20)
-		UI.text(card,["Compare receipt slips and count a signed difference.","Pair dispatch documents and attach evidence.","Diagnose a module and tune live XOR lamps.","Assign shift coverage and clear an emergency aisle."][category])
-		cards[c.id]=UI.text(card,"")
-		actions[c.id]=UI.button(card,"Open job",func(): job_requested.emit(str(c.id)))
-	tickets=UI.button(self,"Earned promotions",func(): promotions_requested.emit())
+		var card := preload("res://scripts/recovery/workstation_card.gd").new()
+		card.category=category
+		card.pressed.connect(func(): job_requested.emit(str(c.id)))
+		grid.add_child(card)
+		cards[c.id]=card
+	tickets=UI.object(self,"tray","PROMOTION TICKET TRAY","Earned tickets",func(): promotions_requested.emit())
 	UI.text(self,"Virtual game rewards. No real-money value.",15)
+	reflow()
 	update_values()
 func update_values() -> void:
+	progress.completed=sim.recovery.successes()
 	var r: Dictionary=sim.recovery.state
 	var now: int=sim.recovery.now()
 	var timer_left := maxi(0,int(r.next_time_utc)-now)
@@ -59,11 +60,12 @@ func update_values() -> void:
 	elif not sim.recovery.can_refill(sim): payable.text+="\nSettle active bet before recovery."
 	for c in r.contracts:
 		var retry := maxi(0,int(c.retry_utc)-now)
-		cards[c.id].text="[VERIFIED STAMP]" if c.done else "Retry in "+UI.clock(retry) if retry>0 else "In progress" if started.has(c.id) else "Available"
-		actions[c.id].text="Review job" if c.done else "Resume" if started.has(c.id) else "Open job"
+		cards[c.id].set_status("VERIFIED / REVIEW" if c.done else "RETRY / "+UI.clock(retry) if retry>0 else "IN PROGRESS / RESUME" if started.has(c.id) else "AVAILABLE / OPEN",bool(c.done))
 	var pending: int=r.tickets.filter(func(t): return not t.claimed).size()
 	tickets.visible=not r.tickets.is_empty()
-	tickets.text="Promotion drawer / %d unclaimed" % pending
+	tickets.detail="%d unclaimed / open tray" % pending
+	tickets.text="Promotion ticket tray / %d unclaimed" % pending
+	tickets.queue_redraw()
 
 func reflow() -> void:
 	grid.columns=3 if size.x>=960 else 1

@@ -3,10 +3,13 @@ signal scratched
 var erased := {}
 var dragging := false
 var complete := false
+var skin: StyleBoxFlat
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(0,150)
 	mouse_filter = MOUSE_FILTER_STOP
+	skin=preload("res://scripts/pit_boss_theme.gd").box(Color("652b38"),Color("e3bb70"),12)
+	resized.connect(queue_redraw)
 
 func _gui_input(event: InputEvent) -> void:
 	if complete: return
@@ -42,10 +45,14 @@ func reset_after_failure() -> void:
 	queue_redraw()
 
 func _draw() -> void:
-	draw_style_box(preload("res://scripts/pit_boss_theme.gd").box(Color("652b38"),Color("e3bb70"),12),Rect2(Vector2.ZERO,size))
+	if skin==null: return
+	draw_style_box(skin,Rect2(Vector2.ZERO,size))
 	var font := ThemeDB.fallback_font
-	draw_string(font,Vector2(16,78),"Checking requires a saved claim",HORIZONTAL_ALIGNMENT_LEFT,size.x-32,16,Color("e3bb70"))
+	draw_string(font,Vector2(16,78),"TICKET / READY FOR SAVED REVEAL",HORIZONTAL_ALIGNMENT_LEFT,size.x-32,16,Color("e3bb70"))
 	for y in range(5):
 		for x in range(12):
-			if not erased.has(y*12+x): draw_rect(Rect2(Vector2(x*size.x/12,y*size.y/5),Vector2(size.x/12+1,size.y/5+1)),Color("94908a"))
+			if not erased.has(y*12+x): draw_rect(Rect2(Vector2(x*size.x/12,y*size.y/5),Vector2(size.x/12+1,size.y/5+1)),Color("a6aaa8") if (x+y)%2 else Color("bdc0b9"))
+	for y in range(40,int(size.y)-8,12):
+		draw_line(Vector2(8,y),Vector2(size.x-8,y),Color(1,1,1,0.09))
+	draw_rect(Rect2(10,size.y-16,(size.x-20)*minf(1,erased.size()/36.0),6),Color("e3bb70"))
 	draw_string(font,Vector2(16,28),"RUB TO REVEAL / %d%%" % mini(100,int(erased.size()*100/36)),HORIZONTAL_ALIGNMENT_LEFT,size.x-32,13,Color("fff0d0"))

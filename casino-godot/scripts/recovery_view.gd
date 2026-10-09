@@ -9,6 +9,7 @@ var sim: CasinoSimulation
 var frame: PanelContainer
 var content: VBoxContainer
 var wallet: Label
+var countdown: Label
 var feedback: Label
 var help: Label
 var toolbar: VBoxContainer
@@ -26,7 +27,8 @@ var scratch_progress := {}
 var revision := ""
 var poll := 0.0
 var insets := Vector4.ZERO
-var result_tween: Tween
+var result_stamp: Control
+var breadcrumb: Label
 func _ready() -> void:
 	theme=WorkbenchTheme.create()
 	mouse_filter=MOUSE_FILTER_STOP
@@ -39,28 +41,37 @@ func _ready() -> void:
 	frame.add_theme_stylebox_override("panel",WorkbenchTheme.box(Color("121f20"),WorkbenchTheme.GOLD,16))
 	add_child(frame)
 	var stack := VBoxContainer.new()
-	stack.add_theme_constant_override("separation",10)
+	stack.add_theme_constant_override("separation",6)
 	frame.add_child(stack)
 	var header := HBoxContainer.new()
 	stack.add_child(header)
 	UI.button(header,"< Back",back)
-	var title := UI.text(header,"RECOVERY WORKSHOP",20)
+	var title := UI.text(header,"WORKSHOP",20)
 	title.size_flags_horizontal=SIZE_EXPAND_FILL
 	UI.button(header,"Help",func(): help.visible=not help.visible)
-	wallet=UI.text(stack,"",18)
-	help=UI.text(stack,"",16)
-	help.hide()
+	breadcrumb=UI.text(stack,"WORKSHOP / OVERVIEW",15)
+	wallet=UI.text(stack,"",16)
+	countdown=UI.text(stack,"",14)
 	var scroll := ScrollContainer.new()
+	scroll.follow_focus=true
 	scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical=SIZE_EXPAND_FILL
 	stack.add_child(scroll)
+	var scroll_stack := VBoxContainer.new()
+	scroll_stack.size_flags_horizontal=SIZE_EXPAND_FILL
+	scroll.add_child(scroll_stack)
+	help=UI.text(scroll_stack,"",16)
+	help.hide()
+	feedback=UI.text(UI.card(scroll_stack,Color("373027")),"",17)
+	feedback.get_parent().get_parent().hide()
 	content=VBoxContainer.new()
 	content.size_flags_horizontal=SIZE_EXPAND_FILL
-	scroll.add_child(content)
+	scroll_stack.add_child(content)
 	toolbar=VBoxContainer.new()
 	stack.add_child(toolbar)
-	feedback=UI.text(toolbar,"",17)
-	feedback.hide()
+	result_stamp=preload("res://scripts/recovery/result_stamp.gd").new()
+	toolbar.add_child(result_stamp)
+	result_stamp.hide()
 	verify=UI.button(toolbar,"Verify my work",submit)
 	verify.hide()
 	resized.connect(layout)
@@ -69,12 +80,11 @@ func _ready() -> void:
 func on_visibility_changed() -> void:
 	set_process(is_visible_in_tree())
 	set_process_unhandled_input(is_visible_in_tree())
-	if not is_visible_in_tree() and result_tween: result_tween.kill()
 
 func layout() -> void:
 	if not is_instance_valid(frame): return
 	var usable := size-Vector2(insets.x+insets.z,insets.y+insets.w)
-	var margin := 8.0 if usable.x<600 else 24.0
+	var margin := 8.0 if usable.x<600 or usable.y<500 else 24.0
 	frame.size=Vector2(minf(1200,usable.x-margin*2),maxf(1,usable.y-margin*2))
 	frame.position=Vector2(insets.x+(usable.x-frame.size.x)/2,insets.y+margin)
 	if is_instance_valid(job_layout):
@@ -96,6 +106,8 @@ func clear_content() -> void:
 	sidebar=null
 	job_status=null
 	verify.hide()
+	feedback.get_parent().get_parent().hide()
+	result_stamp.hide()
 func show_overview() -> void:
 	clear_content()
 	mode="overview"
@@ -114,7 +126,7 @@ func open_job(id: String) -> void:
 	var c := contract(id)
 	if c.is_empty(): show_overview(); return
 	clear_content()
-	feedback.hide()
+	feedback.get_parent().get_parent().hide()
 	mode="job"
 	active_id=id
 	if not drafts.has(id): drafts[id]={}
@@ -135,6 +147,7 @@ func open_job(id: String) -> void:
 	verify.show()
 	layout()
 	update_values()
+	if not c.done and int(c.failures)>0: result("[INCORRECT] "+str(c.feedback),false)
 func contract(id: String) -> Dictionary:
 	for c in sim.recovery.state.contracts:
 		if c.id==id: return c
@@ -169,7 +182,9 @@ func _process(delta: float) -> void:
 func update_values() -> void:
 	if sim==null or not is_instance_valid(wallet): return
 	var gap := maxf(0,Recovery.TARGET-sim.owner_bankroll)
-	wallet.text="Personal wallet $%.2f / Target $%.0f / Eligible gap $%.2f" % [sim.owner_bankroll,Recovery.TARGET,gap]
+	wallet.text="Wallet $%.2f / Eligible refill $%.2f" % [sim.owner_bankroll,gap]
+	breadcrumb.text="WORKSHOP / "+(Recovery.CATEGORIES[int(contract(active_id).category)].to_upper() if mode=="job" and not contract(active_id).is_empty() else mode.to_upper())
+	countdown.text="Real-time wait / timed %s / work %s" % [UI.clock(maxi(0,int(sim.recovery.state.next_time_utc)-sim.recovery.now())),UI.clock(maxi(0,int(sim.recovery.state.last_full_utc)+CasinoTuning.RECOVERY_WORK_MIN_SECONDS-sim.recovery.now()))]
 	var remaining: int=sim.recovery.passive_minutes_remaining(sim.elapsed)
 	help.text="Work is a virtual casino exercise. Inspect, adjust, then Verify once. Back keeps your draft while the workshop is open.\nRecovery timers use REAL TIME. Work minimum: %s. Retry: %s.\nPassive allowance +$%.0f every %d GAME minutes; next in %dh %02dm GAME time. Offline time follows the device clock. Rewards have no real-money value." % [UI.clock(CasinoTuning.RECOVERY_WORK_MIN_SECONDS),UI.clock(CasinoTuning.RECOVERY_RETRY_SECONDS),CasinoTuning.OWNER_ALLOWANCE_AMOUNT,CasinoTuning.OWNER_ALLOWANCE_INTERVAL_MINUTES,remaining/60,remaining%60]
 	if is_instance_valid(overview): overview.update_values()
@@ -179,15 +194,14 @@ func update_values() -> void:
 		if c.is_empty(): return
 		var retry := maxi(0,int(c.retry_utc)-sim.recovery.now())
 		if is_instance_valid(job_status): job_status.text="Recovery tier: %s\n%d/3 jobs verified\nEligible gap: $%.2f\n\n%s" % [sim.recovery.state.stage,sim.recovery.successes(),gap,"[VERIFIED]" if c.done else "Retry in "+UI.clock(retry) if retry>0 else "Draft in progress"]
+		if c.done and not result_stamp.visible: result_stamp.stamp(true,"VERIFIED / %d OF 3" % sim.recovery.successes())
 		verify.disabled=c.done or retry>0 or sim.joined>=0 or not sim.owner_play.is_empty()
-		verify.text="Verified / Return with Back" if c.done else "Retry in "+UI.clock(retry) if retry>0 else "Verify my work"
+		verify.text="Verified / Return with Back" if c.done else "Retry in "+UI.clock(retry) if retry>0 else "Verify draft / save attempt"
 func result(value: String, success: bool) -> void:
 	feedback.text=value
 	feedback.show()
-	if result_tween: result_tween.kill()
-	feedback.modulate.a=0.25
-	result_tween=create_tween()
-	result_tween.tween_property(feedback,"modulate:a",1.0,0.25)
+	feedback.get_parent().get_parent().show()
+	result_stamp.stamp(success,"VERIFIED / %d OF 3" % sim.recovery.successes() if success and mode=="job" else "SAVED" if success else "CHECK WORK / SEE HINT")
 	feedback.add_theme_color_override("font_color",Color("a5d6ac") if success else Color("efc27b"))
 func submit() -> void:
 	if mode!="job" or verify.disabled: return

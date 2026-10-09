@@ -27,7 +27,7 @@ func _ready() -> void:
 			card.add_child(scratch)
 			scratch.scratched.connect(func(): claim_requested.emit(str(ticket.id)))
 		var action := UI.button(card,"Reveal without scratching" if ticket.kind=="scratch" else "Check drawing",func(): claim_requested.emit(str(ticket.id)))
-		rows[ticket.id]={"status":status,"action":action,"scratch":scratch}
+		rows[ticket.id]={"status":status,"action":action,"scratch":scratch,"art":art}
 	update_values()
 static func odds(kind: String) -> String:
 	var counts := {}
@@ -43,11 +43,12 @@ func update_values() -> void:
 		var row: Dictionary=rows[ticket.id]
 		var wait := maxi(0,int(ticket.draw_utc)-sim.recovery.now())
 		var eligible: bool=sim.recovery.can_refill(sim)
+		row.art.result_text="SAVED / PRIZE $%.2f" % ticket.award if ticket.claimed else ""
 		row.action.visible=not ticket.claimed
 		row.action.disabled=wait>0 or not eligible
 		row.status.text="Prize $%.2f / Credited $%.2f / %s" % [ticket.award,ticket.granted,"No award this time" if ticket.award==0 else "Saved result"] if ticket.claimed else "Draw in "+UI.clock(wait)+" / REAL TIME" if wait>0 else "Ready to check" if ticket.kind=="raffle" else "Rub the silver coating or use accessible reveal."
 		if not ticket.claimed and not eligible:
 			row.status.text+="\nTicket kept: no wallet gap. Use later." if sim.owner_bankroll>=Recovery.TARGET else "\nSettle active bet before revealing. Ticket kept."
 		if is_instance_valid(row.scratch):
-			row.scratch.mouse_filter=Control.MOUSE_FILTER_STOP if eligible else Control.MOUSE_FILTER_IGNORE
+			row.scratch.mouse_filter=Control.MOUSE_FILTER_STOP if eligible and wait==0 else Control.MOUSE_FILTER_IGNORE
 			if row.scratch.complete and not ticket.claimed: row.scratch.reset_after_failure()

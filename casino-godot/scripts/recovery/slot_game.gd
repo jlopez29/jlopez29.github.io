@@ -1,26 +1,48 @@
 extends "res://scripts/recovery/minigame_base.gd"
 var modules: Array[Button] = []
 var switches: Array[Button] = []
-var lamps: Array[Label] = []
+var lamps: Array[Control] = []
+var matched: Label
+var compartments: GridContainer
+var lamp_grid: GridContainer
 func build() -> void:
-	var art := preload("res://scripts/recovery/desk_art.gd").new()
-	art.category=2
-	add_child(art)
-	UI.text(self,"CONTROLLER DIAGNOSTIC",24)
-	UI.text(self,"Inspect a module to diagnose the fault. Flip the three switches until the test lamps match their targets.")
-	lesson("XOR means DIFFERENT values: 0 XOR 1 = 1; 1 XOR 0 = 1; 0 XOR 0 = 0; 1 XOR 1 = 0. The last lamp reads A directly. Work backward from A to B to C.")
+	response_keys=["choice", "mask"]
+	UI.text(self,"SLOT SERVICE / DIAGNOSTIC CONSOLE",24)
+	UI.text(self,"Inspect the faulty module. Set A, B and C to match all test lamps.")
+	compartments=GridContainer.new()
+	compartments.add_theme_constant_override("h_separation",10)
+	add_child(compartments)
 	for i in range(3):
-		modules.append(UI.button(self,["[POWER] Stable supply / OK","[REEL] Sensor test / OK","[CIRCUIT] Controller self-test / FAULT"][i],func(): draft.choice=i; refresh()))
-	var console := UI.card(self,Color("202b33"))
-	UI.text(console,"SWITCH BANK / LIVE TEST",18)
+		var module := UI.object(compartments,"module",["POWER","REEL SENSOR","CONTROLLER"][i],["Supply stable / OK","Sensor passed / OK","Self-test / FAULT"][i],func(): draft.choice=i; refresh())
+		module.serial=char(65+i)
+		modules.append(module)
+	var console := UI.card(self,Color("202b2b"))
+	UI.text(console,"SWITCH BANK / ON = 1",18)
 	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation",12)
 	console.add_child(row)
 	for i in range(3):
-		var rocker := UI.button(row,"",func(): draft.mask=int(draft.get("mask",0))^(1<<i); refresh())
-		rocker.size_flags_horizontal=SIZE_EXPAND_FILL
+		var rocker := UI.object(row,"rocker",char(65+i),"",func(): draft.mask=int(draft.get("mask",0))^(1<<i); refresh())
+		rocker.serial=char(65+i)
 		switches.append(rocker)
-	for i in range(3): lamps.append(UI.text(console,"",19))
+	UI.text(console,"OUTPUT BUS / ACTUAL vs TARGET",18)
+	lamp_grid=GridContainer.new()
+	lamp_grid.add_theme_constant_override("h_separation",12)
+	console.add_child(lamp_grid)
+	for i in range(3):
+		var lamp := preload("res://scripts/recovery/indicator_lamp.gd").new()
+		lamp.caption=["A XOR B","B XOR C","A"][i]
+		lamp.size_flags_horizontal=SIZE_EXPAND_FILL
+		lamp_grid.add_child(lamp)
+		lamps.append(lamp)
+	matched=UI.text(console,"",18)
+	lesson("XOR means DIFFERENT values: 0 XOR 1 = 1; 1 XOR 0 = 1; 0 XOR 0 = 0; 1 XOR 1 = 0. The last lamp reads A directly. Work backward from A to B to C.")
+	resized.connect(reflow)
+	reflow()
 	refresh()
+func reflow() -> void:
+	compartments.columns=3 if size.x>=700 else 1
+	lamp_grid.columns=3 if size.x>=800 else 1
 func refresh() -> void:
 	var mask := int(draft.get("mask",0))
 	var a := mask&1
@@ -28,8 +50,9 @@ func refresh() -> void:
 	var c := (mask>>2)&1
 	var values := [a^b,b^c,a]
 	for i in range(3):
-		UI.mark(modules[i],int(draft.get("choice",-1))==i)
-		switches[i].text="%s %s (%d)" % [char(65+i),"ON" if mask&(1<<i) else "OFF",(mask>>i)&1]
-		UI.mark(switches[i],bool(mask&(1<<i)))
-		lamps[i].text="%s   Actual %d / Target %d   [%s]" % [["A XOR B","B XOR C","A"][i],values[i],puzzle.lamps[i],"MATCH" if values[i]==puzzle.lamps[i] else "ADJUST"]
-		lamps[i].add_theme_color_override("font_color",Color("a5d6ac") if values[i]==puzzle.lamps[i] else Color("efc27b"))
+		modules[i].selected=int(draft.get("choice",-1))==i
+		switches[i].selected=bool(mask&(1<<i))
+		switches[i].text="Switch %s / %s" % [char(65+i),"ON" if switches[i].selected else "OFF"]
+		lamps[i].update(values[i],int(puzzle.lamps[i]))
+	matched.text="SYSTEM TEST MATCHED / draft ready to Verify" if values==puzzle.lamps else "TEST IN PROGRESS / adjust the switch bank"
+	matched.add_theme_color_override("font_color",Color("a5d6ac") if values==puzzle.lamps else Color("efc27b"))

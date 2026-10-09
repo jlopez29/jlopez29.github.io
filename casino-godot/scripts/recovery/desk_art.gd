@@ -8,7 +8,7 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(reflow)
 	reflow()
 func reflow() -> void:
-	visible=get_viewport_rect().size.y>=600
+	visible=true
 	custom_minimum_size.y=60 if get_viewport_rect().size.x<600 else 90
 func _draw() -> void:
 	var gold := Color("d4af37")
@@ -22,13 +22,13 @@ func _draw() -> void:
 				for j in range(4): draw_line(at+Vector2(8,18+j*10),at+Vector2(42,18+j*10),Color("635c4f"),2)
 			for i in range(4): draw_circle(center+Vector2(100-i*7,26-i*4),10,gold)
 		1:
-			draw_line(center+Vector2(-100,0),center+Vector2(100,0),gold,2)
-			for i in range(3):
-				var at := center+Vector2((i-1)*80,0)
-				draw_circle(at,22,Color("59636b"))
-				draw_arc(at,18,0,TAU,32,paper,2)
-				draw_line(at,at+Vector2(0,-12),paper,2)
-				draw_line(at,at+Vector2(10,6),paper,2)
+			for i in range(2):
+				var at := center+Vector2(-85+i*95,-30)
+				draw_rect(Rect2(at,Vector2(75,60)),Color("a48c59"))
+				draw_rect(Rect2(at+Vector2(5,8),Vector2(65,48)),paper)
+				for j in range(3): draw_line(at+Vector2(12,21+j*10),at+Vector2(58,21+j*10),Color("635c4f"),2)
+			draw_arc(center+Vector2(85,8),15,0,TAU,24,gold,3,true)
+			draw_line(center+Vector2(96,20),center+Vector2(110,32),gold,5)
 		2:
 			draw_style_box(preload("res://scripts/pit_boss_theme.gd").box(Color("202b33"),gold,0),Rect2(center-Vector2(120,38),Vector2(240,76)))
 			for i in range(3):

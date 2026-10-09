@@ -3,6 +3,7 @@ const WorkbenchTheme = preload("res://scripts/pit_boss_theme.gd")
 static func text(parent: Node, value: String, font_size: int = 17) -> Label:
 	var label := Label.new()
 	label.text = value
+	if parent.has_meta("parchment"): label.add_theme_color_override("font_color",Color("302b23"))
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.add_theme_font_size_override("font_size", font_size)
@@ -31,3 +32,21 @@ static func clock(seconds: int) -> String:
 	return "%02d:%02d:%02d" % [seconds/3600,(seconds/60)%60,seconds%60]
 static func mark(button: Button, selected: bool) -> void:
 	button.add_theme_stylebox_override("normal", WorkbenchTheme.box(Color("514526") if selected else Color("242e36"), WorkbenchTheme.GOLD if selected else Color("45413a"), 10))
+
+static func object(parent: Node, kind: String, heading: String, detail: String, action: Callable) -> Button:
+	var control := preload("res://scripts/recovery/object_button.gd").new()
+	control.kind=kind
+	control.heading=heading
+	control.detail=detail
+	control.text=heading+" / "+detail
+	control.tooltip_text=control.text
+	control.pressed.connect(func(): AudioManager.play_ui("confirm"); action.call())
+	parent.add_child(control)
+	return control
+static func paper(parent: Node, title: String) -> VBoxContainer:
+	var document := card(parent,Color("eee0bc"))
+	document.set_meta("parchment",true)
+	text(document,title,20)
+	var rule := HSeparator.new()
+	document.add_child(rule)
+	return document
