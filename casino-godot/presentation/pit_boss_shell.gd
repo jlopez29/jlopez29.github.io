@@ -386,13 +386,13 @@ func layout_desktop(ui: Control, dimensions: Vector2) -> void:
 	place(ui.alert_button, Vector2(w - 122, top + 62), Vector2(106, 38))
 	ui.alert_button.custom_minimum_size.y = 38
 	ui.alert_button.add_theme_font_size_override("font_size", 13)
-	place(ui.nav_rail, Vector2(15, top + 16), Vector2(58, 8 * 48 + 7 * 5))
+	place(ui.nav_rail, Vector2(15, top + 16), Vector2(76, 8 * 48 + 7 * 5))
 	ui.nav_rail.add_theme_constant_override("separation", 5)
 	for button in ui.nav_rail.get_children():
-		button.custom_minimum_size = Vector2(58, 48)
+		button.custom_minimum_size = Vector2(76, 48)
 		button.add_theme_font_size_override("font_size", 11)
-	place(ui.floor_actions, Vector2(92, h - 54), Vector2(470 if ui.building else 330, 42))
-	place(ui.mode_hint, Vector2(95, h - 88), Vector2(w - 270, 28))
+	place(ui.floor_actions, Vector2(110, h - 54), Vector2(470 if ui.building else 330, 42))
+	place(ui.mode_hint, Vector2(113, h - 88), Vector2(w - 288, 28))
 	if ui.page == "build":
 		place(ui.inspector_panel, Vector2(w - 390, top + 116), Vector2(374, h - top - 132))
 	if ui.inspector_panel.visible and ui.page in ["table", "guest"]:
@@ -409,7 +409,6 @@ func update_desktop_state(ui: Control) -> void:
 	ui.staff_metric.text = "STAFF\n%d / %d active" % [active_staff, ui.sim.staff.size()]
 	ui.pause_button.icon = PitBoss.texture("icons/gameplay/play.svg" if ui.speed == 0 else "icons/gameplay/pause.svg")
 	for button in ui.nav_rail.get_children():
-		button.text = button.tooltip_text if button.button_pressed else ""
 		button.add_theme_color_override("icon_normal_color", PitBoss.GOLD if button.button_pressed else Color("bcb4a0"))
 		button.add_theme_constant_override("icon_max_width", 22)
 	ui.metric_panels[3].get_node("ReputationBar").value = ui.sim.reputation

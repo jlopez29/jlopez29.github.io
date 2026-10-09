@@ -71,7 +71,7 @@ var ever_opened := false
 var floor_chunks := {"left": 0, "right": 0, "bottom": 0}
 var vip_enabled := false
 var high_limit_enabled := false
-var minute := 1080
+var minute := CasinoTuning.GAME_START_MINUTE
 var day := 1
 var elapsed := 0
 var opened := false
@@ -382,11 +382,17 @@ func record_guest_round(guest: Dictionary, stake: float) -> void:
 	guest_handle += stake
 	guest.rounds += 1
 
-func guest_wager(table: Dictionary, guest: Dictionary) -> float:
+func guest_wager(table: Dictionary, guest: Dictionary, vary_slot: bool = false) -> float:
 	var desired := float(table.minimum) * (2 if guest.vip else 1)
 	if table_kind(table) == "slots":
-		var eligible: Array = slot_profile(table).denominations.filter(func(value): return float(value) >= float(table.minimum) and float(value) <= float(guest.wager_limit) and float(value) <= float(guest.wallet))
-		if not eligible.is_empty(): desired = float(eligible.back())
+		var unit := float(slot_profile(table).denominations.front())
+		var ceiling := minf(maximum_wager(table), minf(float(guest.wager_limit), float(guest.wallet)))
+		# Anchor increments at the configured minimum (e.g. $5, $7, $9 on
+		# a Standard Reel), so every offered minimum remains a legal wager.
+		if ceiling < float(table.minimum): return 0.0
+		var steps := floori((ceiling - float(table.minimum)) / unit)
+		# Budget/preview queries never consume RNG; only actual NPC spins vary.
+		return float(table.minimum) + (rng.randi_range(0, steps) * unit if vary_slot and steps > 0 else 0.0)
 	return minf(desired, minf(maximum_wager(table), float(guest.wager_limit)))
 
 func floor_rect() -> Rect2:
@@ -693,6 +699,7 @@ func place(at: Vector2, rotated: bool, kind: String = "craps", profile_id: Strin
 		return -1
 	spend_nonpayroll(cost, "construction")
 	var table := new_table(at, rotated, kind, profile_id)
+	if kind == "slots": table.minimum = float(wager_limits(table).max())
 	tables.append(table)
 	refresh_progression()
 	reroute()
@@ -1793,7 +1800,7 @@ func step() -> void:
 
 	momentum_step()
 	optional_objectives.tick(self)
-	recover_wallet_daily()
+	recover_wallet_allowance()
 	refresh_progression()
 	update_reserve_warning()
 	check_profit_milestone()
@@ -2633,7 +2640,10 @@ func start_game(id: int, bet: float, trips: float = 0, slot_lines: int = 1) -> b
 	if not accepting_new_play(table) and table.get("roulette_bets", {}).is_empty(): return false
 	var kind := table_kind(table)
 	if slot_lines not in CasinoTuning.SLOT_LINE_COUNTS: return false
-	if kind == "slots" and not is_equal_approx(bet, round(bet)): return false
+	if kind == "slots":
+		var unit := float(slot_profile(table).denominations.front())
+		var steps := (bet - float(table.minimum)) / unit
+		if not is_finite(steps) or not is_equal_approx(steps, round(steps)): return false
 	if kind == "craps" or not is_finite(bet) or not is_finite(trips) or bet < table.minimum or bet > maximum_wager(table) or trips < 0 or trips > maximum_wager(table): return false
 	var cost := bet * 2 + trips if kind == "holdem" else bet
 	if kind == "roulette":
@@ -2709,7 +2719,7 @@ func npc_games(table: Dictionary) -> void:
 		table.rolls += 1
 		return
 	for guest in seated(int(table.id)):
-		var bet := guest_wager(table, guest)
+		var bet := guest_wager(table, guest, true)
 		var kind := table_kind(table)
 		if guest.wallet < bet * (6 if kind == "holdem" else 1):
 			finish_guest_session(guest)
@@ -2806,19 +2816,19 @@ func owner_wager_refund(operation_id: int) -> bool:
 func owner_wager_loss(operation_id: int) -> bool:
 	return owner_wager_settle(operation_id, 0)
 
-func recover_wallet_daily() -> void:
+func recover_wallet_allowance() -> void:
 	if not recovery.passive_due(elapsed): return
-	# A durable account credit and its paid-day marker must succeed together.
+	# A durable account credit and its paid-period marker must succeed together.
 	# This additive allowance is safe during live wagers, unlike a full top-up.
 	if owner_checkpoint.is_valid() and not owner_checkpoint.call(): return
 	var account_before := owner_account.snapshot()
 	var period_before: int = recovery.passive_period
-	if not recovery.grant_daily(self): return
+	if not recovery.grant_allowance(self): return
 	if owner_checkpoint.is_valid() and not owner_checkpoint.call():
 		owner_account.restore(account_before)
 		recovery.passive_period = period_before
 		return
-	log_event("Daily wallet recovery: +$%.0f to your personal wallet." % CasinoTuning.OWNER_DAILY_RECOVERY)
+	log_event("Wallet allowance: +$%.0f to your personal wallet." % CasinoTuning.OWNER_ALLOWANCE_AMOUNT)
 
 func reward_owner_bankroll(operation_id: int, amount: float, reason: String) -> bool:
 	return owner_account.reward(operation_id, amount, reason, elapsed)

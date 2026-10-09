@@ -945,6 +945,8 @@ func render_table() -> void:
 " + ", ".join(guests.map(func(guest): return str(guest.name).replace(" · ", " - "))), 15, TEXT)
 	if kind != "slots": add_label(inspector, "Dealers %d of %d" % [sim.crew(selected).size(), sim.required_crew(table)], 14, MUTED)
 	add_label(inspector, "Minimum wager " + money(table.minimum), 14, MUTED)
+	if kind == "slots":
+		add_label(inspector, "Maximum wager %s | Bet increments %s" % [money(sim.maximum_wager(table)), money(float(sim.slot_profile(table).denominations.front()))], 14, MUTED)
 	add_button(inspector, ("Hide " if asset_details else "Show ") + ("machine details" if kind == "slots" else "game details"), func(): asset_details = not asset_details; refresh())
 	if asset_details:
 		add_label(inspector, "PERFORMANCE", 12, MUTED)
@@ -1758,6 +1760,7 @@ func toggle_walk() -> void:
 		leave_table()
 		if sim.joined >= 0: return
 	visitor = not visitor
+	floor_view.frame_walk_mode(visitor)
 	building = false
 	moving = -1
 	transition_pane("floor")
@@ -2254,6 +2257,8 @@ func render_context_summary() -> void:
 	var performance := sim.asset_performance(table)
 	add_label(figures, "Gaming win " + FinancialText.house_result(float(performance.guest_win)), 22, TEAL if float(performance.guest_win) >= 0 else Color("ef4444"))
 	add_label(figures, "%d / %d players | Minimum %s" % [sim.seated(selected).size(), sim.guest_capacity(table), money(table.minimum)], 18, TEXT)
+	if sim.table_kind(table) == "slots":
+		add_label(figures, "Maximum %s | Bet increments %s" % [money(sim.maximum_wager(table)), money(float(sim.slot_profile(table).denominations.front()))], 14, MUTED)
 	var actions := row(inspector)
 	if visitor:
 		add_button(actions, "Join game", join_table, not can_join())

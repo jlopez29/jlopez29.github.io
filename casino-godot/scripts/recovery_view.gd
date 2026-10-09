@@ -94,7 +94,7 @@ func update_values() -> void:
 	var r: Dictionary = sim.recovery.state
 	timer.text = "%s support | Next guaranteed top-up: %s | Active exposure $%.2f" % [Recovery.stage(sim.casino_rating,int(r.completed)),countdown(int(r.next_time_utc)-sim.recovery.now()),exposure]
 	var remaining := sim.recovery.passive_minutes_remaining(sim.elapsed)
-	daily.text = "Daily allowance: +$%.0f automatically every 24 in-game hours. Next in %dh %02dm of game time." % [CasinoTuning.OWNER_DAILY_RECOVERY, remaining / 60, remaining % 60]
+	daily.text = "Wallet allowance: +$%.0f automatically at 00:00 and 12:00 each game day. Next in %dh %02dm of game time." % [CasinoTuning.OWNER_ALLOWANCE_AMOUNT, remaining / 60, remaining % 60]
 	message.text = error
 	message.visible = not error.is_empty()
 	if is_instance_valid(work_min): work_min.text = "Three verified contracts unlock recovery after the 10-minute real-time minimum. Minimum remaining: " + countdown(int(r.last_full_utc)+CasinoTuning.RECOVERY_WORK_MIN_SECONDS-sim.recovery.now())

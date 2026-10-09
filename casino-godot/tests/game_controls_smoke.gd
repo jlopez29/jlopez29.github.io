@@ -106,8 +106,8 @@ func run() -> void:
 		await process_frame
 	var public_sim := CasinoSimulation.new()
 	public_sim.opened = true
-	# Standard machines permit increments above the fixed $5 starter wager.
+	# Standard machines step by $2 above their configured $5 minimum.
 	public_sim.tables[0].slot_profile = "standard"
-	check(public_sim.join_table(int(public_sim.tables[0].id)) and public_sim.start_game(public_sim.joined, 6), "Public slots accept a whole-dollar increment within limits")
+	check(public_sim.join_table(int(public_sim.tables[0].id)) and public_sim.start_game(public_sim.joined, 7), "Public slots accept the tier's wager increment within limits")
 	print("GAME_CONTROLS: %d checks, %d failures" % [checks, failures])
 	quit(1 if failures else 0)

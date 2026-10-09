@@ -79,6 +79,18 @@ func toggle_fit() -> void:
 	var table := sim.get_table(selected)
 	if not table.is_empty(): pan_center = sim.bounds(table).get_center()
 
+func frame_walk_mode(walking: bool) -> void:
+	close_view = walking
+	pan_center = sim.player if walking else sim.floor_rect().get_center()
+	if walking:
+		# Walk uses a starter-property scale, unlike the management camera.
+		# Convert the visible zoom so entering Walk always moves a little closer.
+		var focus_zoom := minf(size.x / CasinoTuning.STARTER_PROPERTY.size.x, size.y / CasinoTuning.STARTER_PROPERTY.size.y)
+		if landscape_view: focus_zoom = size.x / CasinoTuning.STARTER_PROPERTY.size.x
+		view_scale = zoom * 1.2 / maxf(0.01, focus_zoom)
+	else:
+		view_scale = 1.0
+
 var font: Font
 
 const INK := Color("d5e5e7")

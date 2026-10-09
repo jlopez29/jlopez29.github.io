@@ -36,7 +36,7 @@ const SLOT_REEL := [0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,3,3,3,4,4]
 const SLOT_PROFILES := {
 	"starter": {
 		"name": "Used Classic Reel", "short_name": "Used Reel", "cost": 750,
-		"minimum": 5.0, "maximum": 5.0, "denominations": [2.0, 5.0],
+		"minimum": 5.0, "maximum": 10.0, "denominations": [1.0, 2.0, 5.0],
 		"reel": SLOT_REEL, "pays": [7,10,16,22,30], "cherry_return": 1,
 		"volatility": "Low", "development": 1.0, "development_cap": 3.0,
 		"round_minutes": 2, "overhead": 1.0, "repair_chance": 0.10,
@@ -46,7 +46,7 @@ const SLOT_PROFILES := {
 	},
 	"standard": {
 		"name": "Standard Reel", "short_name": "Reel", "cost": 1400,
-		"minimum": 5.0, "maximum": 10.0, "denominations": [2.0, 5.0, 10.0],
+		"minimum": 5.0, "maximum": 20.0, "denominations": [2.0, 5.0, 10.0],
 		"reel": SLOT_REEL, "pays": [7,11,16,23,35], "cherry_return": 1,
 		"volatility": "Low", "development": 2.0, "development_cap": 6.0,
 		"round_minutes": 1, "overhead": 1.5, "repair_chance": 0.07,
@@ -56,7 +56,7 @@ const SLOT_PROFILES := {
 	},
 	"video": {
 		"name": "Video Slot", "short_name": "Video", "cost": 3200,
-		"minimum": 5.0, "maximum": 20.0, "denominations": [5.0, 10.0, 20.0],
+		"minimum": 5.0, "maximum": 50.0, "denominations": [5.0, 10.0, 25.0],
 		"reel": SLOT_REEL, "pays": [5,10,18,32,65], "cherry_return": 1,
 		"volatility": "Medium", "development": 4.0, "development_cap": 12.0,
 		"round_minutes": 1, "overhead": 2.5, "repair_chance": 0.05,
@@ -66,7 +66,7 @@ const SLOT_PROFILES := {
 	},
 	"premium": {
 		"name": "Premium Video Slot", "short_name": "Premium", "cost": 7500,
-		"minimum": 10.0, "maximum": 50.0, "denominations": [10.0, 25.0, 50.0],
+		"minimum": 10.0, "maximum": 100.0, "denominations": [10.0, 25.0, 50.0],
 		"reel": SLOT_REEL, "pays": [3,8,18,45,120], "cherry_return": 1,
 		"volatility": "High", "development": 6.0, "development_cap": 20.0,
 		"round_minutes": 1, "overhead": 4.0, "repair_chance": 0.035,
@@ -76,7 +76,7 @@ const SLOT_PROFILES := {
 	},
 	"high_limit": {
 		"name": "High-Limit Slot", "short_name": "High Limit", "cost": 15000,
-		"minimum": 25.0, "maximum": 100.0, "denominations": [25.0, 50.0, 100.0],
+		"minimum": 25.0, "maximum": 200.0, "denominations": [25.0, 50.0, 100.0],
 		"reel": SLOT_REEL, "pays": [3,7,17,45,140], "cherry_return": 1,
 		"volatility": "High", "development": 8.0, "development_cap": 30.0,
 		"round_minutes": 1, "overhead": 6.0, "repair_chance": 0.025,
@@ -336,7 +336,7 @@ const TABLE_REPAIR_COST := 120.0
 const ROLL_SECONDS := 0.3 # NPC dice cadence in game minutes; pass bets resolve over several rolls.
 const NPC_ROLL_FATIGUE := 0.002 # Up to 0.17 extra game minutes at minimum crew energy.
 const VISITOR_ROLL_FATIGUE := 0.04 # Preserve the existing manually played rail cadence.
-const SAVE_VERSION := 23 # One current schema; pre-alpha saves are disposable.
+const SAVE_VERSION := 25 # One current schema; pre-alpha saves are disposable.
 const SAVE_PATH := "user://pit-boss.json"
 const VISITOR_ROLL_SECONDS := 15.0
 const REPAIR_GRACE_MINUTES := 4320 # Three days of operation before any wear check.
@@ -419,8 +419,9 @@ const GUEST_VISIT_FATIGUE_SPAN := 600.0
 
 # Owner account and optional happenings (game minutes, not wall-clock timers).
 const OWNER_STARTING_BANKROLL := 1000.0
-const OWNER_DAILY_RECOVERY := 50.0
-const OWNER_RECOVERY_DAY_MINUTES := 1440
+const OWNER_ALLOWANCE_AMOUNT := 50.0
+const OWNER_ALLOWANCE_INTERVAL_MINUTES := 720
+const GAME_START_MINUTE := 1080 # 18:00; allowance boundaries are midnight and noon.
 const OWNER_MAX_REWARD := 1000.0
 const OWNER_MONEY_LIMIT := 1.0e12
 const OWNER_HISTORY_LIMIT := 64
