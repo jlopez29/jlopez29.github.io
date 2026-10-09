@@ -110,12 +110,12 @@ func unlocked(kind: String) -> bool:
 func slot_unlocked(profile: String) -> bool:
 	return source.slot_unlocked(profile)
 func door_bounds() -> Rect2:
-	return EXIT if is_private else Property.private_door(source.floor_chunks)
+	return EXIT if is_private else Property.private_door(source.floor_chunks, source.frontage_chunks)
 func door_approach() -> Vector2:
-	return EXIT.get_center() - Vector2(0, 36) if is_private else Property.private_approach(source.floor_chunks)
+	return EXIT.get_center() - Vector2(0, 36) if is_private else Property.private_approach(source.floor_chunks, source.frontage_chunks)
 
 func safe_public_threshold() -> Vector2:
-	var anchor := Property.private_approach(source.floor_chunks)
+	var anchor := Property.private_approach(source.floor_chunks, source.frontage_chunks)
 	var grid := source.floor_navigation()
 	var connected := Placement.connected_cells(grid, source.entry_position())
 	if Placement.reachable(grid, connected, anchor) and public_threshold_free(anchor): return anchor

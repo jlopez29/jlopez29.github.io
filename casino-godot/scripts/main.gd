@@ -856,6 +856,12 @@ func render_expansion() -> void:
 	finance_short_metric(inspector, "Floor size", "%.0f x %.0f" % [room.size.x, room.size.y])
 	finance_short_metric(inspector, "Property overhead", "%s/hr" % FinancialText.cash(sim.property_upkeep_rate()))
 	add_label(inspector, "Full-edge columns add %.0f width; rows add %.0f depth. Assets stay in place. Empty space still costs upkeep, including while closed." % [CasinoTuning.FLOOR_CHUNK_WIDTH, CasinoTuning.FLOOR_CHUNK_HEIGHT], 13, MUTED)
+	for error in sim.expansion_errors:
+		var message := str(error.message)
+		var asset_id := int(error.get("asset_id", -1))
+		if asset_id >= 0 and not message.contains("#%d" % asset_id):
+			message = "Asset #%d: %s" % [asset_id, message]
+		add_label(inspector, message, 14, Color("ff9486"))
 	if not sim.unlocked("expansion"):
 		add_label(inspector, "Directional purchases open at Rating 35.", 14, MUTED)
 		return
@@ -870,7 +876,12 @@ func render_expansion() -> void:
 		finance_short_metric(inspector, "Capital purchase", FinancialText.cash(float(quote.cost), 0))
 		finance_short_metric(inspector, "Added property overhead", "%s/hr" % FinancialText.cash(float(quote.upkeep_added)))
 		finance_short_metric(inspector, "Resulting property overhead", "%s/hr" % FinancialText.cash(sim.property_upkeep_rate() + float(quote.upkeep_added)))
-		add_button(inspector, "Purchase " + direction, func(): sim.purchase_expansion(direction); refresh(), sim.cash < float(quote.cost))
+		add_button(inspector, "Purchase " + direction, func(): purchase_floor_expansion(direction))
+
+func purchase_floor_expansion(direction: String) -> void:
+	if sim.purchase_expansion(direction):
+		floor_view.frame_expansion()
+	refresh()
 
 func activity_presentation(message: String) -> Dictionary:
 	var category := "CASINO"

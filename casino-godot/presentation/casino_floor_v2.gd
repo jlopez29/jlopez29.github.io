@@ -14,7 +14,7 @@ var touch_moved := false
 var pinch_distance := 0.0
 var inspector_occlusion := Rect2()
 var framing_signature: Array = []
-var room_signature := Rect2()
+var room_signature: Array = []
 var amenity_signature: Array = []
 var architecture_signature: Array = []
 # Visible alpha bounds inspected in the supplied 1254px images. Keep the full
@@ -46,6 +46,21 @@ func configure_view(compact: bool, landscape: bool) -> void:
 	landscape_view = landscape
 	compact_labels = compact
 
+func frame_expansion() -> void:
+	# Called only by a successful purchase, leaving ordinary pan/zoom untouched.
+	close_view = false
+	view_scale = 1.0
+	pan_center = sim.floor_rect().get_center()
+	framing_signature.clear()
+	room_signature.clear()
+	presentation = sim.floor_presentation()
+	presentation_revision = sim.presentation_revision
+	sync_world()
+	update_camera(1.0)
+	world.position = camera
+	world.scale = Vector2.ONE * zoom
+	queue_redraw()
+
 func update_camera(delta: float) -> void:
 	if visitor_mode:
 		super.update_camera(delta)
@@ -61,7 +76,7 @@ func update_camera(delta: float) -> void:
 	var fill := maxf(viewport.size.x / room.size.x, viewport.size.y / room.size.y)
 	var target_zoom := fill * view_scale if close_view else overview
 	var selected_bounds := Rect2()
-	if inspector_occlusion.size.y > 0 and selected > 0 and presentation.get("tables", {}).has(selected):
+	if close_view and inspector_occlusion.size.y > 0 and selected > 0 and presentation.get("tables", {}).has(selected):
 		selected_bounds = sim.bounds(presentation.tables[selected])
 		var free_height := inspector_occlusion.position.y - management_top - 50
 		target_zoom = minf(target_zoom, maxf(1, free_height) / (selected_bounds.size.y * 1.08))
@@ -211,7 +226,7 @@ func place_architecture(view: TextureRect, ink: Rect2, width: float, threshold: 
 	view.position = threshold - Vector2(ink.get_center().x, ink.end.y) * ratio
 
 func sync_architecture() -> void:
-	var entrance := PitBossFloorContext.Property.public_door(sim.source.floor_chunks)
+	var entrance := PitBossFloorContext.Property.public_door(sim.source.floor_chunks, sim.source.frontage_chunks)
 	var door := sim.door_bounds()
 	var signature := [sim.is_private, entrance, door]
 	if architecture_signature == signature: return
@@ -232,19 +247,21 @@ func sync_architecture() -> void:
 func sync_world() -> void:
 	sync_architecture()
 	var room := sim.floor_rect()
-	if room_signature != room:
-		room_signature = room
+	var frontage := PitBossFloorContext.Property.frontage_rectangle(sim.source.frontage_chunks) if not sim.is_private else room
+	var geometry_signature := [room, frontage]
+	if room_signature != geometry_signature:
+		room_signature = geometry_signature
 		$World/Carpet.position = room.position
 		$World/Carpet.scale = Vector2.ONE * 0.16
 		$World/Carpet.size = room.size / 0.16
-		$World/Lobby.position = room.position
+		$World/Lobby.position = frontage.position
 		$World/Lobby.scale = Vector2.ONE * 0.35
-		$World/Lobby.size = Vector2(room.size.x, 112) / 0.35
+		$World/Lobby.size = Vector2(frontage.size.x, 112) / 0.35
 		$World/Walkway.position = room.position + Vector2(12, 112)
 		$World/Walkway.scale = Vector2.ONE * 0.3
 		$World/Walkway.size = Vector2(room.size.x - 24, 18) / 0.3
 		$World/RoomTrim.points = PackedVector2Array([room.position + Vector2(3, 112), Vector2(room.end.x - 3, room.position.y + 112), room.end - Vector2(3, 3), Vector2(room.position.x + 3, room.end.y - 3), room.position + Vector2(3, 112)])
-		$World/LobbyTrim.points = PackedVector2Array([room.position + Vector2(0, 110), Vector2(room.end.x, room.position.y + 110)])
+		$World/LobbyTrim.points = PackedVector2Array([frontage.position + Vector2(0, 110), Vector2(frontage.end.x, frontage.position.y + 110)])
 	# Retain logical counter/pickup positions; only the artwork has separate bounds.
 	var amenities := [sim.bar_bounds(), sim.cage_pickup()]
 	if amenity_signature != amenities:

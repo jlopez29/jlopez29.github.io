@@ -68,6 +68,8 @@ var blackjack_unlocked := false
 # Session-only developer access; ignored by release builds and never serialized.
 var debug_forced_unlocks: Array[String] = []
 var ever_opened := false
+var frontage_chunks := {"left": 0, "right": 0, "bottom": 0}
+var expansion_errors: Array = [] # Last purchase result; UI refreshes do not revalidate.
 var floor_chunks := {"left": 0, "right": 0, "bottom": 0}
 var vip_enabled := false
 var high_limit_enabled := false
@@ -412,14 +414,21 @@ func property_upkeep_rate() -> float:
 func expansion_quote(direction: String) -> Dictionary:
 	return Property.quote(floor_chunks, direction)
 
+func reject_expansion(message: String) -> bool:
+	expansion_errors = [{"message": message, "asset_id": -1}]
+	return false
+
 func purchase_expansion(direction: String) -> bool:
+	expansion_errors.clear()
 	var quote := expansion_quote(direction)
-	if quote.is_empty() or not quote.allowed or not unlocked("expansion"): return false
+	if quote.is_empty(): return reject_expansion("Unknown expansion direction.")
+	if not unlocked("expansion"): return reject_expansion("Expansion has not been unlocked.")
+	if not quote.allowed: return reject_expansion("Maximum practical property size reached in this direction.")
 	if cash < float(quote.cost):
-		log_event("Expansion needs $%.0f in casino cash." % float(quote.cost))
-		return false
-	if not Placement.validate(quote.chunks, placement_geometry(), placement_access_points(bar_owned, quote.chunks)).valid:
-		log_event("Expansion would block the repositioned entrance or service access. Move nearby furniture first.")
+		return reject_expansion("Insufficient casino cash: need $%.0f; available $%.0f." % [float(quote.cost), cash])
+	var report := Placement.validate(quote.chunks, placement_geometry(), placement_access_points(bar_owned, quote.chunks), frontage_chunks, placement_access_names(bar_owned))
+	if not report.valid:
+		expansion_errors = report.errors.duplicate(true)
 		return false
 	spend_nonpayroll(float(quote.cost), "construction")
 	floor_chunks = quote.chunks.duplicate()
@@ -652,19 +661,27 @@ func placement_geometry() -> Array:
 	return placement_world
 
 func entry_position() -> Vector2:
-	return Property.entry(floor_chunks)
+	return Property.entry(floor_chunks, frontage_chunks)
 
 func cage_pickup() -> Vector2:
-	return Property.cage_pickup(floor_chunks)
+	return Property.cage_pickup(floor_chunks, frontage_chunks)
 
-func placement_access_points(owns_bar: bool, chunks: Dictionary = {}) -> PackedVector2Array:
+func placement_access_points(owns_bar: bool, chunks: Dictionary = {}, frontage: Dictionary = {}) -> PackedVector2Array:
 	var property_chunks := floor_chunks if chunks.is_empty() else chunks
-	var counter := Property.bar_counter(property_chunks)
-	var points := PackedVector2Array([Property.cage_pickup(property_chunks), Property.private_approach(property_chunks)])
+	var anchor := frontage_chunks if frontage.is_empty() else frontage
+	var counter := Property.bar_counter(property_chunks, anchor)
+	var points := PackedVector2Array([Property.cage_pickup(property_chunks, anchor), Property.private_approach(property_chunks, anchor)])
 	if owns_bar:
 		points.append(counter.position + CasinoTuning.BAR_PICKUP_OFFSET)
 		for slot in range(CasinoTuning.BAR_GUEST_OFFSETS.size()): points.append(counter.position + CasinoTuning.BAR_GUEST_OFFSETS[slot])
 	return points
+
+func placement_access_names(owns_bar: bool) -> PackedStringArray:
+	var names := PackedStringArray(["cashier cage pickup", "Back Room doorway"])
+	if owns_bar:
+		names.append("bar staff pickup")
+		for slot in range(CasinoTuning.BAR_GUEST_OFFSETS.size()): names.append("bar guest service point #%d" % (slot + 1))
+	return names
 
 func placement_report(at: Vector2, rotated: bool, ignore_id: int = -1, kind: String = "craps") -> Dictionary:
 	if ignore_id >= 0:
@@ -680,7 +697,7 @@ func placement_report(at: Vector2, rotated: bool, ignore_id: int = -1, kind: Str
 		if int(asset.id) != ignore_id: assets.append(asset)
 	assets.append(candidate)
 	var access := placement_access_points(bar_owned)
-	placement_result = Placement.validate(floor_chunks, assets, access)
+	placement_result = Placement.validate(floor_chunks, assets, access, frontage_chunks, placement_access_names(bar_owned))
 	placement_result.candidate = candidate
 	if ignore_id < 0 and tables.size() >= CasinoTuning.MAX_ASSETS:
 		placement_result.valid = false
@@ -1542,7 +1559,7 @@ func move_guests(delta: float) -> void:
 				guest.decision_at = elapsed + rng.randi_range(1, 5)
 
 func bar_bounds() -> Rect2:
-	return Property.bar_counter(floor_chunks)
+	return Property.bar_counter(floor_chunks, frontage_chunks)
 
 func bar_available() -> bool:
 	return bar_owned
@@ -2288,7 +2305,7 @@ func satisfaction() -> float:
 	return total / guests.size()
 
 func snapshot() -> Dictionary:
-	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_owned": bar_owned, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "owner_bankroll": owner_account.snapshot(), "optional_events": optional_events.snapshot(), "momentum": momentum.snapshot(), "optional_objectives": optional_objectives.snapshot(), "owner_play": owner_play.duplicate(true), "back_room": back_room.snapshot(), "location": location.duplicate(true), "recovery": recovery.snapshot(), "sponsored_income": sponsored_income, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
+	return {"difficulty": difficulty, "starting_games": starting_games.duplicate(), "casino_rating": casino_rating, "guest_rounds": guest_rounds, "guest_revenue": guest_revenue, "guest_handle": guest_handle, "guests_served": guests_served, "blackjack_unlocked": blackjack_unlocked, "ever_opened": ever_opened, "floor_chunks": floor_chunks.duplicate(), "frontage_chunks": frontage_chunks.duplicate(), "vip_enabled": vip_enabled, "high_limit_enabled": high_limit_enabled, "bar_owned": bar_owned, "bar_totals": bar_totals.duplicate(), "drink_access": drink_access.duplicate(), "drink_menu": drink_menu.duplicate(), "drink_prices": drink_prices.duplicate(), "drink_stats": drink_stats.duplicate(true), "expense_totals": expense_totals.duplicate(), "payroll_by_state": payroll_by_state.duplicate(), "relief_targets": relief_targets.duplicate(), "service_positions": service_positions, "staff_shift_handover_at": staff_shift_handover_at, "slot_access": slot_access.duplicate(), "earned_milestones": earned_milestones.duplicate(), "traffic_totals": traffic_totals.duplicate(true), "traffic_bad_visits": traffic_bad_visits, "traffic_reputation_at": traffic_reputation_at, "version": CasinoTuning.SAVE_VERSION, "arrival_in": arrival_in, "cash": cash, "owner_bankroll": owner_account.snapshot(), "optional_events": optional_events.snapshot(), "momentum": momentum.snapshot(), "optional_objectives": optional_objectives.snapshot(), "owner_play": owner_play.duplicate(true), "back_room": back_room.snapshot(), "location": location.duplicate(true), "recovery": recovery.snapshot(), "sponsored_income": sponsored_income, "revenue": revenue, "payouts": payouts, "payroll": payroll, "overhead": overhead, "visitor_net": visitor_net, "reputation": reputation, "minute": minute, "day": day, "elapsed": elapsed, "opened": opened, "tables": tables.duplicate(true), "guests": guests.duplicate(true), "staff": staff.duplicate(true), "alerts": alerts.duplicate(), "incidents": incidents.duplicate(true), "next_id": next_id, "joined": joined, "player": [player.x, player.y], "rng_state": str(rng.state)}
 
 func restore(data: Dictionary) -> bool:
 	if not valid_number(data.get("version")) or data.version != CasinoTuning.SAVE_VERSION:
@@ -2348,6 +2365,11 @@ func restore(data: Dictionary) -> bool:
 		if not valid_number(data[key]) or float(data[key]) < 0: return false
 	if float(data.casino_rating) > 100: return false
 	if not Property.valid(data.get("floor_chunks")): return false
+	# Saves made before anchored frontage retain their actual door/service positions.
+	var saved_frontage = data.get("frontage_chunks", data.floor_chunks)
+	if not Property.valid(saved_frontage): return false
+	for direction in ["left", "right", "bottom"]:
+		if saved_frontage[direction] > data.floor_chunks[direction]: return false
 	for key in ["blackjack_unlocked", "ever_opened", "vip_enabled", "high_limit_enabled"]:
 		if not data[key] is bool: return false
 	if not valid_number(data.arrival_in) or float(data.arrival_in) < 0: return false
@@ -2413,7 +2435,7 @@ func restore(data: Dictionary) -> bool:
 			return false
 	var saved_geometry: Array = []
 	for table in data.tables: saved_geometry.append(Placement.for_table(table))
-	if not Placement.validate(data.floor_chunks, saved_geometry, placement_access_points(bool(data.bar_owned), data.floor_chunks)).valid: return false
+	if not Placement.validate(data.floor_chunks, saved_geometry, placement_access_points(bool(data.bar_owned), data.floor_chunks, saved_frontage), saved_frontage, placement_access_names(bool(data.bar_owned))).valid: return false
 	if int(data.joined) != -1 and int(data.joined) not in ids:
 		return false
 	var reserved_bar_slots := {}
@@ -2580,6 +2602,8 @@ func restore(data: Dictionary) -> bool:
 	guest_handle = float(data.guest_handle)
 	guests_served = int(data.guests_served)
 	floor_chunks = {"left": int(data.floor_chunks.left), "right": int(data.floor_chunks.right), "bottom": int(data.floor_chunks.bottom)}
+	frontage_chunks = {"left": int(saved_frontage.left), "right": int(saved_frontage.right), "bottom": int(saved_frontage.bottom)}
+	expansion_errors.clear()
 	for key in ["blackjack_unlocked", "ever_opened", "vip_enabled", "high_limit_enabled"]: set(key, bool(data[key]))
 	thought_last.clear()
 	table_interest.clear()

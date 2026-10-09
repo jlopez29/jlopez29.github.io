@@ -53,36 +53,41 @@ static func quote(chunks: Dictionary, direction: String) -> Dictionary:
 static func upkeep(chunks: Dictionary) -> float:
 	return (rectangle(chunks).get_area() - CasinoTuning.STARTER_PROPERTY.get_area()) / 10000.0 * CasinoTuning.PROPERTY_UPKEEP_PER_10000
 
-# Frontage follows the current property edges; these are presentation widths.
+# Frontage stays in the starter lobby when the property grows. Existing saves
+# may supply their previous frontage footprint to preserve legal layouts.
+# Widths below are presentation widths.
 const FRONTAGE_PADDING := 12.0
 const CAGE_WIDTH := 170.0
 const BAR_WIDTH := 200.0
 const CAGE_ANCHOR := Vector2(0.5, 1.0)
 const BAR_ANCHOR := Vector2(0.53, 0.87)
 
-static func entry(chunks: Dictionary) -> Vector2:
-	return Vector2(rectangle(chunks).get_center().x, CasinoTuning.ENTRY.y)
+static func entry(_chunks: Dictionary, frontage: Dictionary = {}) -> Vector2:
+	return Vector2(frontage_rectangle(frontage).get_center().x, CasinoTuning.ENTRY.y)
 
-static func entrance_clearance(chunks: Dictionary) -> Rect2:
+static func entrance_clearance(_chunks: Dictionary, frontage: Dictionary = {}) -> Rect2:
 	var clearance := CasinoTuning.ENTRANCE_CLEARANCE
-	clearance.position.x += entry(chunks).x - CasinoTuning.ENTRY.x
+	clearance.position.x += entry(_chunks, frontage).x - CasinoTuning.ENTRY.x
 	return clearance
 
-static func cage_pickup(chunks: Dictionary) -> Vector2:
-	return Vector2(rectangle(chunks).position.x + FRONTAGE_PADDING + CAGE_WIDTH * CAGE_ANCHOR.x, CasinoTuning.ENTRY.y)
+static func cage_pickup(_chunks: Dictionary, frontage: Dictionary = {}) -> Vector2:
+	return Vector2(frontage_rectangle(frontage).position.x + FRONTAGE_PADDING + CAGE_WIDTH * CAGE_ANCHOR.x, CasinoTuning.ENTRY.y)
 
-static func bar_counter(chunks: Dictionary) -> Rect2:
+static func bar_counter(_chunks: Dictionary, frontage: Dictionary = {}) -> Rect2:
 	var counter := CasinoTuning.BAR_COUNTER
-	counter.position.x = rectangle(chunks).end.x - FRONTAGE_PADDING - BAR_WIDTH + BAR_WIDTH * BAR_ANCHOR.x - CasinoTuning.BAR_GUEST_OFFSETS[2].x
+	counter.position.x = frontage_rectangle(frontage).end.x - FRONTAGE_PADDING - BAR_WIDTH + BAR_WIDTH * BAR_ANCHOR.x - CasinoTuning.BAR_GUEST_OFFSETS[2].x
 	return counter
 
-static func public_door(chunks: Dictionary) -> Rect2:
+static func public_door(_chunks: Dictionary, frontage: Dictionary = {}) -> Rect2:
 	# The visible 60-unit entrance and 40-unit private door form a centered
 	# 108-unit group, with 8 units of empty space between the actual artworks.
-	return Rect2(entry(chunks) + Vector2(-49, -56), Vector2(50, 42))
+	return Rect2(entry(_chunks, frontage) + Vector2(-49, -56), Vector2(50, 42))
 
-static func private_door(chunks: Dictionary) -> Rect2:
-	return Rect2(entry(chunks) + Vector2(14, -56), Vector2(40, 42))
+static func private_door(_chunks: Dictionary, frontage: Dictionary = {}) -> Rect2:
+	return Rect2(entry(_chunks, frontage) + Vector2(14, -56), Vector2(40, 42))
 
-static func private_approach(chunks: Dictionary) -> Vector2:
-	return ((private_door(chunks).get_center() + Vector2(0, 45)) / CasinoTuning.FLOOR_NAV_CELL).round() * CasinoTuning.FLOOR_NAV_CELL
+static func private_approach(_chunks: Dictionary, frontage: Dictionary = {}) -> Vector2:
+	return ((private_door(_chunks, frontage).get_center() + Vector2(0, 45)) / CasinoTuning.FLOOR_NAV_CELL).round() * CasinoTuning.FLOOR_NAV_CELL
+
+static func frontage_rectangle(frontage: Dictionary) -> Rect2:
+	return CasinoTuning.STARTER_PROPERTY if frontage.is_empty() else rectangle(frontage)

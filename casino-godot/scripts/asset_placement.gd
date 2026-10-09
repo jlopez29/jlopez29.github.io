@@ -94,7 +94,7 @@ static func connected_cells(grid: AStarGrid2D, entry_point: Vector2 = CasinoTuni
 static func error(errors: Array, message: String, position: Vector2, id: int = -1) -> void:
 	errors.append({"message": message, "position": position, "asset_id": id})
 
-static func validate(chunks: Dictionary, assets: Array, extra_access: PackedVector2Array = PackedVector2Array()) -> Dictionary:
+static func validate(chunks: Dictionary, assets: Array, extra_access: PackedVector2Array = PackedVector2Array(), frontage: Dictionary = {}, access_names: PackedStringArray = PackedStringArray()) -> Dictionary:
 	var errors: Array = []
 	var walk := Property.walking(chunks)
 	for asset in assets:
@@ -102,7 +102,7 @@ static func validate(chunks: Dictionary, assets: Array, extra_access: PackedVect
 			error(errors, "Furniture outside build area", asset.furniture.get_center(), asset.id)
 		if not walk.encloses(asset.collision):
 			error(errors, "Required clearance crosses walkable edge", asset.collision.get_center(), asset.id)
-		if asset.furniture.merge(asset.art).intersects(Property.entrance_clearance(chunks)):
+		if asset.furniture.merge(asset.art).intersects(Property.entrance_clearance(chunks, frontage)):
 			error(errors, "Furniture/art blocks the entrance", asset.furniture.get_center(), asset.id)
 		for group in ["seats", "approaches", "dealers", "dealer_approaches"]:
 			for point in asset[group]:
@@ -117,16 +117,17 @@ static func validate(chunks: Dictionary, assets: Array, extra_access: PackedVect
 				error(errors, "Asset #%d blocks clearance for #%d" % [b.id, a.id], a.furniture.get_center(), a.id)
 	if errors.is_empty():
 		var grid := navigation(chunks, assets)
-		var connected := connected_cells(grid, Property.entry(chunks))
+		var connected := connected_cells(grid, Property.entry(chunks, frontage))
 		for asset in assets:
 			for group in ["approaches", "dealer_approaches"]:
 				for i in range(asset[group].size()):
 					var point: Vector2 = asset[group][i]
 					if not reachable(grid, connected, point):
 						error(errors, "Asset #%d %s %d cannot reach entrance" % [asset.id, group, i + 1], point, asset.id)
-		for point in extra_access:
+		for i in range(extra_access.size()):
+			var point := extra_access[i]
 			if not walk.has_point(point) or not reachable(grid, connected, point):
-				error(errors, "Required floor interaction is blocked", point)
+				error(errors, "Required %s is unreachable" % access_names[i] if i < access_names.size() else "Required floor interaction is blocked", point)
 	return {"valid": errors.is_empty(), "errors": errors, "walk": walk}
 
 static func reachable(grid: AStarGrid2D, connected: PackedByteArray, point: Vector2) -> bool:
