@@ -1,0 +1,62 @@
+name: Godot Build Check
+
+on:
+  push:
+    branches:
+      - feature/slot-visual-overhaul
+    paths:
+      - 'casino-godot/**'
+      - '.github/workflows/godot-build.yml'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'casino-godot/**'
+      - '.github/workflows/godot-build.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: godot-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install Godot and export templates
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.7.0
+          use-dotnet: false
+          include-templates: true
+
+      - name: Import and export release and debug web builds
+        run: python3 casino-godot/export_web.py --godot godot --both
+
+      - name: Export Windows build
+        run: |
+          mkdir -p casino-windows
+          godot --headless --path casino-godot --export-release "Windows Desktop" "$PWD/casino-windows/PitBoss.exe"
+
+      - name: Upload web builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: pit-boss-web
+          path: |
+            casino/
+            casino-debug/
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: pit-boss-windows
+          path: casino-windows/
+          retention-days: 3
+          if-no-files-found: error

@@ -87,7 +87,20 @@ func view_checks(even: Dictionary) -> void:
 	root.add_child(view)
 	view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	view.render_current()
+	check(view.art.slot_textures.size() == 5 and view.art.slot_textures.all(func(texture): return texture is AtlasTexture and texture.atlas.resource_path.ends_with(".png")),"All five live reel symbols use imported premium PNG regions")
 	root.get_node("AudioManager").set_game_muted("slots", true)
+	var wallet_before := sim.owner_bankroll
+	view.bet = 5
+	view.cycle_slot_bet()
+	check(view.bet == 6,"BET advances by the machine denomination")
+	view.bet = 10
+	view.cycle_slot_bet()
+	check(view.bet == 5 and sim.owner_bankroll == wallet_before,"BET wraps maximum to minimum without placing a wager")
+	view.slot_lines = 1
+	for count in [3,5,1]:
+		view.cycle_slot_lines()
+		check(view.slot_lines == count,"Single LINES button advances and wraps to "+str(count))
+	view.slot_lines = 5
 	view.art.begin_slot_reveal()
 	view.result_pending = true
 	view.balance_before = Vector2(sim.owner_bankroll,sim.cash)
@@ -109,7 +122,7 @@ func view_checks(even: Dictionary) -> void:
 	check(view.art.particles.count == 0 and not view.slot_dimmer.visible,"Break-even avoids particles and strong dimming")
 	view.press_slot_spin()
 	check(not view.locked() and JSON.stringify(sim.snapshot()) == snapshot,"Skip completes presentation without a second wager")
-	for dimensions in [Vector2i(1440,810),Vector2i(2560,1080),Vector2i(800,600),Vector2i(390,844),Vector2i(844,390),Vector2i(320,568)]:
+	for dimensions in [Vector2i(1440,810),Vector2i(2560,1080),Vector2i(800,600),Vector2i(390,844),Vector2i(844,390),Vector2i(320,568),Vector2i(568,320)]:
 		root.size = dimensions
 		root.content_scale_size = dimensions
 		await process_frame
@@ -118,6 +131,14 @@ func view_checks(even: Dictionary) -> void:
 		await process_frame
 		check(view.slot_spin.get_global_rect().end.y <= dimensions.y,"Visible Spin/Skip target "+str(dimensions))
 		check(view.art.round == even,"Resize preserves committed screen "+str(dimensions))
+		var cabinet: Rect2 = view.art.slot_rect()
+		check(is_equal_approx(cabinet.size.x/cabinet.size.y,0.78 if view.art.slot_portrait() else 1.35),"Authored cabinet proportions "+str(dimensions))
+		check([view.slot_spin,view.slot_bet_button,view.slot_lines_button].all(func(button): return button.size.x >= 44 and button.size.y >= 44),"All three controls retain touch target sizes "+str(dimensions))
+		check(view.art.get_children().filter(func(node): return node is Button).size() == 3 and not view.controls_scroll.visible,"Exactly three controls inside the shared cabinet "+str(dimensions))
+	view.open_rules("slots")
+	var before_rules := JSON.stringify(sim.snapshot())
+	view.press_slot_spin()
+	check(JSON.stringify(sim.snapshot()) == before_rules,"Rules overlay cannot place a slot wager")
 	view.art.reduced_motion = true
 	check(view.art.symbol_scale(0.05) == 1.04,"Reduced motion removes symbol overshoot")
 	view.queue_free()

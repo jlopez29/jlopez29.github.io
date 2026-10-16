@@ -2,9 +2,10 @@ extends "res://scripts/game_art.gd"
 ## Presentation over committed stops. Drawing never generates or settles outcomes.
 const SlotAudio = preload("res://scripts/slot_audio.gd")
 const State = preload("res://scripts/slot_presentation_state.gd")
-const Result = preload("res://scripts/slot_result.gd")
 const Particles = preload("res://scripts/slot_particles.gd")
 const SYMBOL_ASSETS := ["cherry","lemon","bell","bar","seven"]
+const LANDSCAPE_DECK_WIDTH := 180.0
+const PREMIUM_ASSETS := "casino_play/slots/premium/"
 const LINE_COLORS := [Color("ffd879"),Color("79d7ed"),Color("9fe8ad"),Color("df9cec"),Color("ffa685")]
 var machine_profile := {}
 var wager := 10.0
@@ -14,11 +15,20 @@ var slot_audio: Node
 var timeline := State.new()
 var particles := Particles.new()
 var idle_time := 0.0
+var idle_redraw_elapsed := 0.0
 var initial_stops := [3,11,18]
 var slot_lines := 1
 var free_remaining := -1
 var last_win := 0.0
+var status_message := ""
+var limits_text := ""
+var portrait_layout := false
+var landscape_layout := false
+var cabinet_width := 900.0
+# Crop atlas remnants and excess transparent padding without altering the supplied PNGs.
+const SYMBOL_REGIONS := [Rect2(72,92,372,328),Rect2(94,104,325,304),Rect2(104,96,328,320),Rect2(109,154,341,203),Rect2(84,112,344,315)]
 var slot_textures: Array[Texture2D] = []
+var effect_textures := {}
 var slot_elapsed: float:
 	get: return timeline.elapsed
 var reveal_time: float:
@@ -31,7 +41,13 @@ func _ready() -> void:
 	slot_audio = SlotAudio.new()
 	add_child(slot_audio)
 	timeline.cue.connect(on_presentation_cue)
-	for asset in SYMBOL_ASSETS: slot_textures.append(PitBoss.texture("casino_play/slots/symbols/"+asset+".svg"))
+	for i in range(SYMBOL_ASSETS.size()):
+		slot_textures.append(art_region("symbols/"+SYMBOL_ASSETS[i],SYMBOL_REGIONS[i]))
+	# Use clean, isolated sprites from the supplied effect sheets.
+	effect_textures["coin"] = art_region("slot_coin_particle",Rect2(231,200,77,65))
+	effect_textures["sparkle"] = art_region("slot_sparkle_particle",Rect2(337,201,57,50))
+	effect_textures["stop"] = art_region("slot_stop_flash",Rect2(178,195,155,138))
+	effect_textures["burst"] = PitBoss.texture(PREMIUM_ASSETS+"slot_jackpot_burst.png")
 	if OS.has_feature("web"):
 		reduced_motion = bool(JavaScriptBridge.eval("window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches",true))
 	timeline.reset(round,sponsored)
@@ -54,7 +70,10 @@ func _process(delta: float) -> void:
 	if was_active and not timeline.active and sponsored: slot_audio.cue("free")
 	spinning = maxf(0,timeline.finish_at-timeline.elapsed) if timeline.active else 0.0
 	if timeline.revealed: last_win = float(timeline.info.credit)
-	queue_redraw()
+	idle_redraw_elapsed += delta
+	if was_active or timeline.active or idle_redraw_elapsed >= 0.05:
+		idle_redraw_elapsed = 0.0
+		queue_redraw()
 
 func reset_slot_presentation(result: Dictionary, sponsor_funded: bool) -> void:
 	sponsored = sponsor_funded
@@ -87,77 +106,110 @@ func skip_slot_reveal() -> bool:
 func slot_reveal_fraction() -> float:
 	return timeline.balance_progress()
 
+func art_region(asset: String, region: Rect2) -> Texture2D:
+	var texture := AtlasTexture.new()
+	texture.atlas = PitBoss.texture(PREMIUM_ASSETS+asset+".png")
+	texture.region = region
+	texture.filter_clip = true
+	return texture
+
+func slot_portrait() -> bool:
+	return portrait_layout
+
+func slot_deck_height() -> float:
+	return 0.0 if landscape_layout else 104.0 if slot_portrait() else 120.0
+
+func slot_content_height(available: Vector2) -> float:
+	if landscape_layout:
+		cabinet_width = maxf(0,minf((available.y-12)*1.35,available.x-8-LANDSCAPE_DECK_WIDTH))
+		return cabinet_width/1.35+12
+	var aspect := 0.78 if slot_portrait() else 1.35
+	var minimum_width := 270.0 if slot_portrait() else 500.0
+	var fit_width := (available.y-slot_deck_height()-12)*aspect
+	cabinet_width = maxf(0,minf(1120,minf(available.x-16,maxf(minimum_width,fit_width))))
+	return cabinet_width/aspect+slot_deck_height()+12
+
 func slot_rect() -> Rect2:
-	var width := minf(minf(size.x-16,(size.y-12)*1.70),1120)
-	var height := minf(size.y-12,width/(0.78 if size.x < size.y*0.9 else 1.35))
-	return Rect2((size-Vector2(width,height))/2,Vector2(width,height))
+	var aspect := 0.78 if slot_portrait() else 1.35
+	var extent := Vector2(cabinet_width,cabinet_width/aspect)
+	return Rect2(Vector2((size.x-extent.x-(LANDSCAPE_DECK_WIDTH if landscape_layout else 0))*0.5,maxf(6,(size.y-extent.y-slot_deck_height())*0.5)),extent)
+
+func slot_deck_rect() -> Rect2:
+	var rect := slot_rect()
+	if landscape_layout:
+		return Rect2(rect.position+rect.size*Vector2(0.925,0.11),Vector2(LANDSCAPE_DECK_WIDTH,rect.size.y*0.83))
+	return Rect2(Vector2(rect.position.x,rect.position.y+rect.size.y*0.92),Vector2(rect.size.x,slot_deck_height()))
+
+func slot_spin_rect() -> Rect2:
+	var deck := slot_deck_rect()
+	var diameter := 84.0 if landscape_layout else 88.0 if slot_portrait() else 108.0
+	var center := deck.get_center()
+	return Rect2(center-Vector2.ONE*diameter/2,Vector2.ONE*diameter)
+
+func slot_bet_rect() -> Rect2:
+	var deck := slot_deck_rect()
+	if landscape_layout: return Rect2(deck.position+Vector2(12,4),Vector2(deck.size.x-24,48))
+	var extent := Vector2(deck.size.x*0.18 if slot_portrait() else minf(180,deck.size.x*0.24),56)
+	return Rect2(Vector2(deck.position.x+deck.size.x*(0.14 if slot_portrait() else 0.16),deck.get_center().y-extent.y/2),extent)
+
+func slot_lines_rect() -> Rect2:
+	var deck := slot_deck_rect()
+	var extent := slot_bet_rect().size
+	if landscape_layout: return Rect2(Vector2(deck.position.x+12,deck.end.y-52),extent)
+	return Rect2(Vector2(deck.end.x-deck.size.x*(0.14 if slot_portrait() else 0.16)-extent.x,deck.get_center().y-extent.y/2),extent)
+
+func slot_window_rect() -> Rect2:
+	var rect := slot_rect()
+	return Rect2(rect.position+rect.size*Vector2(0.10,0.23),rect.size*Vector2(0.80,0.48))
 
 func draw_slots() -> void:
 	var rect := slot_rect()
 	if not rect.has_area(): return
 	var tint := Color(machine_profile.get("color","685344")).lightened(0.28)
-	var window := Rect2(rect.position+rect.size*Vector2(0.10,0.23),rect.size*Vector2(0.80,0.48))
-	window.size.y -= maxf(0,24-rect.size.y*0.023)
-	var cell := window.size/3
-	apply_cabinet_impulse(rect)
-	draw_cabinet(rect,tint)
-	draw_marquee(rect,tint)
-	draw_reel_wells(window,tint)
-	draw_winning_lines(window,cell)
-	draw_reel_symbols(window,cell,tint)
+	var window := slot_window_rect()
+	var cell := window.size/3.0
+	draw_cabinet(rect)
+	draw_reel_wells(window)
+	draw_win_fx(window)
+	draw_reel_symbols(window,cell)
 	draw_reel_depth(window,cell)
+	draw_particles(rect,window)
+	draw_reel_glass(rect)
+	draw_winning_lines(window,cell)
 	draw_line_markers(window,cell)
-	draw_result_plate(rect,window)
+	draw_marquee(rect,tint)
+	draw_result_plate(rect)
 	draw_meters(rect)
-	draw_particles(rect)
-	draw_set_transform(Vector2.ZERO)
 
-func apply_cabinet_impulse(rect: Rect2) -> void:
-	var shake := Vector2.ZERO
-	var scale_value := 1.0
+func draw_cabinet(rect: Rect2) -> void:
+	var mode := "portrait" if slot_portrait() else "landscape"
+	var texture := PitBoss.texture(PREMIUM_ASSETS+"slot_cabinet_"+mode+"_base.png")
+	var native := texture.get_size()
+	var scale_value := rect.size.x/native.x
+	if landscape_layout:
+		# A wider illustrated shell, rather than a separate right-hand software panel.
+		var cut := native.x*0.925
+		draw_texture_rect_region(texture,Rect2(rect.position,Vector2(cut*scale_value,rect.size.y)),Rect2(0,0,cut,native.y))
+		# Only the neutral casing material is extended; the illustration and caps
+		# keep their native proportions. A single material column avoids tile seams.
+		draw_texture_rect_region(texture,Rect2(rect.position+Vector2(cut*scale_value,0),Vector2(LANDSCAPE_DECK_WIDTH,rect.size.y)),Rect2(cut-1,0,1,native.y))
+		draw_texture_rect_region(texture,Rect2(rect.position+Vector2(cut*scale_value+LANDSCAPE_DECK_WIDTH,0),Vector2((native.x-cut)*scale_value,rect.size.y)),Rect2(cut,0,native.x-cut,native.y))
+	else:
+		var cut := native.y*0.92
+		# Uniformly scaled illustration with a neutral casing material insert before
+		# the original meter/footer. No separate deck border or stretched cabinet.
+		draw_texture_rect_region(texture,Rect2(rect.position,Vector2(rect.size.x,cut*scale_value)),Rect2(Vector2.ZERO,Vector2(native.x,cut)))
+		var deck := slot_deck_rect()
+		draw_texture_rect_region(texture,deck,Rect2(0,cut-1,native.x,1))
+		draw_texture_rect_region(texture,Rect2(deck.position+Vector2(0,deck.size.y),Vector2(rect.size.x,(native.y-cut)*scale_value)),Rect2(0,cut,native.x,native.y-cut))
+	var intensity := 0.10 if reduced_motion else 0.10+sin(idle_time*1.2)*0.04
 	if timeline.active and not reduced_motion:
-		if timeline.elapsed < 0.16: scale_value -= sin(timeline.elapsed/0.16*PI)*0.009
-		for col in range(3):
-			var age := timeline.elapsed-float(timeline.ends[col])
-			if age >= 0 and age < 0.16: shake.y += sin(age/0.16*TAU)*(0.7+col*0.3)*(1-age/0.16)
-		var count_age := timeline.elapsed-timeline.count_at
-		if timeline.strong_result() and count_age >= 0 and count_age < 0.20:
-			var magnitude := 4.0 if int(timeline.info.level) == 6 else 2.5
-			shake += (Vector2(sin(count_age*95),sin(count_age*71))*magnitude).limit_length(magnitude)*(1-count_age/0.20)
-	draw_set_transform(rect.get_center()*(1-scale_value)+shake,0,Vector2.ONE*scale_value)
-
-func draw_cabinet(rect: Rect2, tint: Color) -> void:
-	panel(rect,Color("13171c"))
-	image("slots/slot_cabinet_frame.svg",rect)
-	var state := timeline.cabinet_state()
-	var intensity := 0.32+sin(idle_time*1.2)*0.03
-	if state == "SPINNING": intensity = 0.58
-	elif state == "ANTICIPATION": intensity = 0.72+sin(timeline.elapsed*12)*0.15
-	elif timeline.active and timeline.revealed: intensity = 0.65 if timeline.info.positive else 0.48
-	var trim := GOLD if timeline.revealed and timeline.active else tint
-	draw_rect(rect.grow(-3),Color(trim,intensity),false,3)
-	if timeline.active and timeline.revealed:
-		var age := timeline.elapsed-timeline.reveal_at
-		var warm_pulse := sin(minf(1,age/0.35)*PI)*0.18
-		draw_rect(rect.grow(-5),Color(trim,warm_pulse),false,8)
-		if timeline.info.positive: draw_trim_chase(rect,age,int(timeline.info.level))
-
-func draw_trim_chase(rect: Rect2, age: float, level: int) -> void:
-	var perimeter := 2*(rect.size.x+rect.size.y)
-	var speed := 1.3 if level < 4 else 2.3
-	var envelope := clampf(1-age/(1.0 if level < 4 else 2.0),0,1)
-	for i in range(32):
-		var distance := fmod(i*perimeter/32,perimeter)
-		var at := rect.position
-		if distance < rect.size.x: at += Vector2(distance,0)
-		elif distance < rect.size.x+rect.size.y: at += Vector2(rect.size.x,distance-rect.size.x)
-		elif distance < rect.size.x*2+rect.size.y: at += Vector2(rect.size.x*2+rect.size.y-distance,rect.size.y)
-		else: at += Vector2(0,perimeter-distance)
-		var wave := pow(maxf(0,sin(i*0.42-age*TAU*speed)),6)
-		draw_circle(at,2.5 if level < 4 else 4,Color(GOLD,(0.2+wave*0.8)*envelope))
+		intensity = 0.32+sin(timeline.elapsed*(8 if timeline.phase == State.Phase.ANTICIPATION else 3))*0.10
+	var gem := rect.position+rect.size*Vector2(0.532,0.056 if slot_portrait() else 0.085)
+	var extent := minf(rect.size.x*0.055,42)
+	draw_texture_rect(effect_textures.sparkle,Rect2(gem-Vector2.ONE*extent/2,Vector2.ONE*extent),false,Color(1,1,1,intensity))
 
 func draw_marquee(rect: Rect2, tint: Color) -> void:
-	var marquee := Rect2(rect.position+rect.size*Vector2(0.04,0.02),rect.size*Vector2(0.92,0.16))
 	var title := str(machine_profile.get("name","PIT BOSS REELS")).to_upper()
 	if timeline.active:
 		if not timeline.revealed: title = "GOOD LUCK"
@@ -165,22 +217,48 @@ func draw_marquee(rect: Rect2, tint: Color) -> void:
 		elif int(timeline.info.level) >= 4: title = str(timeline.info.category)
 		elif timeline.info.positive: title = "NICE HIT"
 		elif int(timeline.info.level) == 1: title = "LINE HIT"
-	var pulse := 0.07+sin(idle_time*1.2)*0.02
-	if timeline.active: pulse = 0.18+sin(timeline.elapsed*(12 if timeline.phase == State.Phase.ANTICIPATION else 4))*0.06
-	panel(marquee,tint.darkened(0.72))
-	draw_rect(marquee.grow(2),Color(GOLD if timeline.strong_result() else tint,pulse),false,5)
-	var fs := clampi(int(rect.size.y*0.048),14,32)
-	centered(marquee.get_center()+Vector2(0,fs*0.15),title,fs,Color("fff0ce"))
-	centered(Vector2(rect.get_center().x,marquee.end.y-5),"FREE SPINS" if sponsored else "PIT BOSS / CLASSIC REELS",clampi(fs-10,10,15),tint.lightened(0.4))
+	var fs := clampi(int(rect.size.y*0.035),12,26)
+	var y := rect.position.y+(rect.size.y*0.10+fs+1 if slot_portrait() else maxf(rect.size.y*0.17,rect.size.y*0.14+fs+2))
+	var subtitle := "FREE SPINS" if sponsored else "PIT BOSS / CLASSIC REELS"
+	var subtitle_color := tint.lightened(0.42)
+	var selected := timeline.line_index()
+	if selected >= 0:
+		var win: Dictionary = timeline.wins[selected]
+		subtitle = "LINE %d / $%.2f RETURNED" % [int(win.index)+1,win.returned]
+		subtitle_color = LINE_COLORS[int(win.index)]
+	var subtitle_y := rect.position.y+rect.size.y*0.195 if slot_portrait() else y+maxf(12,rect.size.y*0.03)
+	if subtitle_y > rect.position.y+rect.size.y*0.222:
+		if selected >= 0: title = subtitle
+		centered(Vector2(rect.get_center().x,y),title,11,subtitle_color if selected >= 0 else Color("fff1c9"))
+	else:
+		centered(Vector2(rect.get_center().x,y),title,fs,Color("fff1c9"))
+		centered(Vector2(rect.get_center().x,subtitle_y),subtitle,11 if selected >= 0 else clampi(fs-9,9,13),subtitle_color)
 
-func draw_reel_wells(window: Rect2, tint: Color) -> void:
-	panel(window.grow(7),tint.darkened(0.4))
-	var column_width := window.size.x/3
-	for col in range(3):
-		var well := Rect2(window.position+Vector2(col*column_width+2,0),Vector2(column_width-4,window.size.y))
-		draw_rect(well,Color("e8dfce"))
-		draw_rect(Rect2(well.position+Vector2(0,well.size.y*0.33),Vector2(well.size.x,well.size.y*0.34)),Color("fff9e9"))
-		draw_rect(well,Color("5b5144"),false,2)
+func draw_reel_glass(rect: Rect2) -> void:
+	var mode := "portrait" if slot_portrait() else "landscape"
+	var texture := PitBoss.texture(PREMIUM_ASSETS+"slot_cabinet_"+mode+"_glass.png")
+	var native := texture.get_size()
+	var window := slot_window_rect()
+	# Only the two mechanical rails are needed. The base already supplies the
+	# outer bezel; the full overlay duplicated it and masked the outside rows.
+	for col in [1,2]:
+		var x: float = native.x*(0.10+int(col)*0.80/3.0)
+		var source := Rect2(x-5,native.y*0.235,10,native.y*0.47)
+		var extent := source.size*(rect.size.x/native.x)
+		draw_texture_rect_region(texture,Rect2(Vector2(window.position.x+window.size.x*col/3.0-extent.x/2,window.get_center().y-extent.y/2),extent),source)
+
+func draw_win_fx(window: Rect2) -> void:
+	if reduced_motion or not timeline.active or not timeline.revealed or int(timeline.info.level) < 4: return
+	var age := timeline.elapsed-timeline.count_at
+	if age < 0.0 or age > 1.15: return
+	var alpha := clampf(age/0.18,0.0,1.0)*(1.0-smoothstep(0.6,1.15,age))
+	var diameter := minf(window.size.x*0.75,window.size.y*0.95)
+	draw_texture_rect(effect_textures.burst,Rect2(window.get_center()-Vector2.ONE*diameter/2,Vector2.ONE*diameter),false,Color(1,1,1,alpha*0.32))
+
+func draw_reel_wells(window: Rect2) -> void:
+	# The artwork supplies the bezel and dividers; avoid a second drawn border.
+	draw_rect(window,Color("e9e1d0"))
+	draw_rect(Rect2(window.position+Vector2(0,window.size.y/3),Vector2(window.size.x,window.size.y/3)),Color("fff9eb"))
 
 func draw_winning_lines(window: Rect2, cell: Vector2) -> void:
 	var selected := timeline.line_index()
@@ -195,7 +273,7 @@ func draw_winning_lines(window: Rect2, cell: Vector2) -> void:
 func draw_neon_line(window: Rect2, cell: Vector2, index: int, progress: float, pulse: float) -> void:
 	var path: Array = CasinoTuning.SLOT_LINES[index]
 	var color: Color = LINE_COLORS[index]
-	var core := clampf(cell.y*0.065,4,7)
+	var core := clampf(cell.y*0.025,1.5,3)
 	var start := window.position+Vector2(0.5,path[0]+0.5)*cell
 	for col in range(2):
 		var target := window.position+Vector2(col+1.5,path[col+1]+0.5)*cell
@@ -221,17 +299,25 @@ func draw_neon_line(window: Rect2, cell: Vector2, index: int, progress: float, p
 func reel_offset(col: int, cell_height: float) -> float:
 	if not timeline.active: return 0.0
 	var end_time := float(timeline.ends[col])
-	var p := clampf(timeline.elapsed/end_time,0,1)
-	var eased := p*p*p*(p*(p*6-15)+10)
+	var p := clampf(timeline.elapsed/end_time,0.0,1.0)
+	# Continuous velocity across acceleration, cruise and braking; exact final stop.
+	const SPEED := 1.0/0.75
+	var travel := 0.0
+	if p < 0.16:
+		travel = SPEED*p*p/(2.0*0.16)
+	elif p < 0.66:
+		travel = SPEED*(0.08+p-0.16)
+	else:
+		var brake := p-0.66
+		travel = SPEED*(0.58+brake-brake*brake/(2.0*0.34))
 	var target := int(round.stops[col])
 	var distance: float = float(initial_stops[col])-machine_profile.get("reel",CasinoTuning.SLOT_REEL).size()*3.0-target
-	if p < 1: return distance*(1-eased)
+	if p < 1.0: return distance*(1.0-travel)
 	var age := timeline.elapsed-end_time
 	if age >= State.SNAP_SECONDS or reduced_motion: return 0.0
-	# A 2-4 logical pixel overshoot, then a smaller counter-bounce.
-	return sin(age/State.SNAP_SECONDS*TAU)*(2.0+col)*exp(-age*12)/maxf(1,cell_height)
+	return sin(age/State.SNAP_SECONDS*TAU)*(2.0+col)*exp(-age*12.0)/maxf(1.0,cell_height)
 
-func draw_reel_symbols(window: Rect2, cell: Vector2, tint: Color) -> void:
+func draw_reel_symbols(window: Rect2, cell: Vector2) -> void:
 	var stops: Array = round.get("stops",[3,11,18])
 	var reel: Array = machine_profile.get("reel",CasinoTuning.SLOT_REEL)
 	var highlighting := timeline.line_index() >= 0 or timeline.all_lines()
@@ -245,22 +331,27 @@ func draw_reel_symbols(window: Rect2, cell: Vector2, tint: Color) -> void:
 			var symbol := int(reel[posmod(whole+strip_row,reel.size())])
 			var row := strip_row+1
 			var age := timeline.symbol_age(row,col) if not moving and row in range(3) else -1.0
-			var extent := minf(cell.x*0.80,cell.y*0.80)
+			var extent := minf(cell.x*0.76,cell.y*0.76)
 			var at := Vector2(column.get_center().x,window.position.y+(strip_row+1.5-fraction)*cell.y)
 			var scale_value := 1.0
 			if age >= 0:
 				scale_value = symbol_scale(age)
-				if not reduced_motion: at.y -= sin(minf(1,age/0.22)*PI)*minf(5,cell.y*0.06)
+				if not reduced_motion and row == 1: at.y -= sin(minf(1,age/0.22)*PI)*minf(5,cell.y*0.06)
 				draw_symbol_halo(at,extent,LINE_COLORS[int(timeline.wins[maxi(0,timeline.line_index())].index)],age)
 			var brightness := 0.65 if highlighting and age < 0 else 1.0
 			if age >= 0: brightness = 1.0+maxf(0,1-age/0.20)*0.18
-			var symbol_rect := Rect2(at-Vector2.ONE*extent*scale_value/2,Vector2.ONE*extent*scale_value)
+			var texture_size := slot_textures[symbol].get_size()
+			var symbol_size := texture_size*(extent*scale_value/maxf(texture_size.x,texture_size.y))
+			var symbol_rect := Rect2(at-symbol_size/2,symbol_size)
 			clipped_symbol(symbol,symbol_rect,column,Color(brightness,brightness,brightness,0.84 if moving else 1))
-			if moving and timeline.elapsed < float(timeline.ends[col])-0.12:
-				clipped_symbol(symbol,Rect2(symbol_rect.position+Vector2(0,cell.y*0.12),symbol_rect.size),column,Color(1,1,1,0.14))
+			if moving and not reduced_motion and timeline.elapsed < float(timeline.ends[col])-0.12:
+				for trail in range(1,3):
+					clipped_symbol(symbol,Rect2(symbol_rect.position+Vector2(0,cell.y*0.09*trail),symbol_rect.size),column,Color(1,1,1,0.10/float(trail)))
 		var impact_age := timeline.elapsed-float(timeline.ends[col])
-		if timeline.active and impact_age >= 0 and impact_age < 0.18:
-			draw_rect(column,Color(tint,0.18*(1-impact_age/0.18)))
+		if timeline.active and not reduced_motion and impact_age >= 0 and impact_age < 0.18:
+			var strength := 1.0-impact_age/0.18
+			var flash_size: Vector2 = effect_textures.stop.get_size()*(cell.x*0.9/155.0)
+			draw_texture_rect(effect_textures.stop,Rect2(column.get_center()-flash_size/2,flash_size),false,Color(1,1,1,0.28*strength))
 
 func symbol_scale(age: float) -> float:
 	if reduced_motion: return 1.04
@@ -269,10 +360,11 @@ func symbol_scale(age: float) -> float:
 	return 1.04
 
 func draw_symbol_halo(at: Vector2, extent: float, color: Color, age: float) -> void:
-	var strength := 0.20+0.12*exp(-age*5)
-	draw_circle(at,extent*0.65,Color(color,strength*0.30))
-	draw_circle(at,extent*0.53,Color(color,strength))
-	draw_arc(at,extent*0.54,0,TAU,40,Color(color,0.50),2,true)
+	# A procedural halo replaces the retired glow sheet with its baked text
+	# and cut-off ring.
+	var strength := 0.16+0.10*exp(-age*5.0)
+	draw_circle(at,extent*0.55,Color(color,strength))
+	draw_arc(at,extent*0.53,0,TAU,40,Color(color,0.55),1.5,true)
 
 func clipped_symbol(symbol: int, rect: Rect2, column: Rect2, modulate: Color) -> void:
 	var visible_rect := rect.intersection(column)
@@ -296,72 +388,63 @@ func draw_line_markers(window: Rect2, cell: Vector2) -> void:
 	for index in range(active_count):
 		var path: Array = CasinoTuning.SLOT_LINES[index]
 		var selected_line: bool = selected >= 0 and int(timeline.wins[selected].index) == index
-		var color := Color(LINE_COLORS[index],0.95 if selected_line else 0.50)
+		var color := Color(LINE_COLORS[index],1.0 if selected_line else 0.85)
 		for side in range(2):
 			var row := int(path[0 if side == 0 else 2])
 			var y := window.position.y+(row+0.5)*cell.y
 			# Separate same-row markers: center=1, top=2/4, bottom=3/5.
-			if index in [1,2]: y -= 9
-			if index in [3,4]: y += 9
-			var x := window.position.x-12 if side == 0 else window.end.x+12
-			draw_circle(Vector2(x,y),3.5 if selected_line else 2.5,color)
-			centered(Vector2(x+(-10 if side == 0 else 10),y+4),str(index+1),11,color)
+			if index in [1,2]: y -= minf(9,cell.y*0.14)
+			if index in [3,4]: y += minf(9,cell.y*0.14)
+			var x := window.position.x+7 if side == 0 else window.end.x-7
+			draw_circle(Vector2(x,y),6,Color("131820"))
+			centered(Vector2(x,y+3),str(index+1),10,color)
 
-func draw_result_plate(rect: Rect2, window: Rect2) -> void:
-	var center := rect.position+rect.size*Vector2(0.5,0.815)
+func draw_result_plate(rect: Rect2) -> void:
+	# The full dark-glass plaque belongs exclusively to the result.
+	var area := Rect2(rect.position+rect.size*Vector2(0.12,0.765),rect.size*Vector2(0.76,0.13))
+	var color := GOLD if timeline.info.get("positive",false) else Color("dfd6c4")
+	if not status_message.is_empty():
+		var headline := "PAUSED" if status_message == "PAUSED" else "WAGER UNAVAILABLE"
+		var detail := "RESUME TO PLAY" if status_message == "PAUSED" else "CHECK WALLET / LIMITS"
+		fit_text(Rect2(area.position,Vector2(area.size.x,area.size.y*0.55)),headline,13,color)
+		fit_text(Rect2(area.position+Vector2(0,area.size.y*0.55),Vector2(area.size.x,area.size.y*0.45)),detail,10,color)
+		return
 	if not timeline.revealed:
-		centered(center,"REELS IN MOTION" if timeline.active else "PRESS SPIN",clampi(int(rect.size.y*0.028),12,20),GOLD)
+		fit_text(area,"REELS IN MOTION" if timeline.active else "READY TO SPIN",22,color)
 		return
 	var info: Dictionary = timeline.info
-	var age := timeline.elapsed-timeline.count_at
-	var pop := 1.0
-	if timeline.active and age >= 0 and not reduced_motion:
-		pop = lerpf(0.86,1.12,age/0.10) if age < 0.10 else lerpf(1.12,1.0,clampf((age-0.10)/0.14,0,1))
-	var strong := int(info.level) >= 4 and timeline.active
-	var color := Color("ffd879") if info.positive else Color("e6c888") if int(info.level) == 1 else Color("c7bdb0")
-	var fs := clampi(int(rect.size.y*0.027*pop),12,22)
-	var amount_fs := clampi(int(rect.size.y*(0.060 if strong else 0.047)*pop),20,46 if strong else 34)
-	var display_fs := amount_fs if info.positive else clampi(amount_fs-5,15,28)
-	var detail_fs := clampi(fs-3,10,16)
-	var plate_size := Vector2(rect.size.x*0.78*pop,maxf(rect.size.y*0.164*pop,fs+display_fs+detail_fs+14))
-	var plate := Rect2(center-plate_size/2,plate_size)
-	panel(plate,Color("14191e") if strong else Color("151719"))
-	draw_rect(plate,Color(color,0.8 if strong else 0.35),false,3 if strong else 1)
-	var title := "WIN" if info.category == "SMALL WIN" else str(info.category)
-	centered(Vector2(center.x,plate.position.y+fs+3),title,fs,color)
 	var shown := float(info.credit)*(1-pow(1-timeline.count_progress(),3))
-	if not info.positive:
-		centered(Vector2(center.x,plate.position.y+fs+display_fs+6),"$%.2f RETURNED" % shown,display_fs,color)
-	else:
-		centered(Vector2(center.x,plate.position.y+fs+display_fs+6),"$%.2f" % shown,amount_fs,color)
 	var detail := "CASINO CASH +$%.2f" % info.credit if sponsored and info.positive else "NO STAKE CHARGED" if sponsored else "NET %s$%.2f" % ["+" if info.net > 0 else "-" if info.net < 0 else "",absf(float(info.net))]
-	if info.positive and not sponsored: detail = "RETURNED / "+detail
-	centered(Vector2(center.x,plate.end.y-5),detail,detail_fs,color)
-	var selected := timeline.line_index()
-	if selected >= 0:
-		var win: Dictionary = timeline.wins[selected]
-		centered(Vector2(rect.get_center().x,window.end.y+15),"LINE %d / $%.2f RETURNED" % [int(win.index)+1,win.returned],12,LINE_COLORS[int(win.index)])
+	if area.size.y < 52:
+		fit_text(Rect2(area.position,Vector2(area.size.x,area.size.y*0.55)),"%s / $%.2f" % [info.category,shown],14,color)
+		fit_text(Rect2(area.position+Vector2(0,area.size.y*0.55),Vector2(area.size.x,area.size.y*0.45)),"RETURNED / "+detail,11,color)
+	else:
+		fit_text(Rect2(area.position,Vector2(area.size.x,area.size.y*0.28)),str(info.category),14,color)
+		fit_text(Rect2(area.position+Vector2(0,area.size.y*0.28),Vector2(area.size.x,area.size.y*0.43)),"$%.2f RETURNED" % shown,24,color)
+		fit_text(Rect2(area.position+Vector2(0,area.size.y*0.73),Vector2(area.size.x,area.size.y*0.27)),detail,12,color)
+
+func fit_text(area: Rect2, value: String, desired_size: int, color: Color) -> void:
+	var fs := mini(desired_size,maxi(9,int(area.size.y*0.8)))
+	while fs > 9 and font.get_string_size(value,HORIZONTAL_ALIGNMENT_LEFT,-1,fs).x > area.size.x: fs -= 1
+	centered(area.get_center()+Vector2(0,(font.get_ascent(fs)-font.get_descent(fs))*0.5),value,fs,color)
 
 func draw_meters(rect: Rect2) -> void:
-	var y := rect.end.y-rect.size.y*0.028
-	var fs := clampi(int(rect.size.y*0.030),11,19)
-	centered(Vector2(rect.position.x+rect.size.x*0.20,y),"%d FREE LEFT" % free_remaining if sponsored else "BET $%.2f" % wager,fs)
-	centered(Vector2(rect.get_center().x,y),"LINES %d" % slot_lines,fs)
-	centered(Vector2(rect.position.x+rect.size.x*0.80,y),"LAST $%.2f" % last_win,fs)
+	var y := rect.position.y+rect.size.y*0.925+slot_deck_height()
+	var area := Rect2(Vector2(rect.position.x+rect.size.x*0.11,y),Vector2(rect.size.x*0.78,rect.size.y*0.052))
+	fit_text(Rect2(area.position,Vector2(area.size.x*0.52,area.size.y)),"%d FREE LEFT" % free_remaining if sponsored else limits_text,12,GOLD)
+	fit_text(Rect2(area.position+Vector2(area.size.x*0.52,0),Vector2(area.size.x*0.48,area.size.y)),"LAST WIN $%.2f" % last_win,12,GOLD)
 
-func draw_particles(rect: Rect2) -> void:
+func draw_particles(rect: Rect2, window: Rect2) -> void:
 	if not timeline.active or reduced_motion: return
 	for i in range(particles.count):
 		if particles.ages[i] >= particles.lifetimes[i]: continue
-		var alpha := 1-particles.ages[i]/particles.lifetimes[i]
+		var alpha := 1.0-particles.ages[i]/particles.lifetimes[i]
 		var at := rect.position+particles.positions[i]*rect.size
-		var extent := clampf(rect.size.y*0.006,2,4)
-		var color := Color(LINE_COLORS[i%5] if particles.shapes[i] == 2 else GOLD,alpha)
-		if particles.shapes[i] == 2:
-			draw_line(at,at+Vector2(sin(i+particles.ages[i]*7),cos(i+particles.ages[i]*7))*extent*2,color,extent,true)
-		elif particles.shapes[i] == 1:
-			draw_circle(at,extent*1.3,color)
-			draw_arc(at,extent,0,TAU,12,Color("fff4cb",alpha),1)
-		else:
-			draw_line(at-Vector2(extent,0),at+Vector2(extent,0),color,1.5,true)
-			draw_line(at-Vector2(0,extent),at+Vector2(0,extent),color,1.5,true)
+		var diameter := clampf(rect.size.y*0.025,7,18)
+		var texture: Texture2D = effect_textures.coin if particles.shapes[i] == 1 else effect_textures.sparkle
+		var extent := texture.get_size()*(diameter/maxf(texture.get_width(),texture.get_height()))
+		var target := Rect2(at-extent/2,extent)
+		var visible := target.intersection(window)
+		if not visible.has_area(): continue
+		var source := Rect2((visible.position-target.position)/target.size*texture.get_size(),visible.size/target.size*texture.get_size())
+		draw_texture_rect_region(texture,visible,source,Color(1,1,1,alpha*0.8))

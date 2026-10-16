@@ -11,7 +11,6 @@ const Games = preload("res://scripts/casino_games.gd")
 const PitBoss = preload("res://scripts/pit_boss_theme.gd")
 const SlotResult = preload("res://scripts/slot_result.gd")
 const RESULT_HOLD_SECONDS := 1.25
-const SLOT_STEPS := [1, 5, 10, 25, 50, 100, 1000]
 const Surface = preload("res://scripts/casino_surface.gd")
 const RouletteLayout = preload("res://scripts/roulette_layout.gd")
 var sim: PitBossGameContext:
@@ -33,7 +32,6 @@ var audio_result_kind := ""
 var audio_result: Dictionary = {}
 var paused := false
 var bet := 10.0
-var slot_step := 1.0
 var result_hold := 0.0
 var result_pending := false
 var audio_button: Button
@@ -42,7 +40,8 @@ var slot_lines := 1
 var balance_before := Vector2.ZERO
 var slot_dimmer: ColorRect
 var slot_spin: Button
-var slot_wager_row: HBoxContainer
+var slot_bet_button: Button
+var slot_lines_button: Button
 var line_diagrams: Control
 var trips_bet := 0.0
 var trips_composition: Array[float] = []
@@ -183,21 +182,17 @@ func _ready() -> void:
 	controls.size_flags_horizontal = SIZE_EXPAND_FILL
 	controls.add_theme_constant_override("separation", 6)
 	controls_scroll.add_child(controls)
-	slot_spin = make_button(controls, "SPIN", press_slot_spin)
-	slot_spin.z_index = 10
-	slot_spin.custom_minimum_size.y = 54
-	slot_spin.add_theme_font_size_override("font_size", 22)
-	slot_spin.add_theme_stylebox_override("normal", PitBoss.box(Color("70562b"), PitBoss.GOLD, 10))
-	slot_spin.add_theme_stylebox_override("hover", PitBoss.box(Color("92713b"), PitBoss.GOLD, 10))
-	slot_spin.add_theme_stylebox_override("pressed", PitBoss.box(Color("584522"), PitBoss.GOLD, 10))
-	slot_spin.add_theme_stylebox_override("disabled", PitBoss.box(Color("302a21"), Color("6f603f"), 10))
+	slot_spin = preload("res://scripts/slot_spin_button.gd").new()
+	art.add_child(slot_spin)
+	slot_spin.text = "SPIN"
+	slot_spin.pressed.connect(press_slot_spin)
+	slot_spin.z_index = 1
 	slot_spin.hide()
-	slot_wager_row = HBoxContainer.new()
-	slot_wager_row.add_theme_constant_override("separation", 6)
-	slot_wager_row.size_flags_horizontal = SIZE_EXPAND_FILL
-	controls.add_child(slot_wager_row)
-	slot_wager_row.hide()
-	wager_label = make_label(controls, "", 16)
+	slot_bet_button = make_button(art,"BET",cycle_slot_bet)
+	slot_bet_button.hide()
+	slot_lines_button = make_button(art,"LINES",cycle_slot_lines)
+	slot_lines_button.hide()
+	wager_label = make_label(controls,"",16)
 	actions = preload("res://scripts/responsive_grid.gd").new()
 	actions.maximum_columns = 3
 	actions.add_theme_constant_override("h_separation", 6)
@@ -243,6 +238,7 @@ func _ready() -> void:
 	rules_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rules.hide()
 	resized.connect(layout_play)
+	art.resized.connect(func(): layout_slot_deck.call_deferred())
 	layout_play()
 
 func attach_craps(surface: Control) -> void:
@@ -307,8 +303,10 @@ func layout_play() -> void:
 	compact = size.x < 1000
 	landscape = size.x > size.y and size.y < 600
 	# The browser wrapper already reports the visible viewport, including safe areas.
-	var tall_header := size.x < 760
+	var slots: bool = art.kind == "slots"
+	var tall_header := size.x < 760 and not (slots and landscape)
 	var top := 100.0 if tall_header else 56.0
+	bet_indicator.visible = not slots
 	put(header, Vector2(4, 4), Vector2(size.x - 8, top - 8))
 	brand.hide()
 	casino_cash.hide()
@@ -337,14 +335,18 @@ func layout_play() -> void:
 	put(pause_button, Vector2(header.size.x - 144, 2), Vector2(44, 44))
 	put(audio_button, Vector2(header.size.x - 96, 2), Vector2(44, 44))
 	put(menu_button, Vector2(header.size.x - 48, 2), Vector2(44, 44))
-	var slots: bool = art.kind == "slots"
 	if slots:
 		controls.vertical = true
-		var footer := 198.0 if not landscape else 0.0
-		var rail := clampf(size.x * 0.34, 264, 304)
-		put(surface_scroll, Vector2(4, top), Vector2(size.x - (rail if landscape else 8), size.y - top - footer - 4))
-		put(controls_scroll, Vector2(size.x - rail + 8, top) if landscape else Vector2(8, size.y - footer), Vector2(rail - 16, size.y - top - 4) if landscape else Vector2(size.x - 16, footer))
+		art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		put(surface_scroll,Vector2(4,top),Vector2(size.x-8,size.y-top-4))
+		if art.get_parent() != stage: art.reparent(stage)
+		art.portrait_layout = size.x < size.y*0.9
+		art.landscape_layout = landscape
+		var height: float = art.slot_content_height(surface_scroll.size)
+		art.custom_minimum_size.y = height
+		layout_slot_deck()
 	else:
+		art.texture_filter = CanvasItem.TEXTURE_FILTER_PARENT_NODE
 		var spatial: bool = art.kind in ["craps", "roulette"]
 		controls.vertical = not spatial
 		var footer := 126.0 if spatial else 206.0 if size.x < 600 else 142.0
@@ -357,6 +359,7 @@ func layout_play() -> void:
 		put(rack_scroll, Vector2(8, size.y - 76), Vector2(size.x - 16, 74))
 	rack_scroll.visible = not slots
 	surface_scroll.visible = art.kind != "craps"
+	controls_scroll.visible = not slots
 	if is_instance_valid(craps): put(craps, surface_scroll.position, surface_scroll.size)
 	stage.vertical = true
 	art.custom_minimum_size.x = 0
@@ -368,7 +371,7 @@ func layout_play() -> void:
 		var wheel_extent := minf(clampf(size.x * 0.30, 280, 420) - 16, surface_scroll.size.y - 16) if size.x >= 1000 else minf(244, minf(size.x * 0.32 - 16, surface_scroll.size.y - 16)) if landscape else minf(224, (size.y - top - 126) * 0.38 - 16)
 		var wheel_position := Vector2(size.x - wheel_extent - 12, top + 8) if size.x >= 1000 or landscape else Vector2((size.x - wheel_extent) / 2, top + 8)
 		put(art, wheel_position, Vector2(wheel_extent, wheel_extent))
-	elif art.get_parent() != stage:
+	elif not slots and art.get_parent() != stage:
 		art.reparent(stage)
 	art.size_flags_horizontal = SIZE_EXPAND_FILL if stage.vertical else SIZE_FILL
 	felt.vertical_layout = not landscape and size.x < 1000
@@ -377,6 +380,13 @@ func layout_play() -> void:
 	var drawer_width := minf(size.x - 16, 380)
 	put(options_panel, Vector2(size.x - drawer_width - 8, top if not compact else size.y * 0.4), Vector2(drawer_width, size.y - top - 8 if not compact else size.y * 0.6 - 8))
 	art.configure()
+	if slots: layout_slot_deck.call_deferred()
+
+func layout_slot_deck() -> void:
+	if art.kind != "slots": return
+	put(slot_bet_button,art.slot_bet_rect().position,art.slot_bet_rect().size)
+	put(slot_lines_button,art.slot_lines_rect().position,art.slot_lines_rect().size)
+	put(slot_spin,art.slot_spin_rect().position,art.slot_spin_rect().size)
 
 func select_chip(amount: float) -> void:
 	if sim == null or locked() or sim.game_pending(current_table()) or (sim.is_private and amount < float(current_table().minimum)): return
@@ -571,6 +581,7 @@ func render_current() -> void:
 	art.selecting_trips = compose_trips
 	art.sponsored = event and sim.owner_play.funding == "sponsor"
 	art.slot_lines = slot_lines
+	art.status_message = feedback if not feedback.is_empty() else "PAUSED" if paused else ""
 	art.free_remaining = int(sim.owner_play.rounds) - int(sim.owner_play.revealed) if event and sim.owner_play.funding == "sponsor" else -1
 	art.pending = pending
 	art.machine_profile = sim.slot_profile(table) if kind == "slots" else {}
@@ -612,7 +623,6 @@ func render_current() -> void:
 	update_menu(kind, event)
 	options_panel.visible = show_details
 	cursors.clear()
-	cursors[slot_wager_row] = 0
 	cursors[actions] = 0
 	cursors[details] = 0
 	actions.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -629,7 +639,8 @@ func render_current() -> void:
 	wager_label.text = ("Event committed " + FinancialText.cash(float(sim.owner_play.staked), 0)) if event else ("On felt " if kind in ["roulette", "craps"] else "Wager ") + FinancialText.cash(amount, 2)
 	wager_label.add_theme_font_size_override("font_size", 13 if kind == "slots" or (kind == "craps" and size.x < 600) else 16)
 	if kind == "slots":
-		wager_label.text = "Min %s | Max %s" % [FinancialText.cash(float(table.minimum), 2), FinancialText.cash(sim.maximum_wager(table), 2)]
+		wager_label.text = "MIN %s / MAX %s" % [FinancialText.cash(float(table.minimum), 0), FinancialText.cash(sim.maximum_wager(table), 0)]
+		art.limits_text = wager_label.text
 		render_slot_controls(table, event, disabled)
 	elif event: render_event_actions(table)
 	elif kind == "roulette":
@@ -647,10 +658,12 @@ func render_current() -> void:
 		button("Reset", reset_staged, actions, (trips_bet if compose_trips else bet) <= 0)
 	if kind in ["blackjack", "holdem"] and not seats.is_empty() and not pending:
 		button("Seats", func(): show_details = not show_details; notify_change(), actions)
+	slot_lines_button.visible = kind == "slots"
+	actions.visible = kind != "slots"
 	slot_spin.visible = kind == "slots"
-	slot_wager_row.visible = kind == "slots" and not event
+	slot_bet_button.visible = kind == "slots"
 	wager_label.visible = kind != "slots" or not event
-	result_label.visible = not feedback.is_empty()
+	result_label.visible = kind != "slots" and not feedback.is_empty()
 	if kind == "holdem" and not pending:
 		wager_label.text = "Deal %s | Wallet needs %s" % [FinancialText.cash(bet * 2 + trips_bet, 2), FinancialText.cash(bet * 6 + trips_bet, 2)]
 	elif kind in ["blackjack", "holdem", "roulette"] and not player_round.is_empty():
@@ -673,32 +686,27 @@ static func sum_bets(bets: Dictionary) -> float:
 	for value in bets.values(): amount += float(value)
 	return amount
 
-func slot_steps() -> Array:
+func slot_bet_ceiling() -> float:
 	var table := current_table()
-	var ceiling := minf(sim.owner_bankroll, sim.maximum_wager(table))
-	if sim.is_private: return SLOT_STEPS.filter(func(value): return value <= ceiling)
-	var unit := float(sim.slot_profile(table).denominations.front())
-	var steps: Array = [int(unit)]
-	for value in SLOT_STEPS:
-		if value > unit and is_equal_approx(fmod(float(value), unit), 0.0): steps.append(value)
-	return steps.filter(func(value): return value <= ceiling)
-
-func cycle_slot_step() -> void:
-	if locked(): return
-	var steps := slot_steps()
-	if steps.is_empty(): return
-	slot_step = float(steps[(steps.find(int(slot_step)) + 1) % steps.size()])
-	notify_change()
-
-func change_slot_bet(direction: int) -> void:
-	if locked(): return
-	var table := current_table()
-	var ceiling := minf(sim.owner_bankroll, sim.maximum_wager(table))
-	if ceiling < float(table.minimum): return
+	var ceiling := minf(sim.owner_bankroll,sim.maximum_wager(table))
 	if not sim.is_private:
 		var unit := float(sim.slot_profile(table).denominations.front())
-		ceiling = float(table.minimum) + floorf((ceiling - float(table.minimum)) / unit) * unit
-	bet = clampf(bet + direction * slot_step, float(table.minimum), ceiling)
+		ceiling = float(table.minimum)+floorf((ceiling-float(table.minimum))/unit)*unit
+	return ceiling
+
+func cycle_slot_bet() -> void:
+	if locked() or show_rules or show_details or not sim.owner_play.is_empty(): return
+	var table := current_table()
+	var minimum := float(table.minimum)
+	var ceiling := slot_bet_ceiling()
+	var unit := 1.0 if sim.is_private else float(sim.slot_profile(table).denominations.front())
+	if ceiling < minimum: return
+	bet = minimum if bet >= ceiling or is_equal_approx(bet,ceiling) else minf(ceiling,maxf(minimum,bet+unit))
+	notify_change()
+
+func cycle_slot_lines() -> void:
+	if locked() or show_rules or show_details or not sim.owner_play.is_empty(): return
+	slot_lines = CasinoTuning.SLOT_LINE_COUNTS[(CasinoTuning.SLOT_LINE_COUNTS.find(slot_lines)+1)%CasinoTuning.SLOT_LINE_COUNTS.size()]
 	notify_change()
 
 func update_result_hold(delta: float) -> void:
@@ -939,22 +947,34 @@ func render_slot_controls(table: Dictionary, event: bool, disabled: bool) -> voi
 	var session: Dictionary = sim.owner_play
 	slot_spin.text = "SKIP" if art.can_skip_slot_reveal() else "SPIN" if not event else "FREE SPIN" if session.funding == "sponsor" else "SPIN %d/%d" % [int(session.revealed)+1,session.rounds]
 	slot_spin.disabled = paused or result_pending or result_hold > 0 if art.can_skip_slot_reveal() else locked() or (session.status != "playing" if event else disabled or bet > sim.owner_bankroll)
+	slot_spin.tooltip_text = feedback if not feedback.is_empty() else "Finish this revealed result without placing another wager" if art.can_skip_slot_reveal() else "Spin the selected paylines with your total wager"
 	if event: rendered_sequence = int(session.sequence)
-	var steps := slot_steps()
-	if not steps.is_empty() and not steps.has(int(slot_step)): slot_step = float(steps[0])
-	if not event:
-		button("- %s" % FinancialText.cash(slot_step, 0), func(): change_slot_bet(-1), slot_wager_row, disabled or bet - slot_step < float(table.minimum))
-		var amount_button := button("BET %s" % FinancialText.cash(bet, 0), func(): pass, slot_wager_row)
-		amount_button.focus_mode = Control.FOCUS_NONE
-		amount_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		button("+ %s" % FinancialText.cash(slot_step, 0), func(): change_slot_bet(1), slot_wager_row, disabled or bet + slot_step > minf(sim.owner_bankroll, sim.maximum_wager(table)))
-		for item in slot_wager_row.get_children():
-			item.add_theme_font_size_override("font_size", 12)
-			item.size_flags_horizontal = SIZE_EXPAND_FILL
-	button("$$", cycle_slot_step, actions, disabled or event or steps.size() < 2).tooltip_text = "Cycle the affordable wager increment. Paytable is in Rules / help."
-	button("LINES %d" % slot_lines, func():
-		slot_lines = CasinoTuning.SLOT_LINE_COUNTS[(CasinoTuning.SLOT_LINE_COUNTS.find(slot_lines)+1)%3]
-		notify_change(), actions, locked() or event).tooltip_text = "Choose 1 / 3 / 5 paylines; total bet stays the same."
+	slot_bet_button.text = ("FREE BET" if event and session.funding == "sponsor" else "BET")+"\n"+FinancialText.cash(bet,2)
+	slot_bet_button.disabled = disabled or event or slot_bet_ceiling() <= float(table.minimum)
+	slot_bet_button.tooltip_text = "Advance the total wager; maximum wraps to the minimum"
+	slot_lines_button.text = "LINES\n%d" % slot_lines
+	slot_lines_button.disabled = locked() or event
+	slot_lines_button.tooltip_text = "Cycle 1 / 3 / 5 paylines; total wager stays the same"
+	style_slot_button(slot_bet_button)
+	style_slot_button(slot_lines_button,true)
+	layout_slot_deck.call_deferred()
+
+func style_slot_button(item: Button, selected: bool = false) -> void:
+	var font_size := 13 if art.slot_portrait() else 15
+	var width: float = (art.slot_bet_rect() if item == slot_bet_button else art.slot_lines_rect()).size.x-10
+	var font := item.get_theme_font("font")
+	for line in item.text.split("\n"):
+		while font_size > 9 and font.get_string_size(line,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x > width: font_size -= 1
+	item.add_theme_font_size_override("font_size",font_size)
+	for state in ["normal","hover","pressed","disabled","focus"]:
+		var color := Color("153c31") if selected else Color("271b23")
+		if state == "hover": color = color.lightened(0.1)
+		if state == "disabled": color = Color("201e22")
+		if state == "focus": color = Color.TRANSPARENT
+		var skin := PitBoss.box(color,Color("fff0bc") if state == "focus" else Color("a58549") if state != "disabled" else Color("4c4541"),3)
+		skin.set_corner_radius_all(22)
+		item.add_theme_stylebox_override(state,skin)
+
 
 func _input(event: InputEvent) -> void:
 	if not is_visible_in_tree() or sim == null or not event is InputEventKey or not event.pressed or event.echo: return
@@ -964,6 +984,7 @@ func _input(event: InputEvent) -> void:
 	if not slot_spin.disabled: slot_spin.pressed.emit()
 
 func press_slot_spin() -> void:
+	if show_rules or show_details: return
 	update_result_hold(0)
 	if paused or result_pending or result_hold > 0: return
 	# First tap acknowledges an already revealed result; never starts another wager.

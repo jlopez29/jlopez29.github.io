@@ -94,7 +94,7 @@ func configure() -> void:
 				if amounts[title] > 0: captions.append({"at": at, "text": "", "size": 12, "stack_at": at - Vector2(0, 6), "chip": amounts[title], "seat": -1})
 				index += 1
 		configure_seats(field_h, done)
-	else:
+	elif kind != "slots":
 		custom_minimum_size.y = 0
 	for i in range(card_cursor, card_nodes.size()): card_nodes[i].hide()
 	queue_redraw()
