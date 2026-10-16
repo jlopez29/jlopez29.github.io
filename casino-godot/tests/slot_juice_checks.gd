@@ -87,6 +87,7 @@ func view_checks(even: Dictionary) -> void:
 	root.add_child(view)
 	view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	view.render_current()
+	check(view.art.slot_textures.size() == 5 and view.art.slot_textures.all(func(texture): return texture is AtlasTexture and texture.atlas.resource_path.ends_with(".png")),"All five live reel symbols use imported premium PNG regions")
 	root.get_node("AudioManager").set_game_muted("slots", true)
 	view.art.begin_slot_reveal()
 	view.result_pending = true
@@ -109,7 +110,7 @@ func view_checks(even: Dictionary) -> void:
 	check(view.art.particles.count == 0 and not view.slot_dimmer.visible,"Break-even avoids particles and strong dimming")
 	view.press_slot_spin()
 	check(not view.locked() and JSON.stringify(sim.snapshot()) == snapshot,"Skip completes presentation without a second wager")
-	for dimensions in [Vector2i(1440,810),Vector2i(2560,1080),Vector2i(800,600),Vector2i(390,844),Vector2i(844,390),Vector2i(320,568)]:
+	for dimensions in [Vector2i(1440,810),Vector2i(2560,1080),Vector2i(800,600),Vector2i(390,844),Vector2i(844,390),Vector2i(320,568),Vector2i(568,320)]:
 		root.size = dimensions
 		root.content_scale_size = dimensions
 		await process_frame
@@ -118,6 +119,14 @@ func view_checks(even: Dictionary) -> void:
 		await process_frame
 		check(view.slot_spin.get_global_rect().end.y <= dimensions.y,"Visible Spin/Skip target "+str(dimensions))
 		check(view.art.round == even,"Resize preserves committed screen "+str(dimensions))
+		var cabinet: Rect2 = view.art.slot_rect()
+		check(is_equal_approx(cabinet.size.x/cabinet.size.y,0.78 if view.art.slot_portrait() else 1.35),"Authored cabinet proportions "+str(dimensions))
+		check(view.slot_spin.size.y >= 44 and view.controls.size.y <= view.controls_scroll.size.y,"Touch target and settings fit without clipping "+str(dimensions))
+		check(view.slot_spin.get_parent() == view.art and view.controls_scroll.get_parent() == view.art,"Controls belong to shared cabinet "+str(dimensions))
+	view.open_rules("slots")
+	var before_rules := JSON.stringify(sim.snapshot())
+	view.press_slot_spin()
+	check(JSON.stringify(sim.snapshot()) == before_rules,"Rules overlay cannot place a slot wager")
 	view.art.reduced_motion = true
 	check(view.art.symbol_scale(0.05) == 1.04,"Reduced motion removes symbol overshoot")
 	view.queue_free()
