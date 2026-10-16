@@ -1,6 +1,12 @@
 name: Godot Build Check
 
 on:
+  push:
+    branches:
+      - feature/slot-visual-overhaul
+    paths:
+      - 'casino-godot/**'
+      - '.github/workflows/godot-build.yml'
   workflow_dispatch:
   pull_request:
     paths:
