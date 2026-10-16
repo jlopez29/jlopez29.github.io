@@ -117,7 +117,7 @@ func draw_slots() -> void:
 	draw_winning_lines(window,cell)
 	draw_line_markers(window,cell)
 	draw_marquee(rect,tint)
-	draw_result_plate(rect,window)
+	draw_result_plate(rect)
 	draw_win_fx(rect)
 	draw_meters(rect)
 	draw_particles(rect)
@@ -176,9 +176,16 @@ func draw_marquee(rect: Rect2, tint: Color) -> void:
 		elif timeline.info.positive: title = "NICE HIT"
 		elif int(timeline.info.level) == 1: title = "LINE HIT"
 	var fs := clampi(int(rect.size.y*0.041),13,28)
-	var y := rect.position.y+rect.size.y*0.12
+	var y := rect.position.y+maxf(rect.size.y*0.14,rect.size.y*0.075+fs+2.0)
 	centered(Vector2(rect.get_center().x,y),title,fs,Color("fff1c9"))
-	centered(Vector2(rect.get_center().x,y+maxf(12.0,rect.size.y*0.035)),"FREE SPINS" if sponsored else "PIT BOSS / CLASSIC REELS",clampi(fs-12,9,15),tint.lightened(0.42))
+	var subtitle := "FREE SPINS" if sponsored else "PIT BOSS / CLASSIC REELS"
+	var subtitle_color := tint.lightened(0.42)
+	var selected := timeline.line_index()
+	if selected >= 0:
+		var win: Dictionary = timeline.wins[selected]
+		subtitle = "LINE %d / $%.2f RETURNED" % [int(win.index)+1,win.returned]
+		subtitle_color = LINE_COLORS[int(win.index)]
+	centered(Vector2(rect.get_center().x,y+maxf(12.0,rect.size.y*0.035)),subtitle,12 if selected >= 0 else clampi(fs-12,9,15),subtitle_color)
 
 func draw_reel_glass(rect: Rect2) -> void:
 	var mode := "portrait" if slot_portrait() else "landscape"
@@ -337,12 +344,24 @@ func draw_line_markers(window: Rect2, cell: Vector2) -> void:
 			draw_circle(Vector2(x,y),3.5 if selected_line else 2.5,color)
 			centered(Vector2(x+(-10 if side == 0 else 10),y+4),str(index+1),11,color)
 
-func draw_result_plate(rect: Rect2, window: Rect2) -> void:
+func draw_result_plate(rect: Rect2) -> void:
 	var center := rect.position+rect.size*Vector2(0.5,0.815)
 	if not timeline.revealed:
 		centered(center,"REELS IN MOTION" if timeline.active else "PRESS SPIN",clampi(int(rect.size.y*0.028),12,20),GOLD)
 		return
 	var info: Dictionary = timeline.info
+	# Keep result text inside the authored lower panel on short viewports.
+	if rect.size.y < 400:
+		var plate := Rect2(rect.position+rect.size*Vector2(0.11,0.755),rect.size*Vector2(0.78,0.14))
+		panel(plate,Color("151719"))
+		var shown := float(info.credit)*(1-pow(1-timeline.count_progress(),3))
+		var title := "%s / $%.2f" % [info.category,shown]
+		var fs := 13
+		while fs > 9 and font.get_string_size(title,HORIZONTAL_ALIGNMENT_LEFT,-1,fs).x > plate.size.x-8: fs -= 1
+		centered(Vector2(center.x,plate.position.y+fs+2),title,fs,GOLD)
+		var detail := "CASINO CASH +$%.2f" % info.credit if sponsored and info.positive else "NO STAKE CHARGED" if sponsored else "RETURNED / NET %s$%.2f" % ["+" if info.net > 0 else "-" if info.net < 0 else "",absf(float(info.net))]
+		centered(Vector2(center.x,plate.end.y-3),detail,10,GOLD)
+		return
 	var age := timeline.elapsed-timeline.count_at
 	var pop := 1.0
 	if timeline.active and age >= 0 and not reduced_motion:
@@ -367,10 +386,6 @@ func draw_result_plate(rect: Rect2, window: Rect2) -> void:
 	var detail := "CASINO CASH +$%.2f" % info.credit if sponsored and info.positive else "NO STAKE CHARGED" if sponsored else "NET %s$%.2f" % ["+" if info.net > 0 else "-" if info.net < 0 else "",absf(float(info.net))]
 	if info.positive and not sponsored: detail = "RETURNED / "+detail
 	centered(Vector2(center.x,plate.end.y-5),detail,detail_fs,color)
-	var selected := timeline.line_index()
-	if selected >= 0:
-		var win: Dictionary = timeline.wins[selected]
-		centered(Vector2(rect.get_center().x,window.end.y+15),"LINE %d / $%.2f RETURNED" % [int(win.index)+1,win.returned],12,LINE_COLORS[int(win.index)])
 
 func draw_meters(rect: Rect2) -> void:
 	var y := rect.end.y-rect.size.y*0.028

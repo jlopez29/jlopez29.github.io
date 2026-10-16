@@ -240,6 +240,8 @@ func presentation_checks() -> void:
 		check(spin_rect.end.y <= dimensions.y and spin_rect.end.x <= dimensions.x and spin_rect.position.y >= 0,"Spin remains inside viewport " + str(dimensions))
 		check(view.art.size.x > 170 and view.art.size.y > 100,"Reel area retained " + str(dimensions))
 	view.art._process(view.art.duration)
+	view.update_result_hold(0)
+	view.update_result_hold(view.RESULT_HOLD_SECONDS + 0.01)
 	view.render_current()
 	check(not view.locked() and not view.return_button.disabled,"Reveal unlocks controls")
 	view.open_rules("slots")
