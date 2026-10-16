@@ -21,6 +21,7 @@ var slot_lines := 1
 var free_remaining := -1
 var last_win := 0.0
 var slot_textures: Array[Texture2D] = []
+var premium_art_cache: Dictionary = {}
 var slot_elapsed: float:
 	get: return timeline.elapsed
 var reveal_time: float:
@@ -28,12 +29,19 @@ var reveal_time: float:
 var win_tier: String:
 	get: return str(timeline.info.get("category",""))
 
+func premium_art(stem: String) -> Texture2D:
+	if premium_art_cache.has(stem): return premium_art_cache[stem]
+	var raster_path := "res://assets/pit_boss/" + PREMIUM_ASSETS + stem + ".png"
+	var result: Texture2D = PitBoss.texture(PREMIUM_ASSETS + stem + ".png") if ResourceLoader.exists(raster_path) else PitBoss.texture(PREMIUM_ASSETS + stem + ".svg")
+	premium_art_cache[stem] = result
+	return result
+
 func _ready() -> void:
 	super._ready()
 	slot_audio = SlotAudio.new()
 	add_child(slot_audio)
 	timeline.cue.connect(on_presentation_cue)
-	for asset in SYMBOL_ASSETS: slot_textures.append(PitBoss.texture(PREMIUM_ASSETS+"symbols/"+asset+".svg"))
+	for asset in SYMBOL_ASSETS: slot_textures.append(premium_art("symbols/"+asset))
 	if OS.has_feature("web"):
 		reduced_motion = bool(JavaScriptBridge.eval("window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches",true))
 	timeline.reset(round,sponsored)
@@ -139,7 +147,7 @@ func apply_cabinet_impulse(rect: Rect2) -> void:
 
 func draw_cabinet(rect: Rect2, tint: Color) -> void:
 	var mode := "portrait" if slot_portrait() else "landscape"
-	draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+"slot_cabinet_"+mode+"_base.svg"),rect,false)
+	draw_texture_rect(premium_art("slot_cabinet_"+mode+"_base"),rect,false)
 	var state := timeline.cabinet_state()
 	var intensity := 0.32+sin(idle_time*1.2)*0.03
 	if state == "SPINNING": intensity = 0.58
@@ -189,7 +197,7 @@ func draw_marquee(rect: Rect2, tint: Color) -> void:
 
 func draw_reel_glass(rect: Rect2) -> void:
 	var mode := "portrait" if slot_portrait() else "landscape"
-	draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+"slot_cabinet_"+mode+"_glass.svg"),rect,false)
+	draw_texture_rect(premium_art("slot_cabinet_"+mode+"_glass"),rect,false)
 
 func draw_win_fx(rect: Rect2) -> void:
 	if reduced_motion or not timeline.active or not timeline.revealed or int(timeline.info.level) < 4: return
@@ -198,7 +206,7 @@ func draw_win_fx(rect: Rect2) -> void:
 	var alpha := clampf(age/0.18,0.0,1.0)*(1.0-smoothstep(0.6,1.15,age))
 	var diameter := minf(rect.size.x*0.45,rect.size.y*0.48)
 	var center := rect.position+rect.size*Vector2(0.5,0.47)
-	draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+"slot_jackpot_burst.svg"),Rect2(center-Vector2.ONE*diameter*0.5,Vector2.ONE*diameter),false,Color(1,1,1,alpha*0.8))
+	draw_texture_rect(premium_art("slot_jackpot_burst"),Rect2(center-Vector2.ONE*diameter*0.5,Vector2.ONE*diameter),false,Color(1,1,1,alpha*0.8))
 
 func draw_reel_wells(window: Rect2, tint: Color) -> void:
 	panel(window.grow(7),tint.darkened(0.4))
@@ -297,7 +305,7 @@ func draw_reel_symbols(window: Rect2, cell: Vector2, tint: Color) -> void:
 		var impact_age := timeline.elapsed-float(timeline.ends[col])
 		if timeline.active and impact_age >= 0 and impact_age < 0.18:
 			var strength := 1.0-impact_age/0.18
-			draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+"slot_stop_flash.svg"),column,false,Color(1,1,1,0.32*strength))
+			draw_texture_rect(premium_art("slot_stop_flash"),column,false,Color(1,1,1,0.32*strength))
 
 func symbol_scale(age: float) -> float:
 	if reduced_motion: return 1.04
@@ -308,7 +316,7 @@ func symbol_scale(age: float) -> float:
 func draw_symbol_halo(at: Vector2, extent: float, color: Color, age: float) -> void:
 	var strength := 0.20+0.12*exp(-age*5.0)
 	var glow_rect := Rect2(at-Vector2.ONE*extent*0.75,Vector2.ONE*extent*1.5)
-	draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+"slot_symbol_glow.svg"),glow_rect,false,Color(1,1,1,strength*2.0))
+	draw_texture_rect(premium_art("slot_symbol_glow"),glow_rect,false,Color(1,1,1,strength*2.0))
 	draw_arc(at,extent*0.54,0,TAU,40,Color(color,0.5),2,true)
 
 func clipped_symbol(symbol: int, rect: Rect2, column: Rect2, modulate: Color) -> void:
@@ -401,6 +409,6 @@ func draw_particles(rect: Rect2) -> void:
 		var alpha := 1.0-particles.ages[i]/particles.lifetimes[i]
 		var at := rect.position+particles.positions[i]*rect.size
 		var extent := clampf(rect.size.y*0.009,3,7)
-		var asset := "slot_coin_particle.svg" if particles.shapes[i] == 1 else "slot_sparkle_particle.svg"
+		var asset := "slot_coin_particle" if particles.shapes[i] == 1 else "slot_sparkle_particle"
 		var diameter := extent*(3.6 if particles.shapes[i] == 1 else 2.8)
-		draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+asset),Rect2(at-Vector2.ONE*diameter/2.0,Vector2.ONE*diameter),false,Color(1,1,1,alpha))
+		draw_texture_rect(premium_art(asset),Rect2(at-Vector2.ONE*diameter/2.0,Vector2.ONE*diameter),false,Color(1,1,1,alpha))
