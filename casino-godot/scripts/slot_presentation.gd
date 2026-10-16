@@ -322,8 +322,8 @@ func symbol_scale(age: float) -> float:
 	return 1.04
 
 func draw_symbol_halo(at: Vector2, extent: float, color: Color, age: float) -> void:
-	# The supplied glow sheet contains a baked heading and a cut-off ring.
-	# Use a clean procedural halo rather than displaying those atlas artifacts.
+	# A procedural halo replaces the retired glow sheet with its baked text
+	# and cut-off ring.
 	var strength := 0.16+0.10*exp(-age*5.0)
 	draw_circle(at,extent*0.55,Color(color,strength))
 	draw_arc(at,extent*0.53,0,TAU,40,Color(color,0.55),1.5,true)
