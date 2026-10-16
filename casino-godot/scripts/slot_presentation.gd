@@ -5,6 +5,7 @@ const State = preload("res://scripts/slot_presentation_state.gd")
 const Result = preload("res://scripts/slot_result.gd")
 const Particles = preload("res://scripts/slot_particles.gd")
 const SYMBOL_ASSETS := ["cherry","lemon","bell","bar","seven"]
+const PREMIUM_ASSETS := "casino_play/slots/premium/"
 const LINE_COLORS := [Color("ffd879"),Color("79d7ed"),Color("9fe8ad"),Color("df9cec"),Color("ffa685")]
 var machine_profile := {}
 var wager := 10.0
@@ -14,6 +15,7 @@ var slot_audio: Node
 var timeline := State.new()
 var particles := Particles.new()
 var idle_time := 0.0
+var idle_redraw_elapsed := 0.0
 var initial_stops := [3,11,18]
 var slot_lines := 1
 var free_remaining := -1
@@ -31,7 +33,7 @@ func _ready() -> void:
 	slot_audio = SlotAudio.new()
 	add_child(slot_audio)
 	timeline.cue.connect(on_presentation_cue)
-	for asset in SYMBOL_ASSETS: slot_textures.append(PitBoss.texture("casino_play/slots/symbols/"+asset+".svg"))
+	for asset in SYMBOL_ASSETS: slot_textures.append(PitBoss.texture(PREMIUM_ASSETS+"symbols/"+asset+".svg"))
 	if OS.has_feature("web"):
 		reduced_motion = bool(JavaScriptBridge.eval("window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches",true))
 	timeline.reset(round,sponsored)
@@ -54,7 +56,10 @@ func _process(delta: float) -> void:
 	if was_active and not timeline.active and sponsored: slot_audio.cue("free")
 	spinning = maxf(0,timeline.finish_at-timeline.elapsed) if timeline.active else 0.0
 	if timeline.revealed: last_win = float(timeline.info.credit)
-	queue_redraw()
+	idle_redraw_elapsed += delta
+	if timeline.active or idle_redraw_elapsed >= 0.05:
+		idle_redraw_elapsed = 0.0
+		queue_redraw()
 
 func reset_slot_presentation(result: Dictionary, sponsor_funded: bool) -> void:
 	sponsored = sponsor_funded
@@ -87,27 +92,33 @@ func skip_slot_reveal() -> bool:
 func slot_reveal_fraction() -> float:
 	return timeline.balance_progress()
 
+func slot_portrait() -> bool:
+	return size.x < size.y * 0.9
+
 func slot_rect() -> Rect2:
-	var width := minf(minf(size.x-16,(size.y-12)*1.70),1120)
-	var height := minf(size.y-12,width/(0.78 if size.x < size.y*0.9 else 1.35))
-	return Rect2((size-Vector2(width,height))/2,Vector2(width,height))
+	# Preserve the authored art aspect ratio to avoid skew and reel misalignment.
+	var aspect := 0.78 if slot_portrait() else 1.35
+	var width := maxf(0.0,minf(minf(size.x-16.0,(size.y-12.0)*aspect),1120.0))
+	var height := width / aspect
+	return Rect2((size-Vector2(width,height))*0.5,Vector2(width,height))
 
 func draw_slots() -> void:
 	var rect := slot_rect()
 	if not rect.has_area(): return
 	var tint := Color(machine_profile.get("color","685344")).lightened(0.28)
 	var window := Rect2(rect.position+rect.size*Vector2(0.10,0.23),rect.size*Vector2(0.80,0.48))
-	window.size.y -= maxf(0,24-rect.size.y*0.023)
-	var cell := window.size/3
+	var cell := window.size/3.0
 	apply_cabinet_impulse(rect)
 	draw_cabinet(rect,tint)
-	draw_marquee(rect,tint)
 	draw_reel_wells(window,tint)
-	draw_winning_lines(window,cell)
 	draw_reel_symbols(window,cell,tint)
 	draw_reel_depth(window,cell)
+	draw_reel_glass(rect)
+	draw_winning_lines(window,cell)
 	draw_line_markers(window,cell)
+	draw_marquee(rect,tint)
 	draw_result_plate(rect,window)
+	draw_win_fx(rect)
 	draw_meters(rect)
 	draw_particles(rect)
 	draw_set_transform(Vector2.ZERO)
@@ -127,8 +138,8 @@ func apply_cabinet_impulse(rect: Rect2) -> void:
 	draw_set_transform(rect.get_center()*(1-scale_value)+shake,0,Vector2.ONE*scale_value)
 
 func draw_cabinet(rect: Rect2, tint: Color) -> void:
-	panel(rect,Color("13171c"))
-	image("slots/slot_cabinet_frame.svg",rect)
+	var mode := "portrait" if slot_portrait() else "landscape"
+	draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+"slot_cabinet_"+mode+"_base.svg"),rect,false)
 	var state := timeline.cabinet_state()
 	var intensity := 0.32+sin(idle_time*1.2)*0.03
 	if state == "SPINNING": intensity = 0.58
@@ -157,7 +168,6 @@ func draw_trim_chase(rect: Rect2, age: float, level: int) -> void:
 		draw_circle(at,2.5 if level < 4 else 4,Color(GOLD,(0.2+wave*0.8)*envelope))
 
 func draw_marquee(rect: Rect2, tint: Color) -> void:
-	var marquee := Rect2(rect.position+rect.size*Vector2(0.04,0.02),rect.size*Vector2(0.92,0.16))
 	var title := str(machine_profile.get("name","PIT BOSS REELS")).to_upper()
 	if timeline.active:
 		if not timeline.revealed: title = "GOOD LUCK"
@@ -165,13 +175,23 @@ func draw_marquee(rect: Rect2, tint: Color) -> void:
 		elif int(timeline.info.level) >= 4: title = str(timeline.info.category)
 		elif timeline.info.positive: title = "NICE HIT"
 		elif int(timeline.info.level) == 1: title = "LINE HIT"
-	var pulse := 0.07+sin(idle_time*1.2)*0.02
-	if timeline.active: pulse = 0.18+sin(timeline.elapsed*(12 if timeline.phase == State.Phase.ANTICIPATION else 4))*0.06
-	panel(marquee,tint.darkened(0.72))
-	draw_rect(marquee.grow(2),Color(GOLD if timeline.strong_result() else tint,pulse),false,5)
-	var fs := clampi(int(rect.size.y*0.048),14,32)
-	centered(marquee.get_center()+Vector2(0,fs*0.15),title,fs,Color("fff0ce"))
-	centered(Vector2(rect.get_center().x,marquee.end.y-5),"FREE SPINS" if sponsored else "PIT BOSS / CLASSIC REELS",clampi(fs-10,10,15),tint.lightened(0.4))
+	var fs := clampi(int(rect.size.y*0.041),13,28)
+	var y := rect.position.y+rect.size.y*0.12
+	centered(Vector2(rect.get_center().x,y),title,fs,Color("fff1c9"))
+	centered(Vector2(rect.get_center().x,y+maxf(12.0,rect.size.y*0.035)),"FREE SPINS" if sponsored else "PIT BOSS / CLASSIC REELS",clampi(fs-12,9,15),tint.lightened(0.42))
+
+func draw_reel_glass(rect: Rect2) -> void:
+	var mode := "portrait" if slot_portrait() else "landscape"
+	draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+"slot_cabinet_"+mode+"_glass.svg"),rect,false)
+
+func draw_win_fx(rect: Rect2) -> void:
+	if reduced_motion or not timeline.active or not timeline.revealed or int(timeline.info.level) < 4: return
+	var age := timeline.elapsed-timeline.count_at
+	if age < 0.0 or age > 1.15: return
+	var alpha := clampf(age/0.18,0.0,1.0)*(1.0-smoothstep(0.6,1.15,age))
+	var diameter := minf(rect.size.x*0.45,rect.size.y*0.48)
+	var center := rect.position+rect.size*Vector2(0.5,0.47)
+	draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+"slot_jackpot_burst.svg"),Rect2(center-Vector2.ONE*diameter*0.5,Vector2.ONE*diameter),false,Color(1,1,1,alpha*0.8))
 
 func draw_reel_wells(window: Rect2, tint: Color) -> void:
 	panel(window.grow(7),tint.darkened(0.4))
@@ -221,15 +241,23 @@ func draw_neon_line(window: Rect2, cell: Vector2, index: int, progress: float, p
 func reel_offset(col: int, cell_height: float) -> float:
 	if not timeline.active: return 0.0
 	var end_time := float(timeline.ends[col])
-	var p := clampf(timeline.elapsed/end_time,0,1)
-	var eased := p*p*p*(p*(p*6-15)+10)
+	var p := clampf(timeline.elapsed/end_time,0.0,1.0)
+	# Spin-up, cruise, brake, and a small mechanical overshoot.
+	var travel := 0.0
+	if p < 0.16:
+		var t := p/0.16
+		travel = 0.12*t*t
+	elif p < 0.66:
+		travel = 0.12+(p-0.16)*1.25
+	else:
+		var t := (p-0.66)/0.34
+		travel = 0.745+0.255*(1.0-pow(1.0-t,2.0))
 	var target := int(round.stops[col])
 	var distance: float = float(initial_stops[col])-machine_profile.get("reel",CasinoTuning.SLOT_REEL).size()*3.0-target
-	if p < 1: return distance*(1-eased)
+	if p < 1.0: return distance*(1.0-travel)
 	var age := timeline.elapsed-end_time
 	if age >= State.SNAP_SECONDS or reduced_motion: return 0.0
-	# A 2-4 logical pixel overshoot, then a smaller counter-bounce.
-	return sin(age/State.SNAP_SECONDS*TAU)*(2.0+col)*exp(-age*12)/maxf(1,cell_height)
+	return sin(age/State.SNAP_SECONDS*TAU)*(2.0+col)*exp(-age*12.0)/maxf(1.0,cell_height)
 
 func draw_reel_symbols(window: Rect2, cell: Vector2, tint: Color) -> void:
 	var stops: Array = round.get("stops",[3,11,18])
@@ -256,11 +284,13 @@ func draw_reel_symbols(window: Rect2, cell: Vector2, tint: Color) -> void:
 			if age >= 0: brightness = 1.0+maxf(0,1-age/0.20)*0.18
 			var symbol_rect := Rect2(at-Vector2.ONE*extent*scale_value/2,Vector2.ONE*extent*scale_value)
 			clipped_symbol(symbol,symbol_rect,column,Color(brightness,brightness,brightness,0.84 if moving else 1))
-			if moving and timeline.elapsed < float(timeline.ends[col])-0.12:
-				clipped_symbol(symbol,Rect2(symbol_rect.position+Vector2(0,cell.y*0.12),symbol_rect.size),column,Color(1,1,1,0.14))
+			if moving and not reduced_motion and timeline.elapsed < float(timeline.ends[col])-0.12:
+				for trail in range(1,3):
+					clipped_symbol(symbol,Rect2(symbol_rect.position+Vector2(0,cell.y*0.09*trail),symbol_rect.size),column,Color(1,1,1,0.10/float(trail)))
 		var impact_age := timeline.elapsed-float(timeline.ends[col])
 		if timeline.active and impact_age >= 0 and impact_age < 0.18:
-			draw_rect(column,Color(tint,0.18*(1-impact_age/0.18)))
+			var strength := 1.0-impact_age/0.18
+			draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+"slot_stop_flash.svg"),column,false,Color(1,1,1,0.32*strength))
 
 func symbol_scale(age: float) -> float:
 	if reduced_motion: return 1.04
@@ -269,10 +299,10 @@ func symbol_scale(age: float) -> float:
 	return 1.04
 
 func draw_symbol_halo(at: Vector2, extent: float, color: Color, age: float) -> void:
-	var strength := 0.20+0.12*exp(-age*5)
-	draw_circle(at,extent*0.65,Color(color,strength*0.30))
-	draw_circle(at,extent*0.53,Color(color,strength))
-	draw_arc(at,extent*0.54,0,TAU,40,Color(color,0.50),2,true)
+	var strength := 0.20+0.12*exp(-age*5.0)
+	var glow_rect := Rect2(at-Vector2.ONE*extent*0.75,Vector2.ONE*extent*1.5)
+	draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+"slot_symbol_glow.svg"),glow_rect,false,Color(1,1,1,strength*2.0))
+	draw_arc(at,extent*0.54,0,TAU,40,Color(color,0.5),2,true)
 
 func clipped_symbol(symbol: int, rect: Rect2, column: Rect2, modulate: Color) -> void:
 	var visible_rect := rect.intersection(column)
@@ -353,15 +383,9 @@ func draw_particles(rect: Rect2) -> void:
 	if not timeline.active or reduced_motion: return
 	for i in range(particles.count):
 		if particles.ages[i] >= particles.lifetimes[i]: continue
-		var alpha := 1-particles.ages[i]/particles.lifetimes[i]
+		var alpha := 1.0-particles.ages[i]/particles.lifetimes[i]
 		var at := rect.position+particles.positions[i]*rect.size
-		var extent := clampf(rect.size.y*0.006,2,4)
-		var color := Color(LINE_COLORS[i%5] if particles.shapes[i] == 2 else GOLD,alpha)
-		if particles.shapes[i] == 2:
-			draw_line(at,at+Vector2(sin(i+particles.ages[i]*7),cos(i+particles.ages[i]*7))*extent*2,color,extent,true)
-		elif particles.shapes[i] == 1:
-			draw_circle(at,extent*1.3,color)
-			draw_arc(at,extent,0,TAU,12,Color("fff4cb",alpha),1)
-		else:
-			draw_line(at-Vector2(extent,0),at+Vector2(extent,0),color,1.5,true)
-			draw_line(at-Vector2(0,extent),at+Vector2(0,extent),color,1.5,true)
+		var extent := clampf(rect.size.y*0.009,3,7)
+		var asset := "slot_coin_particle.svg" if particles.shapes[i] == 1 else "slot_sparkle_particle.svg"
+		var diameter := extent*(3.6 if particles.shapes[i] == 1 else 2.8)
+		draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+asset),Rect2(at-Vector2.ONE*diameter/2.0,Vector2.ONE*diameter),false,Color(1,1,1,alpha))
