@@ -89,6 +89,18 @@ func view_checks(even: Dictionary) -> void:
 	view.render_current()
 	check(view.art.slot_textures.size() == 5 and view.art.slot_textures.all(func(texture): return texture is AtlasTexture and texture.atlas.resource_path.ends_with(".png")),"All five live reel symbols use imported premium PNG regions")
 	root.get_node("AudioManager").set_game_muted("slots", true)
+	var wallet_before := sim.owner_bankroll
+	view.bet = 5
+	view.cycle_slot_bet()
+	check(view.bet == 6,"BET advances by the machine denomination")
+	view.bet = 10
+	view.cycle_slot_bet()
+	check(view.bet == 5 and sim.owner_bankroll == wallet_before,"BET wraps maximum to minimum without placing a wager")
+	view.slot_lines = 1
+	for count in [3,5,1]:
+		view.cycle_slot_lines()
+		check(view.slot_lines == count,"Single LINES button advances and wraps to "+str(count))
+	view.slot_lines = 5
 	view.art.begin_slot_reveal()
 	view.result_pending = true
 	view.balance_before = Vector2(sim.owner_bankroll,sim.cash)
@@ -121,8 +133,8 @@ func view_checks(even: Dictionary) -> void:
 		check(view.art.round == even,"Resize preserves committed screen "+str(dimensions))
 		var cabinet: Rect2 = view.art.slot_rect()
 		check(is_equal_approx(cabinet.size.x/cabinet.size.y,0.78 if view.art.slot_portrait() else 1.35),"Authored cabinet proportions "+str(dimensions))
-		check(view.slot_spin.size.y >= 44 and view.controls.size.y <= view.controls_scroll.size.y,"Touch target and settings fit without clipping "+str(dimensions))
-		check(view.slot_spin.get_parent() == view.art and view.controls_scroll.get_parent() == view.art,"Controls belong to shared cabinet "+str(dimensions))
+		check([view.slot_spin,view.slot_bet_button,view.slot_lines_button].all(func(button): return button.size.x >= 44 and button.size.y >= 44),"All three controls retain touch target sizes "+str(dimensions))
+		check(view.art.get_children().filter(func(node): return node is Button).size() == 3 and not view.controls_scroll.visible,"Exactly three controls inside the shared cabinet "+str(dimensions))
 	view.open_rules("slots")
 	var before_rules := JSON.stringify(sim.snapshot())
 	view.press_slot_spin()

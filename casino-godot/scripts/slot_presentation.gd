@@ -4,6 +4,7 @@ const SlotAudio = preload("res://scripts/slot_audio.gd")
 const State = preload("res://scripts/slot_presentation_state.gd")
 const Particles = preload("res://scripts/slot_particles.gd")
 const SYMBOL_ASSETS := ["cherry","lemon","bell","bar","seven"]
+const LANDSCAPE_DECK_WIDTH := 180.0
 const PREMIUM_ASSETS := "casino_play/slots/premium/"
 const LINE_COLORS := [Color("ffd879"),Color("79d7ed"),Color("9fe8ad"),Color("df9cec"),Color("ffa685")]
 var machine_profile := {}
@@ -20,6 +21,10 @@ var slot_lines := 1
 var free_remaining := -1
 var last_win := 0.0
 var status_message := ""
+var limits_text := ""
+var portrait_layout := false
+var landscape_layout := false
+var cabinet_width := 900.0
 # Crop atlas remnants and excess transparent padding without altering the supplied PNGs.
 const SYMBOL_REGIONS := [Rect2(72,92,372,328),Rect2(94,104,325,304),Rect2(104,96,328,320),Rect2(109,154,341,203),Rect2(84,112,344,315)]
 var slot_textures: Array[Texture2D] = []
@@ -108,48 +113,61 @@ func art_region(asset: String, region: Rect2) -> Texture2D:
 	texture.filter_clip = true
 	return texture
 
-func slot_side_controls() -> bool:
-	return size.x > size.y*1.5 and size.y < 500
-
 func slot_portrait() -> bool:
-	return not slot_side_controls() and size.x < size.y*0.9
+	return portrait_layout
+
+func slot_deck_height() -> float:
+	return 0.0 if landscape_layout else 104.0 if slot_portrait() else 120.0
+
+func slot_content_height(available: Vector2) -> float:
+	if landscape_layout:
+		cabinet_width = maxf(0,minf((available.y-12)*1.35,available.x-8-LANDSCAPE_DECK_WIDTH))
+		return cabinet_width/1.35+12
+	var aspect := 0.78 if slot_portrait() else 1.35
+	var minimum_width := 270.0 if slot_portrait() else 500.0
+	var fit_width := (available.y-slot_deck_height()-12)*aspect
+	cabinet_width = maxf(0,minf(1120,minf(available.x-16,maxf(minimum_width,fit_width))))
+	return cabinet_width/aspect+slot_deck_height()+12
 
 func slot_rect() -> Rect2:
 	var aspect := 0.78 if slot_portrait() else 1.35
-	var deck := Vector2(clampf(size.x*0.26,210,248),0) if slot_side_controls() else Vector2(0,130)
-	var width := maxf(0,minf(1120,minf(size.x-16-deck.x,(size.y-12-deck.y)*aspect)))
-	var extent := Vector2(width,width/aspect)
-	return Rect2((size-extent-deck)*0.5,extent)
+	var extent := Vector2(cabinet_width,cabinet_width/aspect)
+	return Rect2(Vector2((size.x-extent.x-(LANDSCAPE_DECK_WIDTH if landscape_layout else 0))*0.5,maxf(6,(size.y-extent.y-slot_deck_height())*0.5)),extent)
 
 func slot_deck_rect() -> Rect2:
 	var rect := slot_rect()
-	if slot_side_controls():
-		return Rect2(Vector2(rect.end.x-8,rect.position.y+rect.size.y*0.16),Vector2(clampf(size.x*0.26,210,248)+8,rect.size.y*0.82))
-	return Rect2(Vector2(rect.position.x+rect.size.x*0.05,rect.end.y-6),Vector2(rect.size.x*0.9,136))
+	if landscape_layout:
+		return Rect2(rect.position+rect.size*Vector2(0.925,0.11),Vector2(LANDSCAPE_DECK_WIDTH,rect.size.y*0.83))
+	return Rect2(Vector2(rect.position.x,rect.position.y+rect.size.y*0.92),Vector2(rect.size.x,slot_deck_height()))
 
 func slot_spin_rect() -> Rect2:
-	var rect := slot_rect()
-	if slot_side_controls():
-		var deck := slot_deck_rect()
-		return Rect2(deck.position+Vector2(16,12),Vector2(deck.size.x-28,48))
-	var extent := Vector2(rect.size.x*0.30,clampf(rect.size.y*0.105,44,72))
-	return Rect2(rect.position+rect.size*Vector2(0.735,0.825)-extent*0.5,extent)
-
-func slot_settings_rect() -> Rect2:
 	var deck := slot_deck_rect()
-	if slot_side_controls():
-		return Rect2(deck.position+Vector2(16,68),Vector2(deck.size.x-28,maxf(0,deck.size.y-80)))
-	return Rect2(deck.position+Vector2(10,9),deck.size-Vector2(20,16))
+	var diameter := 84.0 if landscape_layout else 88.0 if slot_portrait() else 108.0
+	var center := deck.get_center()
+	return Rect2(center-Vector2.ONE*diameter/2,Vector2.ONE*diameter)
+
+func slot_bet_rect() -> Rect2:
+	var deck := slot_deck_rect()
+	if landscape_layout: return Rect2(deck.position+Vector2(12,4),Vector2(deck.size.x-24,48))
+	var extent := Vector2(deck.size.x*0.18 if slot_portrait() else minf(180,deck.size.x*0.24),56)
+	return Rect2(Vector2(deck.position.x+deck.size.x*(0.14 if slot_portrait() else 0.16),deck.get_center().y-extent.y/2),extent)
+
+func slot_lines_rect() -> Rect2:
+	var deck := slot_deck_rect()
+	var extent := slot_bet_rect().size
+	if landscape_layout: return Rect2(Vector2(deck.position.x+12,deck.end.y-52),extent)
+	return Rect2(Vector2(deck.end.x-deck.size.x*(0.14 if slot_portrait() else 0.16)-extent.x,deck.get_center().y-extent.y/2),extent)
+
+func slot_window_rect() -> Rect2:
+	var rect := slot_rect()
+	return Rect2(rect.position+rect.size*Vector2(0.10,0.23),rect.size*Vector2(0.80,0.48))
 
 func draw_slots() -> void:
 	var rect := slot_rect()
 	if not rect.has_area(): return
 	var tint := Color(machine_profile.get("color","685344")).lightened(0.28)
-	var window := Rect2(rect.position+rect.size*Vector2(0.10,0.23),rect.size*Vector2(0.80,0.48))
+	var window := slot_window_rect()
 	var cell := window.size/3.0
-	var deck_skin := PitBoss.box(Color("10151b"),Color("977336"),8)
-	deck_skin.set_corner_radius_all(12)
-	draw_style_box(deck_skin,slot_deck_rect())
 	draw_cabinet(rect)
 	draw_reel_wells(window)
 	draw_win_fx(window)
@@ -165,7 +183,25 @@ func draw_slots() -> void:
 
 func draw_cabinet(rect: Rect2) -> void:
 	var mode := "portrait" if slot_portrait() else "landscape"
-	draw_texture_rect(PitBoss.texture(PREMIUM_ASSETS+"slot_cabinet_"+mode+"_base.png"),rect,false)
+	var texture := PitBoss.texture(PREMIUM_ASSETS+"slot_cabinet_"+mode+"_base.png")
+	var native := texture.get_size()
+	var scale_value := rect.size.x/native.x
+	if landscape_layout:
+		# A wider illustrated shell, rather than a separate right-hand software panel.
+		var cut := native.x*0.925
+		draw_texture_rect_region(texture,Rect2(rect.position,Vector2(cut*scale_value,rect.size.y)),Rect2(0,0,cut,native.y))
+		# Only the neutral casing material is extended; the illustration and caps
+		# keep their native proportions. A single material column avoids tile seams.
+		draw_texture_rect_region(texture,Rect2(rect.position+Vector2(cut*scale_value,0),Vector2(LANDSCAPE_DECK_WIDTH,rect.size.y)),Rect2(cut-1,0,1,native.y))
+		draw_texture_rect_region(texture,Rect2(rect.position+Vector2(cut*scale_value+LANDSCAPE_DECK_WIDTH,0),Vector2((native.x-cut)*scale_value,rect.size.y)),Rect2(cut,0,native.x-cut,native.y))
+	else:
+		var cut := native.y*0.92
+		# Uniformly scaled illustration with a neutral casing material insert before
+		# the original meter/footer. No separate deck border or stretched cabinet.
+		draw_texture_rect_region(texture,Rect2(rect.position,Vector2(rect.size.x,cut*scale_value)),Rect2(Vector2.ZERO,Vector2(native.x,cut)))
+		var deck := slot_deck_rect()
+		draw_texture_rect_region(texture,deck,Rect2(0,cut-1,native.x,1))
+		draw_texture_rect_region(texture,Rect2(deck.position+Vector2(0,deck.size.y),Vector2(rect.size.x,(native.y-cut)*scale_value)),Rect2(0,cut,native.x,native.y-cut))
 	var intensity := 0.10 if reduced_motion else 0.10+sin(idle_time*1.2)*0.04
 	if timeline.active and not reduced_motion:
 		intensity = 0.32+sin(timeline.elapsed*(8 if timeline.phase == State.Phase.ANTICIPATION else 3))*0.10
@@ -201,8 +237,15 @@ func draw_marquee(rect: Rect2, tint: Color) -> void:
 func draw_reel_glass(rect: Rect2) -> void:
 	var mode := "portrait" if slot_portrait() else "landscape"
 	var texture := PitBoss.texture(PREMIUM_ASSETS+"slot_cabinet_"+mode+"_glass.png")
-	# Exclude baked decorative dots: runtime markers represent the actual selected lines.
-	draw_texture_rect_region(texture,Rect2(rect.position+rect.size*Vector2(0.09,0.22),rect.size*Vector2(0.82,0.50)),Rect2(texture.get_size()*Vector2(0.09,0.22),texture.get_size()*Vector2(0.82,0.50)))
+	var native := texture.get_size()
+	var window := slot_window_rect()
+	# Only the two mechanical rails are needed. The base already supplies the
+	# outer bezel; the full overlay duplicated it and masked the outside rows.
+	for col in [1,2]:
+		var x: float = native.x*(0.10+int(col)*0.80/3.0)
+		var source := Rect2(x-5,native.y*0.235,10,native.y*0.47)
+		var extent := source.size*(rect.size.x/native.x)
+		draw_texture_rect_region(texture,Rect2(Vector2(window.position.x+window.size.x*col/3.0-extent.x/2,window.get_center().y-extent.y/2),extent),source)
 
 func draw_win_fx(window: Rect2) -> void:
 	if reduced_motion or not timeline.active or not timeline.revealed or int(timeline.info.level) < 4: return
@@ -299,11 +342,6 @@ func draw_reel_symbols(window: Rect2, cell: Vector2) -> void:
 			if age >= 0: brightness = 1.0+maxf(0,1-age/0.20)*0.18
 			var texture_size := slot_textures[symbol].get_size()
 			var symbol_size := texture_size*(extent*scale_value/maxf(texture_size.x,texture_size.y))
-			if not moving:
-				# The painted glass masks the outer 4.5% at each end of the well.
-				# Keep edge-row highlights inside that opening, including their pop.
-				var clearance := 2*minf(at.y-window.position.y-window.size.y*0.045,window.end.y-window.size.y*0.045-at.y)
-				symbol_size *= minf(1.0,maxf(0,clearance)/symbol_size.y)
 			var symbol_rect := Rect2(at-symbol_size/2,symbol_size)
 			clipped_symbol(symbol,symbol_rect,column,Color(brightness,brightness,brightness,0.84 if moving else 1))
 			if moving and not reduced_motion and timeline.elapsed < float(timeline.ends[col])-0.12:
@@ -350,20 +388,20 @@ func draw_line_markers(window: Rect2, cell: Vector2) -> void:
 	for index in range(active_count):
 		var path: Array = CasinoTuning.SLOT_LINES[index]
 		var selected_line: bool = selected >= 0 and int(timeline.wins[selected].index) == index
-		var color := Color(LINE_COLORS[index],0.95 if selected_line else 0.50)
+		var color := Color(LINE_COLORS[index],1.0 if selected_line else 0.85)
 		for side in range(2):
 			var row := int(path[0 if side == 0 else 2])
 			var y := window.position.y+(row+0.5)*cell.y
 			# Separate same-row markers: center=1, top=2/4, bottom=3/5.
 			if index in [1,2]: y -= minf(9,cell.y*0.14)
 			if index in [3,4]: y += minf(9,cell.y*0.14)
-			var x := window.position.x-cell.x*0.13 if side == 0 else window.end.x+cell.x*0.13
-			draw_circle(Vector2(x,y),3.5 if selected_line else 2.5,color)
-			centered(Vector2(x+(-8 if side == 0 else 8),y+3),str(index+1),10,color)
+			var x := window.position.x+7 if side == 0 else window.end.x-7
+			draw_circle(Vector2(x,y),6,Color("131820"))
+			centered(Vector2(x,y+3),str(index+1),10,color)
 
 func draw_result_plate(rect: Rect2) -> void:
-	# Use the lower panel already painted into the cabinet. Spin occupies its right side.
-	var area := Rect2(rect.position+rect.size*Vector2(0.12,0.765),rect.size*Vector2(0.76 if slot_side_controls() else 0.42,0.13))
+	# The full dark-glass plaque belongs exclusively to the result.
+	var area := Rect2(rect.position+rect.size*Vector2(0.12,0.765),rect.size*Vector2(0.76,0.13))
 	var color := GOLD if timeline.info.get("positive",false) else Color("dfd6c4")
 	if not status_message.is_empty():
 		var headline := "PAUSED" if status_message == "PAUSED" else "WAGER UNAVAILABLE"
@@ -372,7 +410,7 @@ func draw_result_plate(rect: Rect2) -> void:
 		fit_text(Rect2(area.position+Vector2(0,area.size.y*0.55),Vector2(area.size.x,area.size.y*0.45)),detail,10,color)
 		return
 	if not timeline.revealed:
-		fit_text(area,"REELS IN MOTION" if timeline.active else "READY TO SPIN",14,color)
+		fit_text(area,"REELS IN MOTION" if timeline.active else "READY TO SPIN",22,color)
 		return
 	var info: Dictionary = timeline.info
 	var shown := float(info.credit)*(1-pow(1-timeline.count_progress(),3))
@@ -391,11 +429,10 @@ func fit_text(area: Rect2, value: String, desired_size: int, color: Color) -> vo
 	centered(area.get_center()+Vector2(0,(font.get_ascent(fs)-font.get_descent(fs))*0.5),value,fs,color)
 
 func draw_meters(rect: Rect2) -> void:
-	var y := rect.end.y-rect.size.y*0.028
-	var fs := clampi(int(rect.size.y*0.030),11,19)
-	centered(Vector2(rect.position.x+rect.size.x*0.20,y),"%d FREE LEFT" % free_remaining if sponsored else "BET $%.2f" % wager,fs)
-	centered(Vector2(rect.get_center().x,y),"LINES %d" % slot_lines,fs)
-	centered(Vector2(rect.position.x+rect.size.x*0.80,y),"LAST $%.2f" % last_win,fs)
+	var y := rect.position.y+rect.size.y*0.925+slot_deck_height()
+	var area := Rect2(Vector2(rect.position.x+rect.size.x*0.11,y),Vector2(rect.size.x*0.78,rect.size.y*0.052))
+	fit_text(Rect2(area.position,Vector2(area.size.x*0.52,area.size.y)),"%d FREE LEFT" % free_remaining if sponsored else limits_text,12,GOLD)
+	fit_text(Rect2(area.position+Vector2(area.size.x*0.52,0),Vector2(area.size.x*0.48,area.size.y)),"LAST WIN $%.2f" % last_win,12,GOLD)
 
 func draw_particles(rect: Rect2, window: Rect2) -> void:
 	if not timeline.active or reduced_motion: return

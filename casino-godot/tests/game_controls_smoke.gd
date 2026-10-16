@@ -35,13 +35,12 @@ func run() -> void:
 		view.render_current()
 		await settle()
 		if kind == "slots":
-			check(view.slot_steps() == [1, 5, 10, 25, 50, 100, 1000], "Affordable slot units")
-			view.cycle_slot_step()
 			view.bet = 10
-			view.change_slot_bet(1)
-			check(view.bet == 15 and view.slot_step == 5, "Plus adds selected unit")
-			view.change_slot_bet(-1)
-			check(view.bet == 10, "Minus subtracts selected unit")
+			view.cycle_slot_bet()
+			check(view.bet == 11,"Single BET button advances the private wager")
+			view.bet = sim.owner_bankroll
+			view.cycle_slot_bet()
+			check(view.bet == 1,"Maximum wager wraps to private minimum")
 			check(not view.actions.get_children().any(func(node): return node is SpinBox), "No slot wager text editor")
 			view.toggle_audio()
 			check(root.get_node("AudioManager").is_game_muted("slots") and view.audio_button.icon != null, "Header audio icon mutes")
