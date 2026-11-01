@@ -609,3 +609,10 @@ html[data-theme="dark"] .sun-icon { display: block; }
 .casino-dice span:last-child { transform: rotate(12deg); }
 .casino-preview b { font-size: 10px; letter-spacing: 2px; color: #dbe5ed; }
 .casino-preview-stats { display: flex; gap: 30px; font-size: 9px; letter-spacing: 2px; color: #57d6b1; }
+
+/* Tiny Deity: original circular-world illustration and launcher. */
+.tiny-deity-visual { position: relative; overflow: hidden; background: #cce6dc; padding: 0; }
+.tiny-deity-visual > img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .4s ease; }
+.tiny-deity-visual:hover > img { transform: scale(1.025); }
+.tiny-deity-badge { position: absolute; bottom: 18px; left: 22px; padding: 7px 10px; border-radius: 6px; background: #f8f5deed; color: #74835e; font-size: 9px; letter-spacing: 1.5px; font-weight: 700; }
+.tiny-deity-open { position: absolute; top: 20px; right: 20px; color: #617f63; background: #fbf8e6b3; }

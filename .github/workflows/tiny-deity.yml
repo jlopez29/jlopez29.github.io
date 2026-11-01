@@ -1,0 +1,32 @@
+name: Tiny Deity checks
+on:
+  pull_request:
+    paths: ['tiny-deity-src/**', 'tiny-deity/**', 'package*.json', '.github/workflows/tiny-deity.yml']
+  push:
+    paths: ['tiny-deity-src/**', 'tiny-deity/**', 'package*.json', '.github/workflows/tiny-deity.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  game:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tiny-deity-src/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build
+      - run: npx --prefix tiny-deity-src playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tiny-deity-browser-results
+          path: tiny-deity-src/test-results/
+          retention-days: 7

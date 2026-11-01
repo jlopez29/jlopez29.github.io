@@ -3,3 +3,9 @@
 /casino-debug/
 # Local Windows executable export.
 /casino-windows/
+
+# Tiny Deity development dependencies and test artifacts
+node_modules/
+tiny-deity-src/node_modules/
+tiny-deity-src/test-results/
+tiny-deity-src/playwright-report/

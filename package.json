@@ -1,0 +1,4 @@
+{
+  "name":"jesse-lopez-portfolio", "private":true,
+  "scripts":{"dev":"npm --prefix tiny-deity-src run dev","build":"npm --prefix tiny-deity-src run build","test":"npm --prefix tiny-deity-src test","lint":"npm --prefix tiny-deity-src run lint","test:e2e":"npm --prefix tiny-deity-src run test:e2e","postinstall":"npm --prefix tiny-deity-src ci"}
+}

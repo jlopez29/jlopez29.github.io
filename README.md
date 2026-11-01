@@ -163,3 +163,9 @@ Project-specific READMEs contain the detailed feature and setup notes. ReCert
 Ready is independent educational practice, not medical advice or an NCCPA product;
 its AI-authored content requires qualified clinician review before high-stakes
 use. LoL strategy lessons also require review as game patches change.
+
+## Tiny Deity
+
+A new playable planet simulation is available from the main-page project grid at [`tiny-deity/`](tiny-deity/). Make miracles, inspire followers, sculpt the circular world, and grow a village with construction, farming, worship, and saved progress. Source and development instructions are in [`tiny-deity-src/README.md`](tiny-deity-src/README.md); the exact shipped scope is tracked in [`tiny-deity-src/PROGRESS.md`](tiny-deity-src/PROGRESS.md).
+
+Run `npm install` and `npm run dev` from the repository root. `npm run build` regenerates the static GitHub Pages release in `tiny-deity/`.
