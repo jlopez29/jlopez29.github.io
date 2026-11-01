@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createWorld } from "../src/game/world";
+import { distance, ground, radial, signedDistance } from "../src/game/geometry";
+import { step } from "../src/game/simulation";
 import { redistributeWater } from "../src/game/geometry";
 import { materialProduction } from "../src/game/economy";
 import { cast, offline, purchase } from "../src/game/simulation";
@@ -74,5 +76,62 @@ describe("V4 environmental consistency and rewards", () => {
     offline(w, 100);
     expect(w.resources.food).toBeGreaterThan(before);
     expect(w.followers[0].energy).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("V4 follower passing lanes", () => {
+  it("separates oncoming people before crossing and restores the main path", () => {
+    const w = createWorld();
+    w.settings.autonomy = false;
+    w.settings.events = false;
+    const [left, right] = w.followers;
+    left.angle = 1.1;
+    right.angle = 1.4;
+    left.task = right.task = "wandering";
+    left.facing = 1;
+    right.facing = -1;
+    let passing = false;
+    let crossed = false;
+    let minClearance = Infinity;
+    for (let i = 0; i < 140; i++) {
+      step(w, 0.05);
+      if (left.lane || right.lane) {
+        passing = true;
+        const a = radial(left.angle, ground(w, left.angle) - left.lane);
+        const b = radial(right.angle, ground(w, right.angle) - right.lane);
+        minClearance = Math.min(
+          minClearance,
+          Math.hypot(a.x - b.x, a.y - b.y),
+        );
+      }
+      crossed ||= signedDistance(left.angle, right.angle) > 0;
+    }
+    expect(passing).toBe(true);
+    expect(crossed).toBe(true);
+    expect(minClearance).toBeGreaterThan(30);
+    expect(distance(left.angle, right.angle) * w.radius).toBeGreaterThan(100);
+    expect(left.lane).toBe(0);
+    expect(right.lane).toBe(0);
+  });
+
+  it("routes a walker around a stationary person rather than through them", () => {
+    const w = createWorld();
+    w.settings.autonomy = false;
+    const [parked, walker] = w.followers;
+    parked.angle = 1;
+    parked.task = "observing";
+    parked.timer = 20;
+    walker.angle = 1.22;
+    walker.task = "wandering";
+    walker.facing = -1;
+    let passed = false;
+    for (let i = 0; i < 110; i++) {
+      step(w, 0.05);
+      if (walker.angle < parked.angle) passed = true;
+      if (distance(parked.angle, walker.angle) * w.radius < 28) {
+        expect(walker.lane).toBeGreaterThanOrEqual(45);
+      }
+    }
+    expect(passed).toBe(true);
   });
 });
