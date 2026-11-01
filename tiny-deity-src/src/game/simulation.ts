@@ -522,6 +522,17 @@ function walk(w: World, f: Follower, target: number, dt: number) {
       // No same-lane tailgating if both travel at similar speeds.
       amount = Math.min(amount, Math.max(0, (ahead - 29) / radius));
     }
+    // Multiple passers on the inner path also keep a safe following gap.
+    if (
+      moving &&
+      f.lane > 0 &&
+      other.lane > 0 &&
+      other.facing === direction &&
+      ahead > 0 &&
+      ahead < 32
+    ) {
+      amount = Math.min(amount, Math.max(0, (ahead - 29) / radius));
+    }
   }
   f.lane = passing ? 48 : 0;
   f.angle = wrap(f.angle + direction * amount);
