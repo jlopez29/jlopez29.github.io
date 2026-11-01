@@ -83,3 +83,33 @@ export function basinCapacity(w: World, index: number): number {
   }
   return clamp(Math.min(left, right) - h, 0, 65);
 }
+
+/** Conservatively redistribute pond water toward a shared downhill surface. */
+export function redistributeWater(w: World, passes = 4) {
+  const n = w.terrain.length;
+  const limits = w.terrain.map((_, i) => basinCapacity(w, i));
+  for (let pass = 0; pass < passes; pass++) {
+    const volumes = w.terrain.map((t) => t.water);
+    const changes = new Array<number>(n).fill(0);
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const difference =
+        w.terrain[i].height + volumes[i] -
+        (w.terrain[j].height + volumes[j]);
+      if (Math.abs(difference) < 0.05) continue;
+      const source = difference > 0 ? i : j;
+      const destination = difference > 0 ? j : i;
+      const flow = Math.min(
+        Math.max(0, volumes[source] + changes[source]),
+        Math.max(0, limits[destination] - volumes[destination] - changes[destination]),
+        Math.abs(difference) * 0.3,
+      );
+      if (flow <= 0) continue;
+      changes[source] -= flow;
+      changes[destination] += flow;
+    }
+    for (let i = 0; i < n; i++) {
+      w.terrain[i].water = Math.max(0, volumes[i] + changes[i]);
+    }
+  }
+}
