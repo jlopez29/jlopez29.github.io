@@ -115,10 +115,10 @@ export function treeTexture(variant: number): Texture {
     line(c, 49, 91, 67, 67, "#997351", 5);
     const colors =
       variant === 2
-        ? ["#c5b264", "#b8bb68", "#d3c17b"]
+        ? ["#248e42", "#40b94a", "#86e84f"]
         : variant === 1
-          ? ["#559578", "#75ab80", "#97bf87"]
-          : ["#639b63", "#8bb471", "#b1c87c"];
+          ? ["#126b49", "#218e42", "#68d745"]
+          : ["#197f3e", "#39ad42", "#8be343"];
     if (variant === 1) {
       path(
         c,
@@ -132,7 +132,7 @@ export function treeTexture(variant: number): Texture {
           [78, 63],
         ],
         colors[0],
-        "#4b7a60",
+        "#155c3a",
       );
       path(
         c,
@@ -155,9 +155,9 @@ export function treeTexture(variant: number): Texture {
         "",
       );
     } else {
-      ellipse(c, 31, 66, 25, 29, colors[0], "#578059");
-      ellipse(c, 61, 58, 25, 31, colors[1], "#578059");
-      ellipse(c, 44, 35, 29, 31, colors[1], "#578059");
+      ellipse(c, 31, 66, 25, 29, colors[0], "#185f35");
+      ellipse(c, 61, 58, 25, 31, colors[1], "#185f35");
+      ellipse(c, 44, 35, 29, 31, colors[1], "#185f35");
       ellipse(c, 35, 28, 17, 15, colors[2]);
       ellipse(c, 63, 55, 12, 17, colors[2]);
       ellipse(c, 22, 61, 10, 12, colors[1]);
@@ -204,12 +204,12 @@ export function rockTexture(): Texture {
 }
 export function followerTexture(appearance: number, arms = false): Texture {
   const coats = [
-    "#e29a65",
-    "#879bbb",
-    "#b197ba",
-    "#9aa86d",
-    "#db8790",
-    "#76a79d",
+    "#f78a48",
+    "#448de0",
+    "#ad75de",
+    "#68bf47",
+    "#ef6485",
+    "#2db9a0",
   ];
   return canvas(40, 62, (c) => {
     ellipse(c, 20, 59, 13, 3, "#38574628");
@@ -581,8 +581,8 @@ export function buildingTexture(type: BuildingType): Texture {
 }
 export function cloudTexture(dark = false): Texture {
   return canvas(180, 95, (c) => {
-    const col = dark ? "#91a5b0" : "#fffdf0",
-      shade = dark ? "#7b929e" : "#e2f1e8";
+    const col = dark ? "#91a5b0" : "#ffffff",
+      shade = dark ? "#7b929e" : "#c8eafb";
     ellipse(c, 90, 67, 81, 22, shade);
     ellipse(c, 45, 51, 32, 26, col);
     ellipse(c, 82, 37, 39, 34, col);
@@ -606,11 +606,11 @@ export function sunTexture(): Texture {
         72 + Math.sin(a) * 43,
         72 + Math.cos(a) * 51,
         72 + Math.sin(a) * 51,
-        "#edc66e",
+        "#ffc52e",
         3,
       );
     }
-    ellipse(c, 72, 72, 32, 32, "#f6d77f", "#e1b46a");
+    ellipse(c, 72, 72, 32, 32, "#ffdb43", "#efac21");
     ellipse(c, 64, 68, 1.7, 2.3, "#977a4e");
     ellipse(c, 80, 68, 1.7, 2.3, "#977a4e");
     c.beginPath();

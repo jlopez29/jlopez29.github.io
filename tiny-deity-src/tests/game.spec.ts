@@ -26,15 +26,16 @@ test("main page launches the playable game; planet, navigation, and direct rain 
   await expect(page.locator("canvas")).toBeVisible();
   await page.waitForTimeout(1700);
   await expect(
-    page.getByRole("heading", { name: "Clover", exact: true }),
+    page.getByRole("heading", { name: "Clover · tiny deity", exact: true }),
   ).toBeVisible();
   await expect(page.getByTestId("mana")).toContainText("10.0");
+  await page.getByRole("button", { name: "Weather", exact: true }).click();
   await page.getByRole("button", { name: "Rain", exact: true }).click();
   const canvas = page.locator("canvas"),
     box = (await canvas.boundingBox())!;
   await page.mouse.click(
     box.x + box.width * 0.5,
-    box.y + box.height * 0.43 - 4,
+    box.y + box.height * 0.17 - 4,
   );
   await expect(page.getByTestId("mana")).toContainText("9.");
   await page.getByRole("button", { name: "Rotate planet left" }).click();
@@ -53,6 +54,7 @@ test("a follower builds and operates a farm, collects gold, and survives save/re
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await start(page);
+  await page.getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("button", { name: /followers.*curious souls/ }).click();
   await page.getByRole("button", { name: "Pip Curious inhabitant" }).click();
   await page.getByRole("button", { name: "Rain on Pip" }).click();
@@ -68,15 +70,19 @@ test("a follower builds and operates a farm, collects gold, and survives save/re
   await page.getByRole("button", { name: "Close panel" }).click();
   await page.getByRole("button", { name: "Build something" }).click();
   await page.getByRole("button", { name: /Sunpatch farm/ }).click();
+  await page.getByRole("button", { name: "Return to home view" }).click();
+  await page.waitForTimeout(1200);
+  await closeLevel(page);
   const box = (await page.locator("canvas").boundingBox())!;
   await page.mouse.click(
-    box.x + box.width / 2 + 175,
-    box.y + box.height * 0.43 + 30,
+    box.x + box.width / 2 + Math.sin(0.6) * box.height * 0.34,
+    box.y + box.height * 0.51 - Math.cos(0.6) * box.height * 0.34,
   );
   await expect(
     page.getByRole("heading", { name: "Sunpatch farm", exact: true }),
   ).toBeVisible();
-  await page.getByLabel("Assign available follower").selectOption({ index: 1 });
+  const assignment = page.getByLabel("Assign available follower");
+  if (await assignment.isVisible()) await assignment.selectOption({ index: 1 });
   await expect(
     page.getByText("UNDER CONSTRUCTION", { exact: false }),
   ).toHaveCount(0, { timeout: 35000 });
@@ -95,6 +101,7 @@ test("a follower builds and operates a farm, collects gold, and survives save/re
   await expect(page.getByText("Saved on this device").first()).toBeVisible();
   await page.reload();
   await expect(page.locator("canvas")).toBeVisible();
+  await page.getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("button", { name: /followers.*curious souls/ }).click();
   await page.getByRole("button", { name: /Pip/ }).click();
   await expect(page.getByLabel("Assign follower to building")).toHaveValue(/b/);
@@ -109,7 +116,7 @@ test("mobile keeps primary controls visible and supports touch rotation and pinc
     page.getByRole("button", { name: "Build something" }),
   ).toBeInViewport();
   await expect(
-    page.getByRole("button", { name: "Rain", exact: true }),
+    page.getByRole("button", { name: "Weather", exact: true }),
   ).toBeInViewport();
   await expect(page.getByTestId("gold")).toBeInViewport();
   await expect(

@@ -56,6 +56,9 @@ export interface Terrain {
   harvesting: number;
 }
 export interface Follower {
+  manual?: boolean;
+  jobCooldown?: number;
+  returnManual?: boolean;
   id: string;
   name: string;
   angle: number;

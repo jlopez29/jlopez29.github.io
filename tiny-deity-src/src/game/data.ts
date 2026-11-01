@@ -190,14 +190,14 @@ export const POWERS: Record<
   raise: {
     name: "Raise land",
     cost: 1,
-    level: 2,
+    level: 1,
     hint: "Drag upward to sculpt a rolling hill.",
     icon: "raise",
   },
   lower: {
     name: "Lower land",
     cost: 1,
-    level: 2,
+    level: 1,
     hint: "Make a valley. Rain can fill its basin.",
     icon: "lower",
   },
@@ -240,6 +240,15 @@ export interface Quest {
   gold: number;
 }
 export const QUESTS: Quest[] = [
+  {
+    id: "sculpt-v3",
+    name: "Shape a little wonder",
+    description: "Open Terrain and drag to make a hill or valley.",
+    target: 1,
+    value: (w) => w.stats.terraforms,
+    reward: 10,
+    gold: 15,
+  },
   {
     id: "rain",
     name: "A little rain, a little faith",

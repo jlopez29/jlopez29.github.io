@@ -55,6 +55,9 @@ export function addFollower(w: World, angle: number, faith = 0): Follower {
     faith,
     task: "wandering",
     assigned: null,
+    manual: false,
+    jobCooldown: 0,
+    returnManual: false,
     slot: null,
     facing: 1,
     lane: 0,
@@ -116,7 +119,7 @@ export function createWorld(seed = 19207, demo = false): World {
           : home
             ? 0.12
             : 0.15 + rng() * 0.2,
-        water: 0,
+        water: pond * 18,
         fire: 0,
         wood: forest ? 4 : 0.2,
         stone: rocky ? 6 : 0.1,
@@ -146,7 +149,9 @@ export function createWorld(seed = 19207, demo = false): World {
     effects: [],
     settings: {
       sound: false,
-      reduced: false,
+      reduced:
+        typeof matchMedia !== "undefined" &&
+        matchMedia("(prefers-reduced-motion: reduce)").matches,
       classic: false,
       autonomy: true,
       seasons: false,
