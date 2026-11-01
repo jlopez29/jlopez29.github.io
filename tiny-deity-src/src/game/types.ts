@@ -10,6 +10,8 @@ export type Power =
   | "resurrect";
 export type Tool = "hand" | Power;
 export type BuildingType =
+  | "logging"
+  | "collector"
   | "shrine"
   | "farm"
   | "tent"
@@ -23,6 +25,11 @@ export type BuildingType =
   | "observatory"
   | "temple";
 export type Task =
+  | "idle"
+  | "carried"
+  | "traveling"
+  | "seekingResources"
+  | "fleeing"
   | "wandering"
   | "observing"
   | "working"
@@ -43,6 +50,10 @@ export interface Terrain {
   water: number;
   fire: number;
   rock: number;
+  wood: number;
+  stone: number;
+  regrowth: number;
+  harvesting: number;
 }
 export interface Follower {
   id: string;
@@ -52,11 +63,15 @@ export interface Follower {
   appearance: number;
   age: "adult";
   energy: number;
+  hunger: number;
   happiness: number;
   comfort: number;
   faith: number;
   task: Task;
   assigned: string | null;
+  slot: number | null;
+  facing: number;
+  lane: number;
   returnTo: string | null;
   speed: number;
   proficiency: number;
@@ -80,6 +95,7 @@ export interface Effect {
   type: Power | "coin" | "heart" | "rune";
   angle: number;
   life: number;
+  label?: string;
 }
 export interface Stats {
   miracles: number;
@@ -91,6 +107,11 @@ export interface Stats {
   converted: number;
   discoveries: number;
   worship: number;
+  gatheredWood: number;
+  loggedWood: number;
+  forestRain: number;
+  explored: number;
+  farmedFood: number;
 }
 export interface Settings {
   sound: boolean;
@@ -102,8 +123,12 @@ export interface Settings {
   debug: boolean;
   events: boolean;
 }
+export type Resource = "wood" | "stone" | "water" | "food";
+export type Inventory = Record<Resource, number>;
 export interface World {
-  version: 1;
+  version: 2;
+  targetRadius: number;
+  legacy: boolean;
   seed: number;
   name: string;
   time: number;
@@ -113,6 +138,13 @@ export interface World {
   terrain: Terrain[];
   followers: Follower[];
   buildings: Building[];
+  resources: Inventory;
+  capacity: Inventory;
+  produced: Inventory;
+  consumed: Inventory;
+  resourceStats: Inventory;
+  gatherAt: number;
+  waitingFollowers: number;
   gold: number;
   mana: number;
   awe: number;

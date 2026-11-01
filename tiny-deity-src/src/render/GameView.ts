@@ -6,7 +6,7 @@ import {
   Text,
   Texture,
 } from "pixi.js";
-import { BUILDINGS, POWERS } from "../game/data";
+import { BUILDINGS, POWERS, recipeText } from "../game/data";
 import {
   angleAt,
   clamp,
@@ -18,7 +18,17 @@ import {
   toScreen,
   type Camera,
 } from "../game/geometry";
-import { assign, cast, collect, placement, purchase } from "../game/simulation";
+import { gather, nearby, materialError } from "../game/economy";
+import {
+  grab,
+  landFollower,
+  releaseCarried,
+  assign,
+  cast,
+  collect,
+  placement,
+  purchase,
+} from "../game/simulation";
 import { message, useGame } from "../game/store";
 import { random } from "../game/world";
 import { TAU, type BuildingType, type Power, type World } from "../game/types";
@@ -210,10 +220,16 @@ export class GameView {
     this.velocity = 0;
   };
   zoom = (factor: number) => {
-    this.targetZoom = clamp(this.targetZoom * factor, 0.15, 1.7);
+    const minZoom = Math.min(
+      0.15,
+      (Math.min(this.host.clientWidth, this.host.clientHeight) * 0.25) /
+        useGame.getState().world.radius,
+    );
+    this.targetZoom = clamp(this.targetZoom * factor, minZoom, 1.7);
   };
   rotate = (delta: number) => {
     this.camera.rotation += delta;
+    useGame.getState().world.stats.explored++;
     this.velocity = 0;
   };
   focus = (angle: number) => {
@@ -344,6 +360,15 @@ export class GameView {
     }
     const drag = this.drag;
     if (!drag || drag.pointer !== e.pointerId) return;
+    if (
+      drag.kind === "follower" &&
+      drag.id &&
+      Math.hypot(p.x - drag.startX, p.y - drag.startY) > 8
+    ) {
+      const w = useGame.getState().world;
+      if (w.followers.find((f) => f.id === drag.id)?.task !== "carried")
+        grab(w, drag.id);
+    }
     const dx = p.x - drag.x;
     drag.x = p.x;
     drag.y = p.y;
@@ -427,9 +452,7 @@ export class GameView {
         if (near && (hit?.kind === "building" || this.onSurface(p.x, p.y)))
           error = assign(w, f.id, near.id);
         else {
-          f.angle = angle;
-          f.origin = angle;
-          assign(w, f.id, null);
+          landFollower(w, f.id, angle);
           message("A soft landing. A very surprised little friend.");
         }
       }
@@ -470,14 +493,32 @@ export class GameView {
           selected: { kind: hit.kind, id: hit.id },
           panel: null,
         });
-      } else useGame.setState({ selected: null });
+      } else {
+        useGame.setState({ selected: null });
+        if (this.onSurface(p.x, p.y)) {
+          const t = sample(w.terrain, angle);
+          const resource =
+            t.rock > 0.4
+              ? "stone"
+              : t.vegetation > 0.4
+                ? "wood"
+                : t.water > 1
+                  ? "water"
+                  : "food";
+          error = gather(w, resource, angle);
+          if (!error)
+            message(`Gathered ${resource} from the landscape. +1 gold`);
+        }
+      }
     }
+    releaseCarried(w);
     if (error) message(error);
     useGame.getState().refresh();
     this.drag = null;
   };
   private cancel = (e: PointerEvent) => {
     this.restoreWeather();
+    releaseCarried(useGame.getState().world);
     this.drag = null;
     this.finishPointer(e);
   };
@@ -497,6 +538,7 @@ export class GameView {
   };
   private blur = () => {
     this.restoreWeather();
+    releaseCarried(useGame.getState().world);
     this.drag = null;
     this.pointers.clear();
     this.velocity = 0;
@@ -660,8 +702,8 @@ export class GameView {
       }
     }
     const rng = random(w.seed + 7);
-    for (let i = 0; i < 155; i++) {
-      const a = (i / 155) * TAU + (rng() - 0.5) * 0.03;
+    for (let i = 0; i < 260; i++) {
+      const a = (i / 260) * TAU + (rng() - 0.5) * 0.03;
       if (
         w.buildings.some((b) => distance(b.angle, a) < 0.065) ||
         distance(a, 0.02) < 0.045
@@ -686,7 +728,8 @@ export class GameView {
       const t = sample(w.terrain, a);
       if (id && s.texture !== this.textures.get("rock")) {
         s.visible =
-          t.vegetation > 0.28 &&
+          t.vegetation > 0.42 + (Number(id.slice(1)) % 7) * 0.065 &&
+          t.wood > 0.3 &&
           t.fire < 0.2 &&
           !w.buildings.some((b) => distance(b.angle, a) < 0.06);
         s.rotation = a + Math.sin(this.elapsed * 1.2 + a * 20) * 0.014;
@@ -724,14 +767,26 @@ export class GameView {
       s.texture = this.textures.get(
         `${animated && Math.sin(this.elapsed * 5) > 0 ? "fa" : "f"}${f.appearance}`,
       )!;
-      const p = radial(f.angle, ground(w, f.angle));
+      const p = radial(
+        f.angle,
+        ground(w, f.angle) +
+          f.lane +
+          (["traveling", "seekingResources", "fleeing"].includes(f.task)
+            ? Math.abs(Math.sin(this.elapsed * 9)) * 2
+            : 0),
+      );
       s.position.set(p.x, p.y);
       s.rotation =
         f.angle +
-        (f.task === "wandering"
+        (f.task === "wandering" || f.task === "traveling"
           ? Math.sin(this.elapsed * 8 + f.appearance) * 0.06
           : 0);
-      s.scale.set(0.64);
+      s.scale.set(
+        0.64 * (f.facing || 1),
+        f.task === "worshipping"
+          ? 0.55 + Math.sin(this.elapsed * 3 + f.appearance) * 0.05
+          : 0.64,
+      );
       s.alpha = f.faith < 50 ? 0.88 : 1;
       s.tint = f.alive ? 0xffffff : 0x87908a;
       if (!f.alive) {
@@ -914,15 +969,19 @@ export class GameView {
       const bubble =
         f.faith < 50
           ? "?"
-          : f.energy < 20
-            ? "Zz"
-            : f.comfort < 35
-              ? "…"
-              : f.task === "observing"
-                ? "♡"
-                : f.task === "worshipping"
-                  ? "✧"
-                  : null;
+          : f.hunger > 55
+            ? "Food?"
+            : f.energy < 20
+              ? "Zz"
+              : f.comfort < 35
+                ? "…"
+                : f.task === "observing"
+                  ? "♡"
+                  : f.task === "worshipping"
+                    ? Math.floor(w.time + f.appearance * 3) % 24 < 3
+                      ? "Thank you"
+                      : "✧"
+                    : null;
       if (bubble) label(bubble, f.angle, 56, "#fff5d9", 16);
     });
     if (w.monster) {
@@ -942,6 +1001,10 @@ export class GameView {
         x: p.x + x * Math.cos(a) - y * Math.sin(a),
         y: p.y + x * Math.sin(a) + y * Math.cos(a),
       });
+      if (e.label) {
+        label(e.label, e.angle, 65 + progress * 50, "#557749", 16);
+        continue;
+      }
       const count = w.settings.reduced ? 12 : 55;
       if (e.type === "rain") {
         for (let i = 0; i < count; i++) {
@@ -1030,13 +1093,40 @@ export class GameView {
     if ((ui.placing || ui.moving || ui.tool !== "hand") && this.pointerInside) {
       const type =
         ui.placing || w.buildings.find((b) => b.id === ui.moving)?.type;
-      const valid = type
-        ? !placement(w, type, this.hoverAngle, ui.moving ?? undefined)
-        : w.mana >= POWERS[ui.tool as Power].cost;
+      const reason = type
+        ? placement(w, type, this.hoverAngle, ui.moving ?? undefined) ||
+          (!ui.moving ? materialError(w, type) : null)
+        : null;
+      const valid = type ? !reason : w.mana >= POWERS[ui.tool as Power].cost;
       const p = radial(this.hoverAngle, ground(w, this.hoverAngle));
       this.preview
         .ellipse(p.x, p.y, type ? 52 : 75, type ? 12 : 18)
         .stroke({ color: valid ? 0xe6efb3 : 0xd88776, width: 3, alpha: 0.9 });
+      if (type) {
+        const forest = nearby(w, this.hoverAngle).reduce(
+          (n, t) => n + t.wood,
+          0,
+        );
+        const deposit = nearby(w, this.hoverAngle, 90).reduce(
+          (n, t) => n + t.stone,
+          0,
+        );
+        const context =
+          type === "logging"
+            ? `Forest: ${Math.round(forest)} wood · ~${Math.round(180 / BUILDINGS[type].duration)} wood/min per worker`
+            : type === "mine"
+              ? `Deposit: ${Math.round(deposit)} stone`
+              : type === "farm"
+                ? `Fertility: ${Math.round(sample(w.terrain, this.hoverAngle).fertility * 100)}% · Water: ${Math.floor(w.resources.water)}`
+                : "";
+        label(
+          `${BUILDINGS[type].name.toUpperCase()}\n${recipeText(type)}\n${context}\nWorkers: ${BUILDINGS[type].capacity} · ${reason || "Placement: VALID"}`,
+          this.hoverAngle,
+          145,
+          valid ? "#486148" : "#934f43",
+          13,
+        );
+      }
       if (type)
         this.preview
           .circle(p.x, p.y - 40, 28)

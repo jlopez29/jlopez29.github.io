@@ -1,5 +1,42 @@
 export function Icon({ name, size = 22 }: { name: string; size?: number }) {
   const paths: Record<string, React.ReactNode> = {
+    wood: (
+      <>
+        <path d="M5 8h14v11H5z" fill="#c6a16e" />
+        <ellipse cx="5" cy="13.5" rx="3" ry="5.5" fill="#ecd2a0" />
+        <path d="M9 10h8m-7 4h8m-7 3h6" />
+      </>
+    ),
+    stone: (
+      <path
+        d="m3 17 3-10 8-3 7 9-4 7H7z m3-10 7 4 8 2m-8-2 4 9"
+        fill="#bdc4b0"
+      />
+    ),
+    water: (
+      <path d="M12 2S4 11 4 16a8 8 0 0 0 16 0c0-5-8-14-8-14Z" fill="#a7d3d8" />
+    ),
+    food: (
+      <>
+        <path d="M12 22V6m0 4L6 6m6 8 6-4m-6 8-6-4" />
+        <ellipse
+          cx="6"
+          cy="6"
+          rx="3"
+          ry="5"
+          fill="#dec47d"
+          transform="rotate(-40 6 6)"
+        />
+        <ellipse
+          cx="18"
+          cy="10"
+          rx="3"
+          ry="5"
+          fill="#dec47d"
+          transform="rotate(40 18 10)"
+        />
+      </>
+    ),
     rain: (
       <>
         <path d="M6 14a4 4 0 0 1 0-8 6 6 0 0 1 11-1 4.5 4.5 0 0 1 1 9" />

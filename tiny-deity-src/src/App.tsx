@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icons";
 import {
   BUILDINGS,
+  RECIPES,
+  recipeText,
   POWERS,
   QUESTS,
   UNLOCKS,
@@ -19,6 +21,14 @@ import {
   step,
   upgrade,
 } from "./game/simulation";
+import {
+  RESOURCES,
+  materialError,
+  gather,
+  replant,
+  salvage,
+  nearby,
+} from "./game/economy";
 import { message, useGame } from "./game/store";
 import { createWorld } from "./game/world";
 import type {
@@ -28,11 +38,26 @@ import type {
   Power,
   World,
 } from "./game/types";
-import { deserialize, load, save, serialize } from "./persistence/database";
+import {
+  deserialize,
+  load,
+  save,
+  serialize,
+  storedBackup,
+} from "./persistence/database";
 import { GameView } from "./render/GameView";
 import { chime } from "./audio";
 let saveChain = Promise.resolve();
+let saveBlocked = false;
+let protectedBackup: string | null = null;
 async function persist(w: World) {
+  if (saveBlocked) {
+    useGame.setState({
+      saveStatus:
+        "Existing save preserved — import a valid save or explicitly start a new world",
+    });
+    return;
+  }
   useGame.setState({ saveStatus: "Saving…" });
   saveChain = saveChain
     .catch(() => {})
@@ -146,7 +171,20 @@ export default function App() {
           }
         } else useGame.setState({ saveStatus: "Autosave ready" });
       } catch {
-        useGame.setState({ saveStatus: "Save unavailable — export a backup" });
+        saveBlocked = true;
+        try {
+          protectedBackup = await storedBackup();
+        } catch {
+          /* Keep inaccessible storage untouched. */
+        }
+        useGame.setState({
+          paused: true,
+          saveStatus:
+            "Existing save could not be loaded. Autosave stopped to preserve it.",
+        });
+        message(
+          "Your existing save is preserved. Open Settings to export it, import a valid backup, or explicitly start a new world.",
+        );
       }
       if (cancelled) return;
       useGame.setState({ ready: true });
@@ -277,6 +315,11 @@ export default function App() {
       message("Earn a little more gold before building this.");
       return;
     }
+    const missing = materialError(w, type);
+    if (missing) {
+      message(missing);
+      return;
+    }
     useGame.setState({
       placing: type,
       moving: null,
@@ -291,6 +334,8 @@ export default function App() {
     ui.refresh();
   };
   const reset = (demo = false) => {
+    saveBlocked = false;
+    protectedBackup = null;
     const next = createWorld(19207, demo);
     useGame.setState({
       world: next,
@@ -398,6 +443,18 @@ export default function App() {
             </div>
           </div>
         </div>
+        <button
+          className="materials-toggle"
+          onClick={() => panel("resources")}
+          aria-label="Open resources"
+        >
+          <Icon name="wood" size={17} /> Resources{" "}
+          <span>
+            {Math.floor(w.resources.wood)} · {Math.floor(w.resources.stone)} ·{" "}
+            {Math.floor(w.resources.water)} · {Math.floor(w.resources.food)}
+          </span>
+          <Icon name="chevron" size={13} />
+        </button>
         <div className="world-title">
           <span className="overline">YOUR LITTLE PLANET</span>
           <h1>
@@ -564,6 +621,91 @@ export default function App() {
                 <Icon name="close" size={20} />
               </button>
             </div>
+            {ui.panel === "resources" && (
+              <>
+                <span className="overline">GIFTS OF THE LAND</span>
+                <h2>A living little economy.</h2>
+                <p className="panel-intro">
+                  Gather from your landscape, or assign believers to production.
+                  Rates show recent actual production and consumption per
+                  minute.
+                </p>
+                {w.waitingFollowers > 0 && (
+                  <p className="panel-intro">
+                    {w.waitingFollowers} inhabitants await a food surplus. Store
+                    3 food to welcome the next visitor.
+                  </p>
+                )}
+                <div className="material-list">
+                  {RESOURCES.map((r) => (
+                    <div key={r} className="material-row">
+                      <Icon name={r} size={30} />
+                      <div>
+                        <b>{r[0].toUpperCase() + r.slice(1)}</b>
+                        <small>
+                          +{w.produced[r].toFixed(1)}/min · −
+                          {w.consumed[r].toFixed(1)}/min
+                        </small>
+                        <small>
+                          {w.resources[r] < 2
+                            ? "Running low"
+                            : w.resources[r] >= w.capacity[r]
+                              ? "Storage full"
+                              : "In settlement storage"}
+                        </small>
+                      </div>
+                      <strong data-testid={`resource-${r}`}>
+                        {w.resources[r].toFixed(1)}
+                        <small> / {w.capacity[r]}</small>
+                      </strong>
+                      <button
+                        disabled={w.time < w.gatherAt}
+                        onClick={() =>
+                          action(
+                            gather(
+                              w,
+                              r,
+                              r === "wood"
+                                ? 0.72
+                                : r === "stone"
+                                  ? -0.86
+                                  : r === "water"
+                                    ? 1.18
+                                    : 0,
+                            ),
+                            `Gathered ${r}. +1 gold`,
+                          )
+                        }
+                      >
+                        Gather {r}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p className="panel-intro">
+                  Tap trees or rocks on the planet to gather at that location.
+                  Gathering takes 6 seconds to recover. Rain into a hollow for
+                  pond water; collectors catch rain directly.
+                </p>
+                <button
+                  className="secondary-button"
+                  onClick={() =>
+                    action(
+                      replant(w),
+                      "Seedlings planted in the home forest. Add rain to support regrowth.",
+                    )
+                  }
+                >
+                  Replant home forest · Free
+                </button>
+                {w.legacy && (
+                  <p className="panel-intro">
+                    Legacy world: your original planet size and all inhabitants
+                    are preserved.
+                  </p>
+                )}
+              </>
+            )}
             {ui.panel === "store" && (
               <>
                 <h2>Make room for wonder.</h2>
@@ -594,7 +736,7 @@ export default function App() {
                           </>
                         ) : (
                           <>
-                            <Icon name="coin" size={14} /> {d.cost}
+                            <Icon name="coin" size={14} /> {recipeText(type)}
                           </>
                         )}
                       </span>
@@ -751,15 +893,19 @@ export default function App() {
                   </p>
                   <h3>Give little hands a purpose</h3>
                   <p>
-                    Open Build and place a farm. Select a believer and assign
-                    them to the new construction, or drag them onto it. Once
-                    complete, rain charges a farm for three minutes. Its harvest
-                    appears above the roof; tap to collect.
+                    Open Resources to gather wood, then build a logging camp
+                    beside the forest. Make a farm with your next logs. Select a
+                    believer and assign them to the new construction, or drag
+                    them onto it. Once complete, rain charges a farm for three
+                    minutes. Its harvest appears above the roof; tap to collect.
                   </p>
                   <h3>A little rest goes a long way</h3>
                   <p>
-                    Working costs energy. Build a tent for recovery. With
-                    autonomy enabled, tired workers rest and return to work
+                    Farms turn stored water into food; a dry farm grows slowly.
+                    Rain collectors catch local miracles, and ponds supply
+                    water. Hungry followers eat from settlement storage. Working
+                    costs energy. Build a tent for recovery. With autonomy
+                    enabled, tired workers rest and return to work
                     automatically.
                   </p>
                   <h3>Shape your world</h3>
@@ -853,7 +999,10 @@ export default function App() {
                     <button onClick={() => void persist(w)}>Save now</button>
                     <button
                       onClick={() =>
-                        download("tiny-deity-save.json", serialize(w))
+                        download(
+                          "tiny-deity-save.json",
+                          protectedBackup || serialize(w),
+                        )
                       }
                     >
                       Export save
@@ -878,6 +1027,8 @@ export default function App() {
                         if (uploaded.size > 2000000)
                           throw new Error("This file is too large.");
                         const imported = deserialize(await uploaded.text());
+                        saveBlocked = false;
+                        protectedBackup = null;
                         useGame.setState({
                           world: imported,
                           selected: null,
@@ -923,7 +1074,7 @@ export default function App() {
                     </button>
                   )}
                   <p className="version-note">
-                    Tiny Deity · Playable 0.1
+                    Tiny Deity · Living worlds v2
                     <br />
                     Original procedural art. No accounts. Just a little world.
                   </p>
@@ -944,7 +1095,7 @@ export default function App() {
             {view.current?.camera.zoom.toFixed(2)}
             <br />
             Radius {w.radius} · Terrain v{w.terrainVersion}
-            <br />~{155 + w.followers.length + w.buildings.length} sprites
+            <br />~{260 + w.followers.length + w.buildings.length} sprites
           </div>
         )}
         <div className="bottom-ui">
@@ -1108,6 +1259,7 @@ function FollowerPanel({
                 : "“What shall we make of today?”"}
       </p>
       <Meter label="Energy" value={f.energy} />
+      <Meter label="Hunger" value={f.hunger} color="gold" />
       <Meter label="Happiness" value={f.happiness} color="gold" />
       <Meter label="Faith" value={f.faith} color="lavender" />
       <Meter label="Comfort" value={f.comfort} />
@@ -1227,6 +1379,31 @@ function BuildingPanel({
       </span>
       <h2>{def.name}</h2>
       <p className="panel-intro">{def.tagline}</p>
+      {["logging", "mine", "collector", "farm", "fishing"].includes(b.type) && (
+        <div className="industry-detail">
+          <b>
+            {b.type === "logging"
+              ? "Forest harvest"
+              : b.type === "mine"
+                ? "Stone extraction"
+                : b.type === "collector"
+                  ? "Rain & pond collection"
+                  : "Food production"}
+          </b>
+          <p>
+            {b.type === "logging"
+              ? `${Math.floor(nearby(w, b.angle).reduce((n, t) => n + (t.vegetation > 0.2 ? t.wood : 0), 0))} harvestable wood nearby · 3 wood per cycle`
+              : b.type === "mine"
+                ? `${Math.floor(nearby(w, b.angle).reduce((n, t) => n + t.stone, 0))} stone remaining nearby · 3 stone per cycle`
+                : b.type === "collector"
+                  ? "8 water per local rain miracle · 2.4/min from a nearby pond"
+                  : b.type === "fishing"
+                    ? "5 food per cycle from a nearby lake · No stored water consumed"
+                    : `5 food per watered cycle · 1 water used · ${Math.floor(w.resources.water)} water stored`}
+          </p>
+          <Meter label="Work cycle" value={b.progress * 100} />
+        </div>
+      )}
       {b.construction < 1 ? (
         <>
           <Meter label="Construction" value={b.construction * 100} />
@@ -1280,7 +1457,7 @@ function BuildingPanel({
               </button>
             </>
           )}
-          {def.need && (
+          {def.need && b.type !== "farm" && (
             <div className="status-line">
               <span>
                 {def.need === "water"
@@ -1363,7 +1540,9 @@ function BuildingPanel({
           }
         >
           <Icon name="build" size={16} /> Upgrade ·{" "}
-          {Math.round(def.cost * 0.65 * b.upgrade)} gold
+          {Math.round(def.cost * 0.65 * b.upgrade)} gold ·{" "}
+          {RECIPES[b.type].wood * 0.5 * b.upgrade} wood ·{" "}
+          {RECIPES[b.type].stone * 0.5 * b.upgrade} stone
         </button>
       )}
       {b.durability < 100 && (
@@ -1400,16 +1579,19 @@ function BuildingPanel({
         </button>
         <button
           onClick={() => {
-            w.gold += Math.floor(def.cost * 0.35);
+            salvage(w, b);
             w.buildings = w.buildings.filter((v) => v.id !== b.id);
             w.followers.forEach((f) => {
               if (f.assigned === b.id) assign(w, f.id, null);
             });
-            note(w, `${def.name} reclaimed. Some gold returned.`);
+            note(
+              w,
+              `${def.name} reclaimed. Gold and half the materials returned.`,
+            );
             useGame.setState({ selected: null });
           }}
         >
-          Reclaim · {Math.floor(def.cost * 0.35)} gold
+          Reclaim · 35% gold + 50% materials
         </button>
       </div>
     </>

@@ -2225,3 +2225,85 @@ select {
 .awe svg {
   color: #b29c66;
 }
+
+.materials-toggle {
+  position: absolute;
+  top: 118px;
+  left: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fbf9e8ed;
+  border: 1px solid #fff9;
+  border-radius: 12px;
+  padding: 8px 12px;
+  color: #526b51;
+  font-size: 11px;
+  box-shadow: 0 3px 12px #55786c10;
+}
+.materials-toggle span {
+  font-size: 10px;
+  opacity: 0.8;
+}
+.material-list {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+}
+.material-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #edf0dd;
+  padding: 16px;
+  border-radius: 13px;
+}
+.material-row > div {
+  flex: 1;
+}
+.material-row small {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  margin-top: 4px;
+  color: #7b886c;
+}
+.material-row strong {
+  text-align: right;
+  font-size: 20px;
+}
+.material-row button {
+  flex-basis: 100%;
+  border: 1px solid #b9c6a5;
+  background: #fbf9e8;
+  border-radius: 8px;
+  padding: 8px;
+  color: #526b51;
+  font-size: 11px;
+}
+.industry-detail {
+  background: #eff0dc;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.industry-detail p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 600px) {
+  .materials-toggle {
+    top: 89px;
+    left: 15px;
+    padding: 6px 9px;
+    font-size: 9px;
+    gap: 5px;
+  }
+  .materials-toggle span {
+    font-size: 8px;
+  }
+  .world-title {
+    top: 125px;
+  }
+}

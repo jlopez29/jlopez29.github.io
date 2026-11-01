@@ -1,9 +1,25 @@
-import { BUILDINGS, POWERS, QUESTS, maxMana, xpForLevel } from "./data";
+import {
+  materialError,
+  materialProduction,
+  environmentEconomy,
+  nearby,
+  addResource,
+  consume,
+} from "./economy";
+import {
+  BUILDINGS,
+  RECIPES,
+  POWERS,
+  QUESTS,
+  maxMana,
+  xpForLevel,
+} from "./data";
 import {
   basinCapacity,
   clamp,
   deform,
   distance,
+  ground,
   sample,
   signedDistance,
   wrap,
@@ -28,9 +44,16 @@ export function gainXP(w: World, xp: number) {
     w.level++;
     w.awe += 2;
     w.mana = maxMana(w);
-    addFollower(w, wrap(0.18 + (w.level % 7) * 0.08), 0);
-    if ([4, 7, 10, 15].includes(w.level)) w.rune = true;
-    note(w, `Level ${w.level}! A new inhabitant has arrived. +2 Awe`);
+    const canWelcome = w.resources.food >= 2;
+    if (canWelcome) {
+      consume(w, "food", 2);
+      addFollower(w, wrap(0.18 + (w.level % 7) * 0.08), 0);
+    } else w.waitingFollowers++;
+    if ([3, 6, 10, 15].includes(w.level)) w.rune = true;
+    note(
+      w,
+      `Level ${w.level}! ${canWelcome ? "A new inhabitant has arrived." : "An inhabitant awaits a food surplus."} +2 Awe`,
+    );
   }
 }
 export function effect(
@@ -97,6 +120,12 @@ export function cast(
   } else {
     if (power === "rain") {
       w.stats.rain++;
+      if (
+        nearby(w, angle, w.radius * 0.15).some(
+          (t) => t.vegetation > 0.5 && t.wood > 0.1,
+        )
+      )
+        w.stats.forestRain++;
       w.lastRain = w.time;
     }
     if (power === "sun") {
@@ -149,10 +178,18 @@ export function cast(
         (power === "sun" && BUILDINGS[b.type].need === "sun")
       )
         b.charge = 180;
+      if (power === "rain" && b.type === "collector" && b.construction >= 1)
+        addResource(
+          w,
+          "water",
+          8 * clamp(strength, 0.5, 3) * (1 - distance(b.angle, angle) / 0.18),
+          b.angle,
+        );
       if (power === "fire") b.durability = Math.max(0, b.durability - 20);
     });
     w.followers.forEach((f) => {
-      if (!f.alive || distance(f.angle, angle) > 0.2) return;
+      if (!f.alive || f.task === "carried" || distance(f.angle, angle) > 0.2)
+        return;
       if (power === "rain" || power === "sun") {
         const old = f.faith;
         f.faith = clamp(f.faith + 55, 0, 100);
@@ -191,7 +228,9 @@ export function placement(
     t = sample(w.terrain, angle);
   if (w.level < d.level) return `Unlocked at level ${d.level}.`;
   if (
-    w.buildings.some((b) => b.id !== ignore && distance(b.angle, angle) < 0.115)
+    w.buildings.some(
+      (b) => b.id !== ignore && distance(b.angle, angle) * w.radius < 170,
+    )
   )
     return "Give neighboring buildings a little room.";
   const left = sample(w.terrain, angle - 0.04).height,
@@ -208,8 +247,16 @@ export function placement(
     )
   )
     return "Place beside a lake. Lower land, then add rain.";
-  if (type === "mine" && t.rock < 0.4 && t.height < 15)
-    return "Mines need rocky or elevated ground.";
+  if (
+    type === "mine" &&
+    !nearby(w, angle, 90).some((t) => t.stone > 0.1 && t.rock > 0.4)
+  )
+    return "Quarries require accessible rocky stone deposits.";
+  if (
+    type === "logging" &&
+    !nearby(w, angle).some((t) => t.wood > 0.1 && t.vegetation > 0.4)
+  )
+    return "Logging camps need a nearby harvestable forest.";
   return null;
 }
 export function purchase(
@@ -221,7 +268,11 @@ export function purchase(
   if (error) return error;
   if (w.gold < BUILDINGS[type].cost)
     return "You need more gold for this building.";
+  const missing = materialError(w, type);
+  if (missing) return missing;
   w.gold -= BUILDINGS[type].cost;
+  consume(w, "wood", RECIPES[type].wood);
+  consume(w, "stone", RECIPES[type].stone);
   const b: Building = {
     id: `b${w.nextId++}`,
     type,
@@ -246,6 +297,8 @@ export function assign(
   if (!f || !f.alive) return "Select a living follower.";
   if (bid === null) {
     f.assigned = null;
+    f.slot = null;
+    f.lane = 0;
     f.returnTo = null;
     f.task = "wandering";
     return null;
@@ -261,20 +314,161 @@ export function assign(
     BUILDINGS[b.type].capacity + b.upgrade - 1
   )
     return "This building is full.";
+  const occupied = new Set(
+    w.followers
+      .filter((o) => o.alive && o.id !== fid && o.assigned === bid)
+      .map((o) => o.slot),
+  );
+  const slot = Array.from(
+    { length: BUILDINGS[b.type].capacity + b.upgrade - 1 },
+    (_, i) => i,
+  ).find(
+    (i) =>
+      !occupied.has(i) &&
+      !w.followers.some((other) => {
+        if (
+          !other.alive ||
+          other.id === fid ||
+          other.assigned === bid ||
+          other.slot === null
+        )
+          return false;
+        const neighbor = w.buildings.find(
+          (building) => building.id === other.assigned,
+        );
+        return (
+          neighbor &&
+          distance(slotAngle(w, b, i), slotAngle(w, neighbor, other.slot)) *
+            w.radius <
+            25
+        );
+      }),
+  );
+  if (slot === undefined)
+    return "No clear work position. This building is full or neighboring work positions are too close.";
   f.assigned = bid;
+  f.slot = slot;
   f.returnTo = null;
-  f.task =
-    b.construction < 1
-      ? "constructing"
-      : BUILDINGS[b.type].role === "rest"
-        ? "resting"
-        : BUILDINGS[b.type].role === "worship"
-          ? "worshipping"
-          : b.type === "fishing"
-            ? "fishing"
-            : "working";
+  f.task = "traveling";
   f.timer = 0;
   return null;
+}
+/** Stable arc-length slots stay attached to terrain and do not move other workers. */
+export function slotAngle(w: World, b: Building, slot: number): number {
+  const offset = (slot % 2 === 0 ? -1 : 1) * (48 + Math.floor(slot / 2) * 30);
+  return wrap(b.angle + offset / ground(w, b.angle));
+}
+export function grab(w: World, id: string) {
+  const f = w.followers.find((f) => f.id === id);
+  if (!f?.alive) return;
+  assign(w, id, null);
+  f.timer = 0;
+  f.task = "carried";
+}
+export function landFollower(w: World, id: string, angle: number) {
+  const f = w.followers.find((f) => f.id === id);
+  if (!f?.alive) return;
+  assign(w, id, null);
+  for (
+    let i = 0;
+    i < 100 &&
+    w.followers.some(
+      (other) =>
+        other.id !== id &&
+        other.alive &&
+        distance(other.angle, angle) * w.radius < 25,
+    );
+    i++
+  )
+    angle = wrap(angle + 27 / w.radius);
+  f.angle = wrap(angle);
+  f.origin = f.angle;
+}
+export function releaseCarried(w: World) {
+  w.followers
+    .filter((f) => f.task === "carried")
+    .forEach((f) => {
+      f.task = "wandering";
+    });
+}
+/** Repair old/duplicate reservations without changing any physical positions. */
+export function restoreSlots(w: World) {
+  const used = new Map<string, Set<number>>();
+  for (const f of w.followers) {
+    f.facing ??= 1;
+    f.lane ??= 0;
+    const b = w.buildings.find((b) => b.id === f.assigned);
+    if (!b || !f.alive || f.task === "carried") {
+      f.assigned = null;
+      f.slot = null;
+      if (f.task === "carried") f.task = "wandering";
+      continue;
+    }
+    const slots = used.get(b.id) || new Set<number>();
+    const capacity = BUILDINGS[b.type].capacity + b.upgrade - 1;
+    if (
+      !Number.isInteger(f.slot) ||
+      f.slot! < 0 ||
+      f.slot! >= capacity ||
+      slots.has(f.slot!)
+    )
+      f.slot =
+        Array.from({ length: capacity }, (_, i) => i).find(
+          (i) => !slots.has(i),
+        ) ?? null;
+    if (f.slot === null) {
+      f.assigned = null;
+      f.task = "wandering";
+    } else {
+      slots.add(f.slot);
+      used.set(b.id, slots);
+    }
+  }
+}
+function walk(w: World, f: Follower, target: number, dt: number) {
+  const radius = ground(w, f.angle),
+    diff = signedDistance(target, f.angle);
+  const direction = Math.sign(diff);
+  f.facing = direction || f.facing;
+  // Two narrow footpaths let opposing traffic pass without pushing inhabitants.
+  f.lane = 0;
+  let amount = Math.min(Math.abs(diff), (dt * f.speed * 1700) / radius);
+  for (const other of w.followers) {
+    if (other.id === f.id || !other.alive || other.task === "carried") continue;
+    const ahead = signedDistance(other.angle, f.angle) * direction * radius;
+    const moving =
+      other.task === "traveling" ||
+      other.task === "wandering" ||
+      other.task === "fleeing" ||
+      other.task === "seekingResources";
+    if (
+      moving &&
+      other.facing === direction &&
+      ahead > 0 &&
+      ahead < 23 &&
+      Math.abs(other.lane - f.lane) < 6
+    )
+      amount = Math.min(amount, Math.max(0, (ahead - 21) / radius));
+    if (
+      (!moving && Math.abs(ahead) < 35) ||
+      (moving &&
+        other.facing !== direction &&
+        Math.abs(ahead) < 45 &&
+        f.id > other.id)
+    )
+      f.lane = 28;
+    if (
+      moving &&
+      other.facing === direction &&
+      Math.abs(ahead) < 0.1 &&
+      f.id > other.id
+    ) {
+      amount = 0;
+      f.lane = 28;
+    }
+  }
+  f.angle = wrap(f.angle + direction * amount);
+  return distance(f.angle, target) * radius < 0.5;
 }
 export function collect(w: World, id: string): number {
   const b = w.buildings.find((b) => b.id === id);
@@ -295,6 +489,10 @@ export function upgrade(w: World, id: string): string | null {
   if (b.construction < 1) return "Finish construction first.";
   if (b.upgrade >= 4) return "This building is fully upgraded.";
   if (w.gold < cost) return `You need ${cost} gold.`;
+  const missing = materialError(w, b.type, 0.5 * b.upgrade);
+  if (missing) return missing;
+  consume(w, "wood", RECIPES[b.type].wood * 0.5 * b.upgrade);
+  consume(w, "stone", RECIPES[b.type].stone * 0.5 * b.upgrade);
   w.gold -= cost;
   b.upgrade++;
   b.durability = 100;
@@ -303,9 +501,21 @@ export function upgrade(w: World, id: string): string | null {
 }
 export function expand(w: World) {
   if (!w.rune) return;
-  w.rune = false;
   w.expansions++;
-  w.radius += 65;
+  w.rune =
+    [3, 6, 10, 15].filter((level) => level <= w.level).length > w.expansions;
+  w.targetRadius += 95;
+  // New ground becomes productive without replacing terrain or entities.
+  const center = (w.expansions * 1.43 + 1.2) % TAU;
+  w.terrain.forEach((t, i) => {
+    if (distance((i / w.terrain.length) * TAU, center) < 0.25) {
+      t.vegetation = Math.max(t.vegetation, 0.8);
+      t.moisture = Math.max(t.moisture, 0.65);
+      t.rock = Math.max(t.rock, 0.6);
+      t.wood += 3;
+      t.stone += 4;
+    }
+  });
   w.terrainVersion++;
   w.awe += 3;
   addFollower(w, 0.8, 60);
@@ -327,11 +537,17 @@ function workEfficiency(f: Follower) {
   return (
     ((f.energy / 100) * 0.5 + 0.5) *
     ((f.happiness / 100) * 0.7 + 0.3) *
+    (f.hunger > 70 ? 0.55 : 1) *
     (1 + Math.min(0.3, f.proficiency / 1000)) *
     (f.trait === "Industrious" ? 1.15 : 1)
   );
 }
 export function step(w: World, dt: number) {
+  if (w.radius < w.targetRadius) {
+    w.radius = Math.min(w.targetRadius, w.radius + dt * 18);
+    w.terrainVersion++;
+  }
+  environmentEconomy(w, dt);
   w.time += dt;
   w.tick++;
   w.effects.forEach((e) => (e.life -= dt));
@@ -339,7 +555,48 @@ export function step(w: World, dt: number) {
   let worship = 0;
   const groups = new Map<string, Follower[]>();
   for (const f of w.followers) {
-    if (!f.alive) continue;
+    if (!f.alive || f.task === "carried") continue;
+    f.hunger = Math.min(100, f.hunger + dt * 0.06);
+    if (f.hunger > 70) f.happiness = Math.max(15, f.happiness - dt * 0.04);
+    if (
+      w.settings.autonomy &&
+      f.hunger > 55 &&
+      f.task !== "seekingResources" &&
+      f.timer <= 0 &&
+      w.resources.food >= 1
+    ) {
+      const previous = f.returnTo || f.assigned;
+      assign(w, f.id, null);
+      f.returnTo = previous;
+      f.task = "seekingResources";
+    }
+    if (f.task === "seekingResources") {
+      const home =
+        w.buildings.find(
+          (b) =>
+            b.construction >= 1 && (b.type === "tent" || b.type === "farm"),
+        ) || w.buildings[0];
+      const index = w.followers.indexOf(f);
+      const target = wrap((home?.angle || 0) + (140 + index * 26) / w.radius);
+      if (walk(w, f, target, dt)) {
+        f.lane = 0;
+        if (consume(w, "food", 1) >= 1) {
+          f.hunger = 0;
+          f.happiness = Math.min(100, f.happiness + 5);
+        }
+        const previous = f.returnTo;
+        assign(w, f.id, null);
+        if (previous && w.settings.autonomy) assign(w, f.id, previous);
+        else f.task = "wandering";
+        f.timer = 1;
+      }
+      continue;
+    }
+    // Manual worlds keep workers in place, but shared food still supports their needs.
+    if (!w.settings.autonomy && f.hunger > 55 && w.resources.food >= 1) {
+      consume(w, "food", 1);
+      f.hunger = 0;
+    }
     f.comfort = Math.max(0, f.comfort - dt * 0.025);
     f.happiness = clamp(
       f.happiness + dt * (f.comfort > 40 ? 0.015 : -0.09),
@@ -350,9 +607,8 @@ export function step(w: World, dt: number) {
     if (soil.fire > 0.2) {
       f.energy -= dt * 4;
       f.happiness = Math.max(0, f.happiness - dt);
-      f.task = "frightened";
       f.timer = 2;
-      f.angle = wrap(f.angle + dt * 0.04);
+      f.task = "fleeing";
     }
     if (f.energy < 0 || (soil.water > 35 && f.energy < 5)) {
       f.alive = false;
@@ -362,25 +618,40 @@ export function step(w: World, dt: number) {
       continue;
     }
     if (f.timer > 0) {
+      if (f.task === "fleeing") {
+        const direction = w.monster
+          ? Math.sign(signedDistance(f.angle, w.monster.angle)) || 1
+          : 1;
+        walk(w, f, wrap(f.angle + direction * 0.3), dt);
+      }
       f.timer -= dt;
       continue;
     }
     const b = w.buildings.find((b) => b.id === f.assigned);
-    if (f.task === "resting" && f.returnTo && f.energy > 95) {
-      f.assigned = f.returnTo;
-      f.returnTo = null;
+    if (
+      f.task === "resting" &&
+      f.returnTo &&
+      f.energy > 95 &&
+      w.settings.autonomy
+    ) {
+      const previous = f.returnTo;
+      assign(w, f.id, null);
+      assign(w, f.id, previous);
       continue;
     }
     if (b) {
-      const diff = signedDistance(b.angle, f.angle);
-      if (Math.abs(diff) > 0.026) {
-        f.angle = wrap(
-          f.angle +
-            Math.sign(diff) * Math.min(Math.abs(diff), dt * f.speed * 2),
-        );
-        f.task = b.construction < 1 ? "constructing" : "wandering";
+      if (f.slot === null) {
+        restoreSlots(w);
         continue;
       }
+      const target = slotAngle(w, b, f.slot);
+      if (distance(target, f.angle) * ground(w, f.angle) > 0.5) {
+        f.task = "traveling";
+        walk(w, f, target, dt);
+        continue;
+      }
+      f.lane = 0;
+      f.facing = Math.sign(signedDistance(b.angle, f.angle)) || 1;
       const def = BUILDINGS[b.type];
       if (f.energy < 8 && def.role !== "rest" && w.settings.autonomy) {
         const rest = w.buildings.find(
@@ -391,15 +662,15 @@ export function step(w: World, dt: number) {
               BUILDINGS[v.type].capacity,
         );
         if (rest) {
+          assign(w, f.id, rest.id);
           f.returnTo = b.id;
-          f.assigned = rest.id;
-          f.task = "resting";
           continue;
         }
       }
-      if (f.energy < 1 && def.role !== "rest") {
+      if ((f.energy < 1 || f.task === "exhausted") && def.role !== "rest") {
         f.task = "exhausted";
-        f.energy = Math.min(12, f.energy + dt * 0.2);
+        f.energy = Math.min(100, f.energy + dt * 0.8);
+        if (f.energy > 65) f.task = "traveling";
         continue;
       }
       const group = groups.get(b.id) || [];
@@ -436,7 +707,7 @@ export function step(w: World, dt: number) {
         f.task = "wandering";
         const direction =
           Math.floor(w.time / 12 + f.appearance) % 2 === 0 ? 1 : -1;
-        f.angle = wrap(f.angle + direction * dt * f.speed * 0.35);
+        walk(w, f, wrap(f.angle + direction * 0.1), dt * 0.35);
         f.energy = Math.min(100, f.energy + dt * 0.04);
       }
     }
@@ -463,6 +734,8 @@ export function step(w: World, dt: number) {
         gainXP(w, 15);
         note(w, `${def.name} is ready!`);
       }
+    } else if (materialProduction(w, b, workers, dt)) {
+      // Material production checks actual deposits and storage.
     } else if (
       b.construction >= 1 &&
       workers.length &&
@@ -540,6 +813,12 @@ export function step(w: World, dt: number) {
       t.heat = clamp(t.heat + (0.5 + season - t.heat) * 0.001, 0, 1);
     });
     w.terrainVersion++;
+    if (w.waitingFollowers > 0 && w.resources.food >= 3) {
+      consume(w, "food", 2);
+      w.waitingFollowers--;
+      addFollower(w, 0.35 + w.followers.length * 0.04, 0);
+      note(w, "A well-fed settlement welcomes a waiting inhabitant.");
+    }
     checkQuests(w);
   }
   if (w.settings.events && w.time > w.eventAt) {
@@ -569,7 +848,8 @@ export function step(w: World, dt: number) {
     w.followers.forEach((f) => {
       if (f.alive && distance(f.angle, w.monster!.angle) < 0.08) {
         f.happiness = Math.max(0, f.happiness - dt * 0.4);
-        f.task = "frightened";
+        if (f.task === "carried") return;
+        f.task = "fleeing";
         f.timer = 1;
       }
     });
@@ -581,11 +861,29 @@ export function offline(w: World, seconds: number): number {
   let total = 0;
   for (const b of w.buildings) {
     const d = BUILDINGS[b.type];
-    if (b.construction < 1 || d.output === 0 || b.durability <= 0) continue;
+    if (b.construction < 1 || b.durability <= 0) continue;
     const workers = w.followers.filter(
-      (f) => f.alive && f.assigned === b.id && f.energy > 1,
+      (f) =>
+        f.alive &&
+        f.assigned === b.id &&
+        f.energy > 1 &&
+        ["working", "fishing"].includes(f.task),
     );
     if (!workers.length) continue;
+    if (["logging", "mine", "farm", "fishing", "collector"].includes(b.type)) {
+      const elapsed = Math.min(
+        duration,
+        ...workers.map((f) => Math.max(0, (f.energy - 1) / 0.35)),
+      );
+      const before = b.stored;
+      for (let t = 0; t < elapsed; t++)
+        materialProduction(w, b, workers, Math.min(1, elapsed - t));
+      total += b.stored - before;
+      workers.forEach(
+        (f) => (f.energy = Math.max(1, f.energy - elapsed * 0.35)),
+      );
+      continue;
+    }
     const available =
       d.need && d.need !== "water"
         ? Math.min(duration, b.charge)

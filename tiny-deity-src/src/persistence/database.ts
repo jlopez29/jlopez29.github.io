@@ -1,3 +1,6 @@
+import { newStats } from "../game/data";
+import { RESOURCES } from "../game/economy";
+import { restoreSlots } from "../game/simulation";
 import Dexie, { type EntityTable } from "dexie";
 import type { World } from "../game/types";
 const db = new Dexie("tiny-deity") as Dexie & {
@@ -17,7 +20,7 @@ export function deserialize(raw: string): World {
   const finite = (n: unknown) => typeof n === "number" && Number.isFinite(n);
   if (
     !w ||
-    w.version !== 1 ||
+    ![1, 2].includes(w.version) ||
     !Array.isArray(w.terrain) ||
     w.terrain.length !== 512 ||
     !Array.isArray(w.followers) ||
@@ -52,7 +55,7 @@ export function deserialize(raw: string): World {
   if (
     w.level < 1 ||
     w.level > 50 ||
-    w.radius < 500 ||
+    w.radius < 350 ||
     w.radius > 5000 ||
     w.followers.length > 200 ||
     w.buildings.length > 300
@@ -82,6 +85,8 @@ export function deserialize(raw: string): World {
   if (w.monster && (!finite(w.monster.angle) || !finite(w.monster.health)))
     throw new Error("Invalid world event.");
   const types = [
+    "logging",
+    "collector",
     "shrine",
     "farm",
     "tent",
@@ -145,6 +150,87 @@ export function deserialize(raw: string): World {
       ].every((k) => finite(f[k as keyof typeof f]))
     )
       throw new Error("Invalid follower.");
+  const legacy = (w.version as number) === 1;
+  if (legacy) {
+    w.resources = { wood: 8, stone: 3, water: 5, food: 5 };
+    w.capacity = { wood: 150, stone: 150, water: 60, food: 80 };
+    w.produced = { wood: 0, stone: 0, water: 0, food: 0 };
+    w.consumed = { wood: 0, stone: 0, water: 0, food: 0 };
+    w.resourceStats = { wood: 0, stone: 0, water: 0, food: 0 };
+    w.gatherAt = 0;
+    w.waitingFollowers = 0;
+    w.stats = { ...newStats(), ...w.stats };
+    w.followers.forEach((f) => (f.hunger = 0));
+    for (const t of w.terrain) {
+      t.wood = t.vegetation * 5;
+      t.stone = t.rock * 6;
+      t.regrowth = 0;
+      t.harvesting = 0;
+    }
+  }
+  if (!finite(w.waitingFollowers) || w.waitingFollowers < 0)
+    throw new Error("Invalid population queue.");
+  if (
+    !w.followers.every(
+      (f) => finite(f.hunger) && f.hunger >= 0 && f.hunger <= 100,
+    )
+  )
+    throw new Error("Invalid follower needs.");
+  const ids = [...w.followers, ...w.buildings].map((e) => e.id);
+  if (new Set(ids).size !== ids.length)
+    throw new Error("Duplicate entity identifiers.");
+  for (const record of [
+    w.resources,
+    w.capacity,
+    w.produced,
+    w.consumed,
+    w.resourceStats,
+  ])
+    if (
+      !record ||
+      !RESOURCES.every(
+        (r) => finite(record[r]) && record[r] >= 0 && record[r] <= 1e8,
+      )
+    )
+      throw new Error("Invalid resource inventory.");
+  if (!finite(w.gatherAt) || w.gatherAt < 0)
+    throw new Error("Invalid gathering time.");
+  for (const t of w.terrain)
+    if (
+      ![t.wood, t.stone, t.regrowth, t.harvesting].every(
+        (n) => finite(n) && n >= 0,
+      )
+    )
+      throw new Error("Invalid resource deposits.");
+  if (legacy) {
+    w.version = 2;
+    w.targetRadius = w.radius;
+    w.legacy = true;
+    w.rune ||=
+      [3, 6, 10, 15].filter((level) => level <= w.level).length > w.expansions;
+    w.log.unshift(
+      "Legacy world preserved at its original size. Sacred runes continue its growth.",
+    );
+  }
+  if (
+    !Object.keys(newStats()).every((key) =>
+      finite(w.stats[key as keyof typeof w.stats]),
+    )
+  )
+    throw new Error("Invalid progression statistics.");
+  if (
+    !w.followers.every(
+      (f) => finite(f.facing ?? 1) && finite(f.lane ?? 0) && f.speed >= 0,
+    )
+  )
+    throw new Error("Invalid follower movement.");
+  if (
+    !finite(w.targetRadius) ||
+    w.targetRadius < w.radius ||
+    w.targetRadius > 5000
+  )
+    throw new Error("Invalid growth dimensions.");
+  restoreSlots(w);
   w.effects = [];
   w.undo = null;
   w.settings.speed = [1, 2, 4].includes(w.settings.speed)
@@ -159,4 +245,9 @@ export async function save(w: World) {
 export async function load(): Promise<World | null> {
   const entry = await db.saves.get("current");
   return entry ? deserialize(JSON.stringify(entry.world)) : null;
+}
+
+export async function storedBackup(): Promise<string | null> {
+  const entry = await db.saves.get("current");
+  return entry ? JSON.stringify(entry.world) : null;
 }

@@ -1,4 +1,5 @@
 import { type World, type Follower, type BuildingType, TAU } from "./types";
+import { distance, wrap } from "./geometry";
 import { newStats } from "./data";
 export function random(seed: number) {
   let a = seed | 0;
@@ -29,6 +30,16 @@ const NAMES = [
   "Finch",
 ];
 export function addFollower(w: World, angle: number, faith = 0): Follower {
+  // Find room for the new inhabitant without moving anyone already living here.
+  for (
+    let i = 0;
+    i < 100 &&
+    w.followers.some(
+      (f) => f.alive && distance(f.angle, angle) * w.radius < 25,
+    );
+    i++
+  )
+    angle = wrap(angle + 27 / w.radius);
   const n = w.nextId++;
   const f: Follower = {
     id: `f${n}`,
@@ -38,11 +49,15 @@ export function addFollower(w: World, angle: number, faith = 0): Follower {
     appearance: n % 6,
     age: "adult",
     energy: 100,
+    hunger: 0,
     happiness: 70,
     comfort: 80,
     faith,
     task: "wandering",
     assigned: null,
+    slot: null,
+    facing: 1,
+    lane: 0,
     returnTo: null,
     speed: 0.018 + (n % 4) * 0.003,
     proficiency: 0,
@@ -65,31 +80,61 @@ export function addFollower(w: World, angle: number, faith = 0): Follower {
 export function createWorld(seed = 19207, demo = false): World {
   const rng = random(seed);
   const w: World = {
-    version: 1,
+    version: 2,
+    targetRadius: 460,
+    legacy: false,
     seed,
     name: "Clover",
     time: 0,
     tick: 0,
     nextId: 1,
-    radius: 850,
+    radius: 460,
     terrain: Array.from({ length: 512 }, (_, i) => {
       const a = (i / 512) * TAU;
-      const dry = a < 0.24 || a > TAU - 0.15;
+      const home = Math.min(a, TAU - a) < 0.48;
+      const forest = Math.abs(a - 0.72) < 0.27 || Math.abs(a - 3.8) < 0.25;
+      const rocky = Math.abs(a - (TAU - 0.86)) < 0.24;
+      const homeDistance = Math.min(a, TAU - a);
+      const blend = Math.max(0, Math.min(1, (homeDistance - 0.38) / 0.17));
+      const rockyLift = Math.max(0, 1 - Math.abs(a - (TAU - 0.86)) / 0.24) * 9;
+      const pond = Math.max(0, 1 - Math.abs(a - 1.18) / 0.13);
       return {
         height:
-          Math.sin(a * 5) * 12 + Math.cos(a * 9) * 7 + Math.sin(a * 17) * 3,
-        moisture: dry ? 0.12 : 0.48 + rng() * 0.15,
+          (2 + Math.cos(a * 3) * 2) * (1 - blend) +
+          (Math.sin(a * 5) * 7 + Math.cos(a * 9) * 4) * blend -
+          pond * 28 +
+          rockyLift,
+        moisture: home
+          ? 0.22
+          : forest
+            ? 0.65 + rng() * 0.12
+            : 0.32 + rng() * 0.1,
         heat: 0.5,
-        fertility: 0.7,
-        vegetation: dry ? 0.12 : 0.6 + rng() * 0.3,
+        fertility: rocky ? 0.25 : home ? 0.85 : 0.65,
+        vegetation: forest
+          ? 0.8 + rng() * 0.2
+          : home
+            ? 0.12
+            : 0.15 + rng() * 0.2,
         water: 0,
         fire: 0,
-        rock: rng(),
+        wood: forest ? 4 : 0.2,
+        stone: rocky ? 6 : 0.1,
+        regrowth: 0,
+        harvesting: 0,
+        rock: rocky ? 0.75 + rng() * 0.25 : rng() * 0.2,
       };
     }),
     followers: [],
     buildings: [],
-    gold: 200,
+    resources: { wood: 8, stone: 3, water: 5, food: 5 },
+    capacity: { wood: 150, stone: 150, water: 60, food: 80 },
+    produced: { wood: 0, stone: 0, water: 0, food: 0 },
+    consumed: { wood: 0, stone: 0, water: 0, food: 0 },
+    resourceStats: { wood: 0, stone: 0, water: 0, food: 0 },
+    gatherAt: 0,
+    waitingFollowers: 0,
+    gold: 255,
     mana: 10,
     awe: 5,
     xp: 0,
@@ -130,6 +175,7 @@ export function createWorld(seed = 19207, demo = false): World {
     charge: 120,
   });
   addFollower(w, 0.02);
+  addFollower(w, 0.13, 60);
   if (demo) {
     w.level = 8;
     w.mana = 24;

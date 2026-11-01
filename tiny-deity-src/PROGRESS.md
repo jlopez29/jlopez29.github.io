@@ -1,3 +1,5 @@
+> **Gameplay overhaul v2:** The current implementation supersedes the original economy, population needs, follower positioning, starting world, and tutorial described below. See [OVERHAUL-V2.md](OVERHAUL-V2.md) for current behavior and verification. This file retains the original release record.
+
 # Tiny Deity progress — playable 0.1
 
 ## Implemented

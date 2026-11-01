@@ -6,6 +6,7 @@ interface UI {
   revision: number;
   tool: Tool;
   panel:
+    | "resources"
     | "store"
     | "goals"
     | "settings"

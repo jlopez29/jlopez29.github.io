@@ -20,21 +20,22 @@ The dev server listens on `0.0.0.0:5173`. `npm run build` emits the static appli
 
 ## Play
 
-Choose Rain and click the grass near Pip, or drag a cloud down toward the surface. Once Pip believes, select them and assign them to the shrine for faster mana, or buy a Sunpatch farm and assign them to its construction. Water the finished farm, let Pip work, and click the gold above it to harvest. Build a tent so tired workers can rest. Goals give extra gold and XP; levels bring new inhabitants, buildings, powers, mana capacity, and expansion runes.
+Start with a compact planet, two inhabitants, 255 gold, and a small material inventory. Rain near Pip to earn their faith, then assign a follower to the shrine: they walk to a reserved position and worship. Rain on the nearby forest, gather wood in Resources, build a logging camp, and assign a worker. Use logs for a farm and tent. Farms turn water into food and collectible gold; collectors catch local rain or draw from ponds. Hungry followers eat, tired workers rest, and productive work supports new arrivals. Real activity completes goals; sacred runes expand the planet at levels 3, 6, 10, and 15.
 
 - Drag empty space, use arrow keys, or use the rotation buttons to explore all 360 degrees.
 - Wheel, pinch, or use +/− to zoom. The globe button frames the whole planet; H restores home view.
-- Select inhabitants and structures on the canvas, or use the followers directory. Dragging a follower onto a structure assigns them immediately. Inspectors also provide accessible assignment selects.
+- Select inhabitants and structures on the canvas, or use the followers directory. Dragging a follower onto a structure reserves an individual slot and starts their walk to work. Inspectors also provide accessible assignment selects.
 - R: rain. S: sunshine. T: raise terrain. F: fire. 1–8: powers. Space: pause. Escape: cancel.
 - At level 2, choose raise/lower/smooth and click or drag on the surface. Undo restores the last terrain operation. Lower a basin, then apply rain to create lake water.
+- Open Resources for saved inventories, storage capacity, recent rates, gathering, and free replanting. Tap trees or rocks to gather at that location. Recipes require materials alongside gold; reclaiming returns part of both.
 - Settings includes classic hold-and-swipe weather, optional seasons/events, autonomy, reduced effects, speed, sound, and diagnostics.
 - New world / developed demo replaces the active save after an explicit in-game confirmation. Export first to retain your old world.
 
 ## Saves
 
-One active world lives in IndexedDB on this browser origin. Autosave runs every 10 seconds and on visibility changes. Save now and JSON export/import are in Settings. Invalid or unsupported saves are rejected. Effects and terrain undo history are transient. Closing immediately after an action may lose up to 10 seconds; the browser does not guarantee asynchronous writes during final page teardown. Storage failure is shown in the HUD; JSON export remains usable.
+One active world lives in IndexedDB on this browser origin. Autosave runs every 10 seconds and on visibility changes. Save now and JSON export/import are in Settings. Version-one saves migrate to version two and retain their original planet size as legacy worlds. Invalid or unsupported saves are rejected; a failed load pauses the game and blocks automatic writes, preserving the original record for export. Effects and terrain undo history are transient. Closing immediately after an action may lose up to 10 seconds; the browser does not guarantee asynchronous writes during final page teardown. Storage failure is shown in the HUD; JSON export remains usable.
 
-Offline income is capped at four hours and further limited by worker energy and remaining miracle charge. It goes into a building's collectible store. No offline disasters or deaths occur. Offline calculation is intentionally conservative and does not run the full simulation.
+Offline income is capped at four hours and further limited by worker energy and remaining miracle charge, terrain stocks, water, and storage. Only arrived workers generate offline production. It goes into a building's collectible store. No offline disasters or deaths occur. Offline calculation is intentionally conservative and does not run the full simulation.
 
 ## Architecture
 
@@ -46,4 +47,4 @@ Offline income is capped at four hours and further limited by worker energy and 
 
 Art is procedural and original. DM Sans and Fraunces are locally hosted under the included SIL Open Font Licenses. The game has no external runtime requests. Soft synthesized chimes use Web Audio after enabling sound.
 
-See [PROGRESS.md](PROGRESS.md) for the exact release scope and unfinished parts of the larger brief.
+See [OVERHAUL-V2.md](OVERHAUL-V2.md) for milestone behavior, save migration, balancing, validation, and remaining limitations; [PROGRESS.md](PROGRESS.md) records the earlier release history.

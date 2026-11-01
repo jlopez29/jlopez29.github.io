@@ -257,6 +257,41 @@ export function followerTexture(appearance: number, arms = false): Texture {
 export function buildingTexture(type: BuildingType): Texture {
   return canvas(144, 156, (c) => {
     ellipse(c, 73, 147, 58, 7, "#3c594b25");
+    if (type === "logging") {
+      rect(c, 30, 75, 80, 66, "#b89b6c");
+      path(
+        c,
+        [
+          [20, 80],
+          [72, 40],
+          [123, 80],
+        ],
+        "#718a64",
+      );
+      for (let i = 0; i < 4; i++) {
+        rect(c, 15 + i * 26, 123, 24, 18, "#a67c54", 5);
+        ellipse(c, 27 + i * 26, 131, 8, 8, "#e3bf85", ink);
+      }
+      line(c, 105, 69, 124, 115, "#726e65", 5);
+      return;
+    }
+    if (type === "collector") {
+      rect(c, 44, 81, 57, 63, "#8aa9a6", 8);
+      path(
+        c,
+        [
+          [15, 62],
+          [127, 62],
+          [90, 98],
+          [54, 98],
+        ],
+        "#aed1cf",
+      );
+      line(c, 17, 59, 127, 59, "#688c88", 5);
+      line(c, 50, 106, 95, 106, "#d7e8dc", 3);
+      ellipse(c, 72, 125, 12, 8, "#79bdce");
+      return;
+    }
     if (type === "tent") {
       path(
         c,

@@ -119,9 +119,11 @@ describe("miracles and followers", () => {
     f.angle = b.angle;
     assign(w, f.id, b.id);
     advance(w, 10);
-    expect(f.energy).toBeLessThan(2);
+    expect(f.task).toBe("exhausted");
+    expect(f.energy).toBeLessThan(12);
     expect(b.progress).toBeLessThan(0.3);
-    const tent = purchase(w, "tent", -0.5);
+    w.resources.wood += 1; // Gather the one additional log needed after a farm.
+    const tent = purchase(w, "tent", -0.8);
     if (typeof tent === "string") throw Error(tent);
     tent.construction = 1;
     f.angle = tent.angle;
@@ -187,6 +189,7 @@ describe("construction, economy, and progression", () => {
   it("awards each completed quest only once", () => {
     const w = createWorld();
     w.stats.rain = 1;
+    w.stats.converted = 1;
     checkQuests(w);
     const gold = w.gold;
     checkQuests(w);
@@ -202,9 +205,14 @@ describe("construction, economy, and progression", () => {
     const f = w.followers[0];
     f.faith = 80;
     assign(w, f.id, b.id);
+    expect(offline(w, 10)).toBe(0); // Travelers do not produce offline.
+    advance(w, 10);
+    const foodBefore = w.resources.food;
     const reward = offline(w, 100000);
-    expect(reward).toBe(48);
-    expect(b.stored).toBe(48);
+    expect(reward).toBeGreaterThan(0);
+    expect(b.stored).toBe(reward);
+    expect(w.resources.food).toBeGreaterThan(foodBefore);
+    expect(w.resources.water).toBeGreaterThanOrEqual(0);
     expect(f.alive).toBe(true);
     expect(w.monster).toBeNull();
     expect(w.mana).toBe(maxMana(w));
