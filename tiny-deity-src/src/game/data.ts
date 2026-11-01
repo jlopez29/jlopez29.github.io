@@ -14,7 +14,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   },
   collector: {
     name: "Rain collector",
-    tagline: "Every little drop has a purpose.",
+    tagline: "Catches water passively; workers speed things up.",
     cost: 60,
     level: 1,
     capacity: 1,
@@ -38,7 +38,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   },
   farm: {
     name: "Sunpatch farm",
-    tagline: "A little rain. A golden harvest.",
+    tagline: "Rain powers a faster harvest; dry farms grow slowly.",
     cost: 75,
     level: 1,
     capacity: 3,

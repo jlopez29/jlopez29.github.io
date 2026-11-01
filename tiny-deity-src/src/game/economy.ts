@@ -58,7 +58,15 @@ export function extract(
 ) {
   let left = Math.min(amount, w.capacity[r] - w.resources[r]);
   const requested = left;
-  for (const t of nearby(w, angle)) {
+  // Clear the closest deposits first so harvesting looks local.
+  const deposits = w.terrain
+    .map((terrain, i) => ({
+      terrain,
+      distance: distance((i / w.terrain.length) * TAU, angle),
+    }))
+    .filter((entry) => entry.distance * w.radius < 160)
+    .sort((a, b) => a.distance - b.distance);
+  for (const { terrain: t } of deposits) {
     const stock =
       r === "wood"
         ? t.vegetation > 0.2 && t.fire < 0.1
@@ -92,7 +100,7 @@ export function gather(w: World, r: Resource, angle = 0): string | null {
     const pond = nearby(w, angle, 600).find((t) => t.water > 1);
     if (pond) {
       amount = addResource(w, r, 1, angle);
-      pond.water = Math.max(0, pond.water - amount * 0.4);
+      pond.water = Math.max(0, pond.water - amount);
     }
   }
   if (r === "food") {
@@ -164,8 +172,10 @@ export function materialProduction(
   if (b.type === "collector") {
     const pond = nearby(w, b.angle, 100).find((t) => t.water > 1);
     if (pond && w.resources.water < w.capacity.water) {
-      const n = addResource(w, "water", dt * 0.04, b.angle);
-      pond.water = Math.max(0, pond.water - n * 0.4);
+      // Passive trickle with extra output when believers operate the collector.
+      const flow = dt * 0.04 * (workers.length ? 1 : 0.25);
+      const n = addResource(w, "water", Math.min(flow, pond.water), b.angle);
+      pond.water = Math.max(0, pond.water - n);
     }
     return true;
   }
@@ -204,6 +214,7 @@ export function materialProduction(
     efficiency *=
       (0.2 + soil.fertility * 0.8) *
       (w.resources.water >= 1 ? 1 : 0.25) *
+      (b.charge > 0 ? 1 : 0.35) *
       (soil.heat > 0.2 && soil.heat < 0.85 ? 1 : 0.5);
   b.progress += (dt * efficiency) / BUILDINGS[b.type].duration;
   if (b.progress < 1) return true;

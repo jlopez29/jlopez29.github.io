@@ -16,6 +16,7 @@ import {
 } from "./data";
 import {
   basinCapacity,
+  redistributeWater,
   clamp,
   deform,
   distance,
@@ -136,6 +137,10 @@ export function cast(
       w.stats.sun++;
       if (w.time - w.lastRain < 35) discover(w, "Rainbow");
     }
+    const dryBeforeRain =
+      power === "rain" &&
+      nearby(w, angle).some((t) => t.moisture < 0.25 && t.vegetation < 0.25);
+    let exposedStone = 0;
     w.terrain.forEach((t, i) => {
       const d = distance((i / w.terrain.length) * TAU, angle);
       if (d > 0.15) return;
@@ -157,7 +162,11 @@ export function cast(
         t.water = Math.max(0, t.water - 3);
       }
       if (power === "lightning") {
-        t.rock = 0;
+        // Shatter the rock but do not make the remaining stone inaccessible.
+        const loosened = Math.min(t.stone, 0.15 * f);
+        t.stone -= loosened;
+        exposedStone += loosened;
+        t.rock = t.stone > 0.1 ? Math.max(0.14, t.rock * 0.65) : 0;
         t.vegetation = Math.max(0, t.vegetation - 0.12);
       }
       if (power === "fire") {
@@ -174,6 +183,23 @@ export function cast(
       w.gold += 50;
       gainXP(w, 20);
       note(w, "Shadowling banished! +50 gold.");
+    }
+    if (exposedStone > 0) {
+      const gained = addResource(w, "stone", exposedStone, angle);
+      if (gained > 0) {
+        effect(w, "coin", angle);
+        w.effects[w.effects.length - 1].label =
+          `Stone exposed +${gained.toFixed(1)}`;
+      }
+    }
+    if (power === "rain") {
+      const local = nearby(w, angle);
+      if (w.stats.terraforms > 0 && local.some((t) => t.water > 7)) {
+        discover(w, "Lake Maker");
+      }
+      if (dryBeforeRain && local.some((t) => t.vegetation > 0.28)) {
+        discover(w, "Green Thumb");
+      }
     }
     w.buildings.forEach((b) => {
       if (distance(b.angle, angle) > 0.18) return;
@@ -792,6 +818,9 @@ export function step(w: World, dt: number) {
         w.stats.built++;
         gainXP(w, 15);
         note(w, `${def.name} is ready!`);
+        effect(w, "rune", b.angle);
+        effect(w, "coin", b.angle);
+        w.effects[w.effects.length - 1].label = "Built! +15 XP";
       }
     } else if (materialProduction(w, b, workers, dt)) {
       // Material production checks actual deposits and storage.
@@ -871,6 +900,7 @@ export function step(w: World, dt: number) {
         : 0;
       t.heat = clamp(t.heat + (0.5 + season - t.heat) * 0.001, 0, 1);
     });
+    redistributeWater(w);
     w.terrainVersion++;
     if (w.waitingFollowers > 0 && w.resources.food >= 3) {
       consume(w, "food", 2);
@@ -930,17 +960,22 @@ export function offline(w: World, seconds: number): number {
     );
     if (!workers.length) continue;
     if (["logging", "mine", "farm", "fishing", "collector"].includes(b.type)) {
+      // One exhausted worker cannot stop the healthy workers' offline output.
       const elapsed = Math.min(
         duration,
-        ...workers.map((f) => Math.max(0, (f.energy - 1) / 0.35)),
+        Math.max(...workers.map((f) => Math.max(0, (f.energy - 1) / 0.35))),
       );
       const before = b.stored;
-      for (let t = 0; t < elapsed; t++)
-        materialProduction(w, b, workers, Math.min(1, elapsed - t));
+      for (let t = 0; t < elapsed; t++) {
+        const slice = Math.min(1, elapsed - t);
+        const active = workers.filter((f) => f.energy > 1);
+        if (!active.length) break;
+        materialProduction(w, b, active, slice);
+        active.forEach(
+          (f) => (f.energy = Math.max(1, f.energy - slice * 0.35)),
+        );
+      }
       total += b.stored - before;
-      workers.forEach(
-        (f) => (f.energy = Math.max(1, f.energy - elapsed * 0.35)),
-      );
       continue;
     }
     const available =
