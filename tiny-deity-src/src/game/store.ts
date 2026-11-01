@@ -5,6 +5,7 @@ interface UI {
   world: World;
   revision: number;
   tool: Tool;
+  brush: number;
   panel:
     | "resources"
     | "store"
@@ -27,6 +28,7 @@ export const useGame = create<UI>((set) => ({
   world: createWorld(),
   revision: 0,
   tool: "hand",
+  brush: 0.14,
   panel: null,
   selected: null,
   placing: null,

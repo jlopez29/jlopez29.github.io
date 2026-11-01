@@ -11,6 +11,7 @@ import {
   angleAt,
   clamp,
   distance,
+  deform,
   fromScreen,
   ground,
   radial,
@@ -18,9 +19,11 @@ import {
   toScreen,
   type Camera,
 } from "../game/geometry";
-import { gather, nearby, materialError } from "../game/economy";
+import { nearby, materialError } from "../game/economy";
 import {
   grab,
+  gainXP,
+  effect,
   landFollower,
   releaseCarried,
   assign,
@@ -61,6 +64,12 @@ interface Drag {
   sky?: SkyObject;
   angle: number;
   original?: { x: number; y: number };
+  threshold: number;
+  touch: boolean;
+  lastAngle?: number;
+  moved: boolean;
+  sculpted: number;
+  lastSculpt: number;
 }
 export class GameView {
   app = new Application();
@@ -124,7 +133,7 @@ export class GameView {
         String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)),
       )
     )
-      this.app.ticker.maxFPS = 20;
+      this.app.ticker.maxFPS = 10;
     this.host.appendChild(this.app.canvas);
     this.app.canvas.setAttribute(
       "aria-label",
@@ -202,14 +211,17 @@ export class GameView {
     this.lastSize = size;
     const radius = useGame.getState().world.radius;
     const mobile = w < 600;
-    this.targetZoom = mobile ? 0.55 : 0.83;
+    this.targetZoom = Math.min(w * (mobile ? 0.47 : 0.4), h * 0.34) / radius;
     this.camera.zoom = this.targetZoom;
     this.camera.x = w / 2;
     this.camera.y = h * 0.43 + radius * this.targetZoom;
   }
   home = () => {
-    const w = this.host.clientWidth;
-    this.targetZoom = w < 600 ? 0.55 : 0.83;
+    const w = this.host.clientWidth,
+      h = this.host.clientHeight;
+    this.targetZoom =
+      Math.min(w * (w < 600 ? 0.47 : 0.4), h * 0.34) /
+      useGame.getState().world.radius;
     this.camera.rotation = 0;
     this.velocity = 0;
   };
@@ -282,7 +294,7 @@ export class GameView {
           point = toScreen(coin.x, coin.y, this.camera),
           d = Math.hypot(point.x - x, point.y - y);
         if (d < Math.max(19, 23 * this.camera.zoom))
-          return { kind: "building" as const, id: b.id, d };
+          return { kind: "building" as const, id: b.id, d, collection: true };
       }
       const p = radial(b.angle, ground(w, b.angle) + 37),
         s = toScreen(p.x, p.y, this.camera),
@@ -295,10 +307,13 @@ export class GameView {
   private down = (e: PointerEvent) => {
     if (e.button > 2) return;
     const p = this.point(e);
+    this.pointerInside = true;
+    this.hoverAngle = this.getAngle(p.x, p.y);
     this.pointers.set(e.pointerId, p);
     this.app.canvas.setPointerCapture(e.pointerId);
-    if (this.pointers.size === 2) {
+    if (this.pointers.size >= 2) {
       this.restoreWeather();
+      releaseCarried(useGame.getState().world);
       this.drag = null;
       const pts = [...this.pointers.values()];
       this.pinch = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -309,12 +324,17 @@ export class GameView {
     const hit = this.hit(p.x, p.y);
     const sky = this.skyObjects.find(
       (o) =>
+        o.sprite.visible &&
         Math.hypot(o.sprite.x - p.x, o.sprite.y - p.y) <
-        (o.kind === "sun" ? 40 : 55),
+          (o.kind === "sun" ? 40 : 55),
     );
     let kind: Drag["kind"] = "camera";
     if (e.button !== 0) kind = "camera";
     else if (ui.placing || ui.moving) kind = "click";
+    else if (ui.tool === "hand" && hit)
+      kind = hit.kind === "follower" ? "follower" : "click";
+    else if (sky && !["raise", "lower", "smooth"].includes(ui.tool))
+      kind = "weather";
     else if (ui.tool !== "hand")
       kind = ["raise", "lower", "smooth"].includes(ui.tool)
         ? "terrain"
@@ -324,11 +344,16 @@ export class GameView {
     else if (hit) kind = "click";
     this.drag = {
       pointer: e.pointerId,
+      touch: e.pointerType === "touch",
+      threshold: e.pointerType === "touch" ? 14 : 8,
+      moved: false,
+      sculpted: 0,
+      lastSculpt: 0,
       startX: p.x,
       startY: p.y,
       x: p.x,
       y: p.y,
-      start: performance.now(),
+      start: e.timeStamp,
       rotation: this.camera.rotation,
       kind,
       id: hit?.id,
@@ -337,11 +362,7 @@ export class GameView {
       original: sky ? { x: sky.sprite.x, y: sky.sprite.y } : undefined,
     };
     this.velocity = 0;
-    if (kind === "follower" && hit)
-      useGame.setState({
-        selected: { kind: "follower", id: hit.id },
-        panel: null,
-      });
+    useGame.setState({ selected: null, panel: null });
   };
   private move = (e: PointerEvent) => {
     const p = this.point(e);
@@ -360,10 +381,13 @@ export class GameView {
     }
     const drag = this.drag;
     if (!drag || drag.pointer !== e.pointerId) return;
+    drag.moved ||=
+      Math.hypot(p.x - drag.startX, p.y - drag.startY) > drag.threshold;
     if (
+      !useGame.getState().paused &&
       drag.kind === "follower" &&
       drag.id &&
-      Math.hypot(p.x - drag.startX, p.y - drag.startY) > 8
+      drag.moved
     ) {
       const w = useGame.getState().world;
       if (w.followers.find((f) => f.id === drag.id)?.task !== "carried")
@@ -372,7 +396,12 @@ export class GameView {
     const dx = p.x - drag.x;
     drag.x = p.x;
     drag.y = p.y;
-    if (drag.kind === "camera") {
+    if (
+      drag.kind === "camera" ||
+      (drag.kind === "click" &&
+        drag.moved &&
+        (useGame.getState().placing || useGame.getState().moving))
+    ) {
       const diff =
         (p.x - drag.startX) /
         Math.max(250, useGame.getState().world.radius * this.camera.zoom);
@@ -399,18 +428,22 @@ export class GameView {
     const d = this.drag;
     const p = this.point(e);
     const wasPinch = this.pointers.size > 1;
+    this.drag = null;
     this.finishPointer(e);
+    this.drag = d;
     if (wasPinch || !d || d.pointer !== e.pointerId) {
       this.drag = null;
       return;
     }
-    const moved = Math.hypot(p.x - d.startX, p.y - d.startY) > 8;
+    const moved =
+      d.moved || Math.hypot(p.x - d.startX, p.y - d.startY) > d.threshold;
     const ui = useGame.getState(),
       w = ui.world;
     const angle = this.getAngle(p.x, p.y);
     let error: string | null = null;
     if (ui.paused && d.kind !== "camera") {
       message("Resume your world to interact.");
+      releaseCarried(w);
       this.restoreWeather();
       this.drag = null;
       return;
@@ -440,29 +473,38 @@ export class GameView {
               selected: { kind: "building", id: result.id },
               tool: "hand",
             });
-            message("A new beginning! Assign a follower to build it.");
+            message("Believers will help build here.");
           }
         }
       }
     } else if (d.kind === "follower" && d.id) {
       const f = w.followers.find((f) => f.id === d.id)!;
-      if (moved && f.alive) {
+      if (moved && f.alive && f.task === "carried") {
         const hit = this.hit(p.x, p.y);
         const near = w.buildings.find((b) => distance(b.angle, angle) < 0.065);
-        if (near && (hit?.kind === "building" || this.onSurface(p.x, p.y)))
+        if (near && (hit?.kind === "building" || this.onSurface(p.x, p.y))) {
           error = assign(w, f.id, near.id);
-        else {
+          if (!error) {
+            effect(w, "heart", near.angle);
+            w.effects[w.effects.length - 1].label = "Assigned ✓";
+          }
+        } else if (this.onSurface(p.x, p.y)) {
           landFollower(w, f.id, angle);
-          message("A soft landing. A very surprised little friend.");
+          effect(w, "heart", angle);
         }
+      } else if (!moved && e.timeStamp - d.start < 500) {
+        useGame.setState({
+          selected: { kind: "follower", id: f.id },
+          panel: null,
+        });
       }
     } else if (d.kind === "weather" && d.sky) {
-      if (ui.world.settings.classic && performance.now() - d.start < 450)
+      if (ui.world.settings.classic && e.timeStamp - d.start < 450)
         error =
           "Hold a cloud or the sun briefly, then swipe toward the surface.";
       else if (
         this.onSurface(p.x, p.y) &&
-        (moved || performance.now() - d.start > 450)
+        (moved || e.timeStamp - d.start > 450)
       )
         error = cast(w, d.sky.kind, angle);
       else if (!moved)
@@ -472,22 +514,23 @@ export class GameView {
             " toward your planet to perform a miracle.",
         );
       this.restoreWeather();
+    } else if (d.kind === "terrain") {
+      this.sculpt(d, performance.now());
     } else if (ui.tool !== "hand" && d.kind !== "camera") {
       if (!this.onSurface(p.x, p.y))
         error = "Choose a spot on the surface of your planet.";
-      else
-        error = cast(
-          w,
-          ui.tool,
-          d.kind === "terrain" ? d.angle : angle,
-          d.kind === "terrain" ? Math.max(1, (d.startY - p.y) / 35) : 1,
-        );
+      else error = cast(w, ui.tool, angle, 1);
     } else if (!moved) {
       const hit = this.hit(p.x, p.y);
       if (hit) {
-        if (hit.kind === "building") {
+        if (hit.kind === "building" && "collection" in hit) {
           const gold = collect(w, hit.id);
-          if (gold) message(`A golden little harvest. +${gold} gold`);
+          if (gold) {
+            message(`A golden little harvest. +${gold} gold`);
+            useGame.setState({ selected: null });
+            this.drag = null;
+            return;
+          }
         }
         useGame.setState({
           selected: { kind: hit.kind, id: hit.id },
@@ -495,20 +538,6 @@ export class GameView {
         });
       } else {
         useGame.setState({ selected: null });
-        if (this.onSurface(p.x, p.y)) {
-          const t = sample(w.terrain, angle);
-          const resource =
-            t.rock > 0.4
-              ? "stone"
-              : t.vegetation > 0.4
-                ? "wood"
-                : t.water > 1
-                  ? "water"
-                  : "food";
-          error = gather(w, resource, angle);
-          if (!error)
-            message(`Gathered ${resource} from the landscape. +1 gold`);
-        }
       }
     }
     releaseCarried(w);
@@ -516,14 +545,63 @@ export class GameView {
     useGame.getState().refresh();
     this.drag = null;
   };
+  private sculpt(d: Drag, now: number) {
+    const ui = useGame.getState(),
+      w = ui.world;
+    if (
+      ui.paused ||
+      (d.touch && now - d.start < 120) ||
+      !["raise", "lower", "smooth"].includes(ui.tool) ||
+      !this.onSurface(d.x, d.y) ||
+      this.pointers.size > 1 ||
+      now - d.lastSculpt < 50
+    )
+      return;
+    if (w.level < POWERS[ui.tool as Power].level) return;
+    if (d.sculpted % 40 === 0) {
+      if (w.mana < 1) return;
+      w.mana -= 1;
+      if (!d.sculpted) {
+        w.undo = w.terrain.map((t) => t.height);
+        w.stats.terraforms++;
+        w.stats.miracles++;
+        // Fixed reward per paid stroke, never per pointer event.
+        gainXP(w, 1);
+      }
+    }
+    const angle = this.getAngle(d.x, d.y);
+    const previous = d.lastAngle ?? angle;
+    const delta = Math.atan2(
+      Math.sin(angle - previous),
+      Math.cos(angle - previous),
+    );
+    const segments = Math.min(
+      16,
+      Math.max(1, Math.ceil(Math.abs(delta) / (ui.brush * 0.4))),
+    );
+    for (let i = 1; i <= segments; i++)
+      deform(
+        w,
+        previous + (delta * i) / segments,
+        (ui.tool === "raise" ? 2 : -2) / Math.sqrt(segments),
+        ui.tool === "smooth",
+        ui.brush,
+        false,
+      );
+    d.lastAngle = angle;
+    d.lastSculpt = now;
+    d.sculpted++;
+  }
   private cancel = (e: PointerEvent) => {
     this.restoreWeather();
     releaseCarried(useGame.getState().world);
     this.drag = null;
     this.finishPointer(e);
   };
-  private lost = () => {
-    if (this.pointers.size === 0) {
+  private lost = (e: PointerEvent) => {
+    this.pointers.delete(e.pointerId);
+    if (this.drag?.pointer === e.pointerId) {
+      releaseCarried(useGame.getState().world);
       this.restoreWeather();
       this.drag = null;
     }
@@ -548,6 +626,7 @@ export class GameView {
       return;
     const ui = useGame.getState();
     if (e.key === "Escape") {
+      this.blur();
       useGame.setState({
         panel: null,
         selected: null,
@@ -615,17 +694,17 @@ export class GameView {
       });
       g.poly(points).fill(color);
     };
-    layer(0, 0x5d875c);
-    layer(9, 0xb5c279);
-    layer(27, 0x89a563);
-    layer(74, 0x6b945d);
-    layer(168, 0xa3ad69);
-    layer(210, 0xc1a46a);
-    layer(226, 0xcdb67a);
-    layer(285, 0xbca06d);
-    layer(318, 0xa78b64);
-    layer(440, 0x917a5d);
-    layer(620, 0x7d7058);
+    layer(0, 0x218e42);
+    layer(9, 0x9bed4e);
+    layer(27, 0x69d83f);
+    layer(74, 0x439d3e);
+    layer(168, 0xb89854);
+    layer(210, 0xb88049);
+    layer(226, 0xe4b86a);
+    layer(285, 0xad7445);
+    layer(318, 0x94623f);
+    layer(440, 0x774832);
+    layer(620, 0x5c382c);
     const detail = this.details;
     detail.clear();
     const rng = random(w.seed);
@@ -635,7 +714,7 @@ export class GameView {
         p = radial(a, r),
         sz = 3 + rng() * 14;
       detail.ellipse(p.x, p.y, sz * 1.5, sz).fill({
-        color: [0xd4c28b, 0x8e9762, 0x6b8559, 0xe1c58b][i % 4],
+        color: [0xf1c374, 0x8f643d, 0x9d723e, 0xe2b166][i % 4],
         alpha: 0.28,
       });
       if (i % 4 === 0)
@@ -659,14 +738,27 @@ export class GameView {
       const a = (i / 512) * TAU,
         next = w.terrain[(i + 1) % 512],
         a2 = ((i + 1) / 512) * TAU;
-      const color =
-        t.fire > 0.1
-          ? 0x806746
-          : t.moisture < 0.24
-            ? 0xb9ad69
-            : t.vegetation > 0.8
-              ? 0x79a465
-              : 0x9ab866;
+      const neighbors = [-2, -1, 0, 1, 2].map(
+        (d) => w.terrain[(i + d + w.terrain.length) % w.terrain.length],
+      );
+      const avg = (key: "moisture" | "vegetation" | "rock" | "fertility") =>
+        neighbors.reduce((sum, cell) => sum + cell[key], 0) / neighbors.length;
+      const mix = (a: number, b: number, t: number) => {
+        t = clamp(t, 0, 1);
+        return [16, 8, 0].reduce(
+          (color, shift) =>
+            color |
+            (Math.round(
+              ((a >> shift) & 255) * (1 - t) + ((b >> shift) & 255) * t,
+            ) <<
+              shift),
+          0,
+        );
+      };
+      let color = mix(0xe4bd58, 0x69d83f, avg("moisture") * 2.5);
+      color = mix(color, 0x167537, (avg("vegetation") - 0.35) * 1.6);
+      color = mix(color, 0x8797a4, avg("rock") * 0.8);
+      if (t.fire > 0.1) color = 0x614735;
       const p = radial(a, w.radius + t.height),
         p2 = radial(a2, w.radius + next.height);
       detail.moveTo(p.x, p.y).lineTo(p2.x, p2.y).stroke({ color, width: 8 });
@@ -675,7 +767,19 @@ export class GameView {
         detail
           .moveTo(p.x, p.y)
           .lineTo(top.x - 2, top.y)
-          .stroke({ color: 0x799b55, width: 1.5 });
+          .stroke({ color: 0x4cae30, width: 1.5 });
+      }
+      if (
+        i % 5 === 0 &&
+        t.fertility > 0.65 &&
+        t.moisture > 0.3 &&
+        t.water < 1 &&
+        t.vegetation > 0.2 &&
+        t.fire < 0.1
+      ) {
+        const flower = radial(a, w.radius + t.height + 8);
+        detail.circle(flower.x, flower.y, 3).fill(i % 2 ? 0xffe044 : 0xff78b0);
+        detail.circle(flower.x, flower.y, 1).fill(0xffffff);
       }
       if (t.water > 0.5) {
         const b = radial(a, w.radius + t.height + t.water),
@@ -685,11 +789,11 @@ export class GameView {
           );
         this.water
           .poly([p.x, p.y, p2.x, p2.y, b2.x, b2.y, b.x, b.y])
-          .fill({ color: 0x7bbeca, alpha: 0.8 });
+          .fill({ color: 0x1ba8ed, alpha: 0.8 });
         this.water
           .moveTo(b.x, b.y)
           .lineTo(b2.x, b2.y)
-          .stroke({ color: 0xd9eee0, width: 2, alpha: 0.8 });
+          .stroke({ color: 0xa7f3ff, width: 2, alpha: 0.8 });
       }
     });
     this.meshVersion = w.terrainVersion;
@@ -712,7 +816,7 @@ export class GameView {
       const isTree = i % 3 !== 0;
       const s = this.createSprite(`d${i}`, isTree ? `tree${i % 3}` : "rock");
       s.label = `${a}`;
-      s.scale.set(isTree ? 0.37 + rng() * 0.24 : 0.5 + rng() * 0.25);
+      s.scale.set(isTree ? 0.46 + rng() * 0.3 : 0.55 + rng() * 0.25);
       s.alpha = 1;
     }
     this.seed = w.seed;
@@ -732,11 +836,16 @@ export class GameView {
           t.wood > 0.3 &&
           t.fire < 0.2 &&
           !w.buildings.some((b) => distance(b.angle, a) < 0.06);
-        s.rotation = a + Math.sin(this.elapsed * 1.2 + a * 20) * 0.014;
+        s.rotation =
+          a +
+          (w.settings.reduced
+            ? 0
+            : Math.sin(this.elapsed * 1.2 + a * 20) * 0.014);
         s.tint = t.moisture < 0.25 ? 0xd4c28b : 0xffffff;
       } else {
         s.visible =
           t.rock > 0.35 &&
+          t.stone > 0.2 &&
           !w.buildings.some((b) => distance(b.angle, a) < 0.06);
       }
     }
@@ -798,10 +907,7 @@ export class GameView {
       if (
         this.drag?.kind === "follower" &&
         this.drag.id === f.id &&
-        Math.hypot(
-          this.drag.x - this.drag.startX,
-          this.drag.y - this.drag.startY,
-        ) > 8
+        f.task === "carried"
       ) {
         const dragP = this.worldPoint(this.drag.x, this.drag.y);
         s.position.set(dragP.x, dragP.y);
@@ -820,7 +926,8 @@ export class GameView {
     const now = performance.now(),
       dt = Math.min(0.25, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
-    this.elapsed += dt;
+    this.elapsed += useGame.getState().world.settings.reduced ? 0 : dt;
+    if (this.drag?.kind === "terrain") this.sculpt(this.drag, now);
     this.fps = this.fps * 0.95 + 0.05 / Math.max(dt, 0.001);
     const ui = useGame.getState(),
       w = ui.world;
@@ -840,10 +947,10 @@ export class GameView {
     }
     this.camera.x = W / 2;
     const overview = this.camera.zoom < 0.42;
-    const overviewZoom = (Math.min(W, H) * 0.32) / w.radius;
-    const blend = clamp((this.camera.zoom - overviewZoom) / 0.2, 0, 1);
+    const homeZoom = Math.min(W * (W < 600 ? 0.47 : 0.4), H * 0.34) / w.radius;
+    const blend = clamp((this.camera.zoom - homeZoom) / 0.3, 0, 1);
     this.camera.y =
-      H * 0.5 * (1 - blend) + (H * 0.43 + w.radius * this.camera.zoom) * blend;
+      H * 0.51 * (1 - blend) + (H * 0.43 + w.radius * this.camera.zoom) * blend;
     this.scene.position.set(this.camera.x, this.camera.y);
     this.scene.scale.set(this.camera.zoom);
     this.scene.rotation = this.camera.rotation;
@@ -895,7 +1002,7 @@ export class GameView {
         this.labels.addChild(t);
       }
       t.text = text;
-      t.style.fontSize = size;
+      t.style.fontSize = size / this.camera.zoom;
       t.style.fill = color;
       t.visible = true;
       t.position.set(p.x, p.y);
@@ -942,6 +1049,15 @@ export class GameView {
         g.roundRect(c.x - 20, c.y - 3, 40 * b.progress, 5, 2).fill(0xe6ce8c);
       }
     }
+    w.terrain.forEach((t, i) => {
+      if (t.water < 1 || i % 3) return;
+      const a = (i / w.terrain.length) * TAU;
+      const p = radial(a, w.radius + t.height + t.water);
+      const shimmer = w.settings.reduced
+        ? 0.65
+        : 0.5 + Math.sin(this.elapsed * 2 + i) * 0.25;
+      g.ellipse(p.x, p.y, 5, 1.5).fill({ color: 0xc7f6ff, alpha: shimmer });
+    });
     const ui = useGame.getState();
     if (ui.selected) {
       const f =
@@ -1002,7 +1118,7 @@ export class GameView {
         y: p.y + x * Math.sin(a) + y * Math.cos(a),
       });
       if (e.label) {
-        label(e.label, e.angle, 65 + progress * 50, "#557749", 16);
+        label(e.label, e.angle, 65 + progress * 50, "#ffffff", 16);
         continue;
       }
       const count = w.settings.reduced ? 12 : 55;
@@ -1014,7 +1130,7 @@ export class GameView {
             end = local(x - 3, y + 10);
           g.moveTo(start.x, start.y)
             .lineTo(end.x, end.y)
-            .stroke({ color: 0x8dc9da, width: 2, alpha: Math.min(1, e.life) });
+            .stroke({ color: 0x38bdf8, width: 2, alpha: Math.min(1, e.life) });
         }
         g.ellipse(p.x, p.y + 3, 60 + Math.sin(this.elapsed * 6) * 5, 7).stroke({
           color: 0xbce6e5,
@@ -1059,7 +1175,7 @@ export class GameView {
             end = local(x, -10);
           g.moveTo(start.x, start.y)
             .lineTo(end.x, end.y)
-            .stroke({ color: 0xffe39d, width: 4, alpha: e.life * 0.1 });
+            .stroke({ color: 0xffdb43, width: 4, alpha: e.life * 0.1 });
         }
         if (w.discoveries.includes("Rainbow")) {
           for (let i = 0; i < 4; i++)
@@ -1100,7 +1216,7 @@ export class GameView {
       const valid = type ? !reason : w.mana >= POWERS[ui.tool as Power].cost;
       const p = radial(this.hoverAngle, ground(w, this.hoverAngle));
       this.preview
-        .ellipse(p.x, p.y, type ? 52 : 75, type ? 12 : 18)
+        .ellipse(p.x, p.y, type ? 52 : w.radius * ui.brush, type ? 12 : 18)
         .stroke({ color: valid ? 0xe6efb3 : 0xd88776, width: 3, alpha: 0.9 });
       if (type) {
         const forest = nearby(w, this.hoverAngle).reduce(
@@ -1113,7 +1229,7 @@ export class GameView {
         );
         const context =
           type === "logging"
-            ? `Forest: ${Math.round(forest)} wood · ~${Math.round(180 / BUILDINGS[type].duration)} wood/min per worker`
+            ? `Forest: ${Math.round(forest)} wood`
             : type === "mine"
               ? `Deposit: ${Math.round(deposit)} stone`
               : type === "farm"
@@ -1139,6 +1255,15 @@ export class GameView {
         .fill(0xd9c6eb)
         .stroke({ color: 0xffe8bd, width: 3 });
     }
+    if (this.drag?.kind === "follower" && this.drag.moved) {
+      label(
+        "Drop on land or a workplace",
+        this.getAngle(this.drag.x, this.drag.y),
+        80,
+        "#ffffff",
+        16,
+      );
+    }
     if (this.drag?.kind === "weather") {
       const d = this.drag,
         amount = clamp((performance.now() - d.start) / 600, 0, 1);
@@ -1157,6 +1282,7 @@ export class GameView {
   }
   destroy() {
     this.disposed = true;
+    this.blur();
     this.observer?.disconnect();
     window.removeEventListener("keydown", this.key);
     window.removeEventListener("blur", this.blur);

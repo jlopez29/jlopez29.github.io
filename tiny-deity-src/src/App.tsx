@@ -7,7 +7,6 @@ import {
   POWERS,
   QUESTS,
   UNLOCKS,
-  maxMana,
   xpForLevel,
 } from "./game/data";
 import {
@@ -149,6 +148,8 @@ export default function App() {
     w = ui.world;
   const host = useRef<HTMLDivElement>(null),
     view = useRef<GameView | null>(null);
+  const [tray, setTray] = useState<"terrain" | "weather" | "more" | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [levelUp, setLevelUp] = useState(0);
   const [fatal, setFatal] = useState("");
   const [resetAsk, setResetAsk] = useState(false);
@@ -285,6 +286,8 @@ export default function App() {
     return () => clearTimeout(t);
   }, [ui.toast]);
   const panel = (p: typeof ui.panel) => {
+    setTray(null);
+    setExpanded(false);
     useGame.setState({ panel: ui.panel === p ? null : p, selected: null });
   };
   const selectedFollower =
@@ -357,132 +360,66 @@ export default function App() {
   const close = () => useGame.setState({ panel: null, selected: null });
   return (
     <main className="app">
-      <header className="topbar">
-        <a className="back-link" href="../">
-          <Icon name="back" size={17} />
-          <span>All projects</span>
-        </a>
-        <div className="wordmark">
-          <Icon name="spark" size={24} />
-          <span>
-            tiny deity<span className="wordmark-dot">.</span>
-          </span>
-        </div>
-        <div className="header-actions">
-          <span className="local-label">
-            <i /> A little world of your own
-          </span>
-          <IconButton
-            name={w.settings.sound ? "volume" : "mute"}
-            label={w.settings.sound ? "Mute sound" : "Enable sound"}
-            onClick={() => {
-              setting("sound", !w.settings.sound);
-              if (w.settings.sound) chime();
-            }}
-          />
+      <section className="game-stage" aria-label="Tiny Deity game">
+        <div className="sky-haze" />
+        <div
+          className="game-canvas"
+          ref={host}
+          onPointerDown={() => {
+            if (useGame.getState().tool === "hand") setTray(null);
+          }}
+        />
+        {!ready && <div className="loading">Growing your little world…</div>}
+        {fatal && <div className="loading error">{fatal}</div>}
+        <header className="compact-hud" aria-label="World resources">
+          <button
+            onClick={() => panel("resources")}
+            aria-label="Open resources"
+            className="hud-pill"
+          >
+            <Icon name="coin" size={20} />
+            <b data-testid="gold">{Math.floor(w.gold)}</b>
+            <Icon name="rain" size={20} />
+            <b data-testid="mana">{w.mana.toFixed(1)}</b>
+          </button>
+          <button
+            className="hud-pill hud-level"
+            onClick={() => panel("goals")}
+            aria-label={`Level ${w.level}, ${w.xp} XP. Open objectives`}
+          >
+            <span className="level-badge">{w.level}</span>
+            <span>
+              <small>
+                {w.xp}/{xpForLevel(w.level)} XP
+              </small>
+              <span className="xp-track">
+                <i
+                  style={{
+                    width: `${Math.min(100, (w.xp / xpForLevel(w.level)) * 100)}%`,
+                  }}
+                />
+              </span>
+            </span>
+          </button>
           <IconButton
             name="settings"
             label="Settings"
-            active={ui.panel === "settings"}
             onClick={() => panel("settings")}
           />
-        </div>
-      </header>
-      <section className="game-stage" aria-label="Tiny Deity game">
-        <div className="sky-haze" />
-        <div className="game-canvas" ref={host} />
-        {!ready && <div className="loading">Growing your little world…</div>}
-        {fatal && <div className="loading error">{fatal}</div>}
-        <div className="resource-bar">
-          <div className="resource mana">
-            <span className="resource-icon">
-              <Icon name="rain" size={25} />
-            </span>
-            <div>
-              <small>DIVINE MANA</small>
-              <b data-testid="mana">
-                {w.mana.toFixed(1)}
-                <em> / {maxMana(w)}</em>
-              </b>
-              <span className="resource-detail">
-                {w.followers.some((f) => f.task === "worshipping")
-                  ? "Faith is flowing"
-                  : "A little more every 45s"}
-              </span>
-            </div>
-          </div>
-          <div className="resource gold">
-            <span className="resource-icon">
-              <Icon name="coin" size={25} />
-            </span>
-            <div>
-              <small>YOUR GOLD</small>
-              <b data-testid="gold">{Math.floor(w.gold).toLocaleString()}</b>
-              <span className="resource-detail">Room for a little growth</span>
-            </div>
-          </div>
-          <div className="level-card">
-            <span className="level-badge">{w.level}</span>
-            <div>
-              <small>
-                LEVEL {w.level}{" "}
-                <span>
-                  {w.xp} / {xpForLevel(w.level)} XP
-                </span>
-              </small>
-              <div className="xp-track">
-                <i
-                  style={{ width: `${(w.xp / xpForLevel(w.level)) * 100}%` }}
-                />
-              </div>
-              <span className="resource-detail">
-                {w.level < 15
-                  ? "Little by little, something wonderful."
-                  : "A flourishing little world."}
-              </span>
-            </div>
-          </div>
-        </div>
-        <button
-          className="materials-toggle"
-          onClick={() => panel("resources")}
-          aria-label="Open resources"
-        >
-          <Icon name="wood" size={17} /> Resources{" "}
-          <span>
-            {Math.floor(w.resources.wood)} · {Math.floor(w.resources.stone)} ·{" "}
-            {Math.floor(w.resources.water)} · {Math.floor(w.resources.food)}
-          </span>
-          <Icon name="chevron" size={13} />
-        </button>
-        <div className="world-title">
-          <span className="overline">YOUR LITTLE PLANET</span>
-          <h1>
-            {w.name}
-            <span>
-              <Icon name="leaf" size={25} />
-            </span>
-          </h1>
-          <p>A little world. A little wonder.</p>
-        </div>
-        {!ui.panel && !ui.selected && goal && (
-          <button className="quest-card" onClick={() => panel("goals")}>
-            <span className="quest-glyph">
-              <Icon name="leaf" size={24} />
-            </span>
-            <span>
-              <small>A SMALL BEGINNING</small>
-              <b>{goal.name}</b>
-              <em>{goal.description}</em>
-              <i className="quest-track">
-                <i
-                  style={{
-                    width: `${Math.min(100, (goal.value(w) / goal.target) * 100)}%`,
-                  }}
-                />
-              </i>
-            </span>
-            <Icon name="chevron" size={16} />
+        </header>
+        <h1 className="planet-name">
+          {w.name}
+          <span> · tiny deity</span>
+        </h1>
+        {goal && (
+          <button
+            className="objective-chip"
+            onClick={() => panel("goals")}
+            title={goal.description}
+          >
+            <Icon name="leaf" size={16} />
+            {goal.name}
+            <Icon name="chevron" size={12} />
           </button>
         )}
         <div className="view-tools">
@@ -598,7 +535,7 @@ export default function App() {
         )}
         {(ui.panel || selectedFollower || selectedBuilding) && (
           <aside
-            className="side-panel"
+            className={`side-panel ${expanded ? "expanded" : ""}`}
             aria-label={
               ui.panel
                 ? `${ui.panel} panel`
@@ -608,6 +545,12 @@ export default function App() {
             }
           >
             <div className="panel-heading">
+              <button
+                aria-label={expanded ? "Collapse panel" : "Expand panel"}
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? "⌄" : "⌃"}
+              </button>
               <span className="overline">
                 {ui.panel === "store"
                   ? "A PLACE FOR EVERYTHING"
@@ -625,6 +568,10 @@ export default function App() {
               <>
                 <span className="overline">GIFTS OF THE LAND</span>
                 <h2>A living little economy.</h2>
+                <div className="status-line">
+                  <span>Awe</span>
+                  <b>{w.awe}</b>
+                </div>
                 <p className="panel-intro">
                   Gather from your landscape, or assign believers to production.
                   Rates show recent actual production and consumption per
@@ -719,29 +666,31 @@ export default function App() {
                       BuildingType,
                       (typeof BUILDINGS)[BuildingType],
                     ][]
-                  ).map(([type, d]) => (
-                    <button
-                      key={type}
-                      className={`store-item ${w.level < d.level ? "locked" : ""}`}
-                      disabled={w.level < d.level}
-                      onClick={() => selectBuilding(type)}
-                    >
-                      <MiniArt type={type} />
-                      <b>{d.name}</b>
-                      <small>{d.tagline}</small>
-                      <span>
-                        {w.level < d.level ? (
-                          <>
-                            <Icon name="lock" size={12} /> Level {d.level}
-                          </>
-                        ) : (
-                          <>
-                            <Icon name="coin" size={14} /> {recipeText(type)}
-                          </>
-                        )}
-                      </span>
-                    </button>
-                  ))}
+                  )
+                    .filter(([, d]) => d.level <= w.level + 1)
+                    .map(([type, d]) => (
+                      <button
+                        key={type}
+                        className={`store-item ${w.level < d.level ? "locked" : ""}`}
+                        disabled={w.level < d.level}
+                        onClick={() => selectBuilding(type)}
+                      >
+                        <MiniArt type={type} />
+                        <b>{d.name}</b>
+                        <small>{d.tagline}</small>
+                        <span>
+                          {w.level < d.level ? (
+                            <>
+                              <Icon name="lock" size={12} /> Level {d.level}
+                            </>
+                          ) : (
+                            <>
+                              <Icon name="coin" size={14} /> {recipeText(type)}
+                            </>
+                          )}
+                        </span>
+                      </button>
+                    ))}
                 </div>
               </>
             )}
@@ -891,13 +840,14 @@ export default function App() {
                     earns faith. Choose Sunshine after rain to discover a
                     rainbow.
                   </p>
-                  <h3>Give little hands a purpose</h3>
+                  <h3>Watch your believers find their purpose</h3>
                   <p>
                     Open Resources to gather wood, then build a logging camp
-                    beside the forest. Make a farm with your next logs. Select a
-                    believer and assign them to the new construction, or drag
-                    them onto it. Once complete, rain charges a farm for three
-                    minutes. Its harvest appears above the roof; tap to collect.
+                    beside the forest. Make a farm with your next logs.
+                    Believers automatically find useful work. You can also
+                    assign or drag them to a workplace. Once complete, rain
+                    charges a farm for three minutes. Its harvest appears above
+                    the roof; tap to collect.
                   </p>
                   <h3>A little rest goes a long way</h3>
                   <p>
@@ -911,8 +861,9 @@ export default function App() {
                   <h3>Shape your world</h3>
                   <p>
                     Drag empty space to rotate all 360°. Scroll or pinch to
-                    zoom. Use the globe for an overview. At level 2, raise,
-                    lower, and smooth terrain. Rain can fill low valleys.
+                    zoom. Use the globe for an overview. From level 1, raise,
+                    and lower terrain. Smooth unlocks at level 2. Rain can fill
+                    low valleys.
                   </p>
                   <h3>Clouds you can hold</h3>
                   <p>
@@ -1073,8 +1024,15 @@ export default function App() {
                       New world / developed demo →
                     </button>
                   )}
+                  <a
+                    href="../"
+                    className="text-button"
+                    style={{ display: "block", minHeight: 44 }}
+                  >
+                    ← All projects
+                  </a>
                   <p className="version-note">
-                    Tiny Deity · Living worlds v2
+                    Tiny Deity · World first V3
                     <br />
                     Original procedural art. No accounts. Just a little world.
                   </p>
@@ -1099,100 +1057,185 @@ export default function App() {
           </div>
         )}
         <div className="bottom-ui">
-          <div className="power-caption">
-            <span>MAKE A LITTLE MAGIC</span>
-            <b>
-              {ui.tool === "hand"
-                ? "A world at your fingertips"
-                : POWERS[ui.tool].hint}
-            </b>
-          </div>
-          <div className="action-bar">
-            <div
-              className="power-tools"
-              role="toolbar"
-              aria-label="Divine powers"
-            >
+          {tray && (
+            <div className="context-tray" aria-label={`${tray} controls`}>
               <button
-                className={`power-button ${ui.tool === "hand" ? "chosen" : ""}`}
-                onClick={() => setPower("hand")}
-                aria-label="Hand tool"
-                aria-pressed={ui.tool === "hand"}
-                title="Select and move"
+                className="tray-close"
+                aria-label="Close tray"
+                onClick={() => setTray(null)}
               >
-                <Icon name="hand" size={25} />
-                <span>Explore</span>
+                ×
               </button>
-              <i className="tool-divider" />
-              {(
-                Object.entries(POWERS) as [Power, (typeof POWERS)[Power]][]
-              ).map(([power, d]) => (
-                <button
-                  className={`power-button ${ui.tool === power ? "chosen" : ""} ${w.level < d.level ? "unavailable" : ""}`}
-                  key={power}
-                  onClick={() => setPower(power)}
-                  aria-label={`${d.name}${w.level < d.level ? ` (level ${d.level})` : ""}`}
-                  aria-pressed={ui.tool === power}
-                  title={`${d.name} · ${d.cost} mana${w.level < d.level ? " · level " + d.level : ""}`}
-                >
-                  <Icon name={d.icon} size={24} />
-                  <span>{d.name.replace(" land", "")}</span>
-                  <small>
-                    {w.level < d.level ? (
-                      <>
-                        <Icon name="lock" size={9} /> {d.level}
-                      </>
-                    ) : (
-                      <>
-                        {d.cost} <i />
-                      </>
-                    )}
-                  </small>
-                </button>
-              ))}
+              {tray !== "more" ? (
+                <>
+                  <div className="tray-actions">
+                    {(
+                      Object.entries(POWERS) as [
+                        Power,
+                        (typeof POWERS)[Power],
+                      ][]
+                    )
+                      .filter(([power]) =>
+                        tray === "terrain"
+                          ? ["raise", "lower", "smooth"].includes(power)
+                          : ["rain", "sun"].includes(power),
+                      )
+                      .map(([power, d]) => (
+                        <button
+                          key={power}
+                          className={ui.tool === power ? "chosen" : ""}
+                          aria-label={`${d.name}${w.level < d.level ? ` (level ${d.level})` : ""}`}
+                          aria-pressed={ui.tool === power}
+                          onClick={() => setPower(power)}
+                        >
+                          <Icon name={d.icon} />
+                          <span>{d.name.replace(" land", "")}</span>
+                          <small>
+                            {w.level < d.level
+                              ? `Lv ${d.level}`
+                              : `${d.cost} mana`}
+                          </small>
+                        </button>
+                      ))}
+                  </div>
+                  {tray === "terrain" && (
+                    <div
+                      className="brush-sizes"
+                      role="group"
+                      aria-label="Brush size"
+                    >
+                      {[
+                        ["Small", 0.09],
+                        ["Medium", 0.14],
+                        ["Large", 0.22],
+                      ].map(([name, size]) => (
+                        <button
+                          key={name}
+                          aria-pressed={ui.brush === size}
+                          onClick={() =>
+                            useGame.setState({ brush: Number(size) })
+                          }
+                        >
+                          {name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="more-grid">
+                  <button
+                    onClick={() => panel("followers")}
+                    aria-label={`${w.followers.length} followers · curious souls`}
+                  >
+                    <Icon name="people" />
+                    Followers
+                  </button>
+                  <button onClick={() => panel("resources")}>
+                    <Icon name="wood" />
+                    Resources
+                  </button>
+                  <button onClick={() => panel("goals")}>
+                    <Icon name="book" />
+                    Objectives
+                  </button>
+                  <button onClick={() => panel("discoveries")}>
+                    <Icon name="spark" />
+                    Journal
+                  </button>
+                  <button onClick={() => panel("help")}>
+                    <Icon name="help" />
+                    Help
+                  </button>
+                  {(Object.entries(POWERS) as [Power, (typeof POWERS)[Power]][])
+                    .filter(([power]) =>
+                      ["lightning", "fire", "resurrect"].includes(power),
+                    )
+                    .map(([power, d]) => (
+                      <button
+                        key={power}
+                        onClick={() => {
+                          setPower(power);
+                          setTray(null);
+                        }}
+                        aria-label={d.name}
+                      >
+                        <Icon name={d.icon} />
+                        {d.name}
+                        <small>
+                          {w.level < d.level
+                            ? `Lv ${d.level}`
+                            : `${d.cost} mana`}
+                        </small>
+                      </button>
+                    ))}
+                </div>
+              )}
             </div>
+          )}
+          <nav className="action-bar" aria-label="Primary actions">
             <button
-              className="build-button"
-              onClick={() => panel("store")}
-              aria-expanded={ui.panel === "store"}
+              aria-label="Hand tool"
+              aria-pressed={
+                ui.tool === "hand" && !ui.placing && !ui.moving && !tray
+              }
+              onClick={() => {
+                setPower("hand");
+                setTray(null);
+              }}
             >
-              <Icon name="build" size={23} />
-              <span>Build something</span>
-              <Icon name="chevron" size={16} />
+              <Icon name="hand" />
+              <span>Explore</span>
             </button>
-          </div>
-          <div className="bottom-meta">
-            <button onClick={() => panel("followers")}>
-              <Icon name="people" size={16} />
-              <b>
-                {w.followers.filter((f) => f.alive && f.faith >= 50).length}
-              </b>{" "}
-              followers{" "}
-              <span>
-                · {w.followers.filter((f) => f.alive && f.faith < 50).length}{" "}
-                curious souls
-              </span>
+            <button
+              aria-label="Terrain"
+              className={
+                ["raise", "lower", "smooth"].includes(ui.tool)
+                  ? "active-mode"
+                  : ""
+              }
+              aria-expanded={tray === "terrain"}
+              onClick={() => {
+                setPower("raise");
+                setTray(tray === "terrain" ? null : "terrain");
+              }}
+            >
+              <Icon name="raise" />
+              <span>Terrain</span>
             </button>
-            <span className="save-indicator">
-              <i />
-              {ui.saveStatus}
-            </span>
-            <div>
-              <span className="awe">
-                <Icon name="spark" size={17} />
-                <b>{w.awe}</b> Awe
-              </span>
-              <button onClick={() => panel("goals")}>
-                <Icon name="book" size={17} /> Goals
-                {w.completed.length > 0 && <small>{w.completed.length}</small>}
-              </button>
-              <IconButton
-                name="help"
-                label="Help and controls"
-                onClick={() => panel("help")}
-              />
-            </div>
-          </div>
+            <button
+              aria-label="Weather"
+              className={["rain", "sun"].includes(ui.tool) ? "active-mode" : ""}
+              aria-expanded={tray === "weather"}
+              onClick={() => {
+                setPower("rain");
+                setTray(tray === "weather" ? null : "weather");
+              }}
+            >
+              <Icon name="rain" />
+              <span>Weather</span>
+            </button>
+            <button
+              aria-label="Build something"
+              className={ui.placing || ui.moving ? "active-mode" : ""}
+              aria-expanded={ui.panel === "store"}
+              onClick={() => panel("store")}
+            >
+              <Icon name="build" />
+              <span>Build</span>
+            </button>
+            <button
+              aria-label="More"
+              aria-expanded={tray === "more"}
+              onClick={() => {
+                close();
+                setTray(tray === "more" ? null : "more");
+              }}
+            >
+              <Icon name="book" />
+              <span>More</span>
+            </button>
+          </nav>
         </div>
       </section>
       {levelUp > 0 && (
@@ -1408,8 +1451,8 @@ function BuildingPanel({
         <>
           <Meter label="Construction" value={b.construction * 100} />
           <p className="panel-intro">
-            Assign a believer to finish construction. Little hands make big
-            things happen.
+            Believers will help build here when autonomy is enabled. You can
+            also assign a worker.
           </p>
           <button
             className="secondary-button"

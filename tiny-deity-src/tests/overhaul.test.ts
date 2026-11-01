@@ -36,8 +36,8 @@ describe("A: inhabitants and reservations", () => {
       w.followers.map((f) => f.slot),
     );
     grab(w, w.followers[0].id);
-    expect(w.followers[0].slot).toBeNull();
-    expect(assign(w, w.followers[3].id, b.id)).toBeNull();
+    expect(w.followers[0].slot).toBe(0);
+    expect(assign(w, w.followers[3].id, b.id)).toContain("full");
     const carriedAngle = w.followers[0].angle;
     advance(w, 2);
     expect(w.followers[0].angle).toBe(carriedAngle);

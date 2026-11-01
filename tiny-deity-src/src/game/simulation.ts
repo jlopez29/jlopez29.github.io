@@ -33,6 +33,10 @@ import {
   type Building,
   type Follower,
 } from "./types";
+const carriedFrom = new WeakMap<
+  Follower,
+  { task: Follower["task"]; timer: number }
+>();
 export function note(w: World, message: string) {
   w.log.unshift(message);
   w.log = w.log.slice(0, 30);
@@ -200,10 +204,7 @@ export function cast(
         if (old < 50 && f.faith >= 50) {
           w.stats.converted++;
           effect(w, "heart", f.angle);
-          note(
-            w,
-            `${f.name} believes in you! Pick them up and give them a purpose.`,
-          );
+          note(w, `${f.name} believes in you! They will find useful work.`);
           gainXP(w, 10);
         }
       } else {
@@ -212,7 +213,7 @@ export function cast(
         f.happiness = Math.max(10, f.happiness - 12);
       }
     });
-    if (w.terrain.some((t) => t.water > 3)) discover(w, "Lakeside");
+    if (nearby(w, angle).some((t) => t.water > 3)) discover(w, "Lakeside");
     w.terrainVersion++;
   }
   checkQuests(w);
@@ -285,18 +286,21 @@ export function purchase(
     charge: 0,
   };
   w.buildings.push(b);
-  note(w, `${BUILDINGS[type].name} placed. Assign a believer to build it.`);
+  note(w, `${BUILDINGS[type].name} placed. Believers will help build it.`);
   return b;
 }
 export function assign(
   w: World,
   fid: string,
   bid: string | null,
+  manual = true,
 ): string | null {
   const f = w.followers.find((f) => f.id === fid);
   if (!f || !f.alive) return "Select a living follower.";
   if (bid === null) {
     f.assigned = null;
+    f.manual = false;
+    f.jobCooldown = 12;
     f.slot = null;
     f.lane = 0;
     f.returnTo = null;
@@ -347,6 +351,8 @@ export function assign(
   if (slot === undefined)
     return "No clear work position. This building is full or neighboring work positions are too close.";
   f.assigned = bid;
+  f.manual = manual;
+  f.jobCooldown = 18;
   f.slot = slot;
   f.returnTo = null;
   f.task = "traveling";
@@ -361,7 +367,8 @@ export function slotAngle(w: World, b: Building, slot: number): number {
 export function grab(w: World, id: string) {
   const f = w.followers.find((f) => f.id === id);
   if (!f?.alive) return;
-  assign(w, id, null);
+  // Preserve needs and reservations until a drop succeeds or the gesture is canceled.
+  carriedFrom.set(f, { task: f.task, timer: f.timer });
   f.timer = 0;
   f.task = "carried";
 }
@@ -383,12 +390,22 @@ export function landFollower(w: World, id: string, angle: number) {
     angle = wrap(angle + 27 / w.radius);
   f.angle = wrap(angle);
   f.origin = f.angle;
+  f.timer = 8;
 }
 export function releaseCarried(w: World) {
   w.followers
     .filter((f) => f.task === "carried")
     .forEach((f) => {
-      f.task = "wandering";
+      const previous = carriedFrom.get(f);
+      f.task =
+        previous?.task ??
+        (f.assigned
+          ? "traveling"
+          : f.returnTo
+            ? "seekingResources"
+            : "wandering");
+      f.timer = previous?.timer ?? 0;
+      carriedFrom.delete(f);
     });
 }
 /** Repair old/duplicate reservations without changing any physical positions. */
@@ -398,10 +415,15 @@ export function restoreSlots(w: World) {
     f.facing ??= 1;
     f.lane ??= 0;
     const b = w.buildings.find((b) => b.id === f.assigned);
-    if (!b || !f.alive || f.task === "carried") {
+    if (f.task === "carried")
+      f.task = f.assigned
+        ? "traveling"
+        : f.returnTo
+          ? "seekingResources"
+          : "wandering";
+    if (!b || !f.alive) {
       f.assigned = null;
       f.slot = null;
-      if (f.task === "carried") f.task = "wandering";
       continue;
     }
     const slots = used.get(b.id) || new Set<number>();
@@ -556,6 +578,8 @@ export function step(w: World, dt: number) {
   const groups = new Map<string, Follower[]>();
   for (const f of w.followers) {
     if (!f.alive || f.task === "carried") continue;
+    f.jobCooldown = Math.max(0, (f.jobCooldown ?? 0) - dt);
+    f.manual ??= !!f.assigned;
     f.hunger = Math.min(100, f.hunger + dt * 0.06);
     if (f.hunger > 70) f.happiness = Math.max(15, f.happiness - dt * 0.04);
     if (
@@ -566,6 +590,7 @@ export function step(w: World, dt: number) {
       w.resources.food >= 1
     ) {
       const previous = f.returnTo || f.assigned;
+      if (!f.returnTo) f.returnManual = f.manual;
       assign(w, f.id, null);
       f.returnTo = previous;
       f.task = "seekingResources";
@@ -586,7 +611,8 @@ export function step(w: World, dt: number) {
         }
         const previous = f.returnTo;
         assign(w, f.id, null);
-        if (previous && w.settings.autonomy) assign(w, f.id, previous);
+        if (previous && w.settings.autonomy)
+          assign(w, f.id, previous, f.returnManual ?? true);
         else f.task = "wandering";
         f.timer = 1;
       }
@@ -627,6 +653,36 @@ export function step(w: World, dt: number) {
       f.timer -= dt;
       continue;
     }
+    // Reservations and a cooldown prevent tick-by-tick competition. Legacy and
+    // explicit player assignments stay preferred through food/rest detours.
+    if (
+      w.settings.autonomy &&
+      (!f.assigned || !f.manual) &&
+      f.faith >= 50 &&
+      f.energy > 30 &&
+      !f.returnTo &&
+      f.jobCooldown <= 0
+    ) {
+      const score = (b: Building) =>
+        (b.construction < 1
+          ? -4
+          : BUILDINGS[b.type].role === "produce"
+            ? -1
+            : 0) +
+        distance(b.angle, f.angle) * 0.3;
+      const current = w.buildings.find((b) => b.id === f.assigned);
+      const candidates = w.buildings
+        .filter(
+          (b) =>
+            b.durability > 0 &&
+            BUILDINGS[b.type].role !== "rest" &&
+            (!current || score(b) < score(current) - 0.7),
+        )
+        .sort((a, b) => score(a) - score(b));
+      for (const candidate of candidates)
+        if (!assign(w, f.id, candidate.id, false)) break;
+      f.jobCooldown = 18;
+    }
     const b = w.buildings.find((b) => b.id === f.assigned);
     if (
       f.task === "resting" &&
@@ -635,8 +691,9 @@ export function step(w: World, dt: number) {
       w.settings.autonomy
     ) {
       const previous = f.returnTo;
+      const manual = f.returnManual ?? true;
       assign(w, f.id, null);
-      assign(w, f.id, previous);
+      assign(w, f.id, previous, manual);
       continue;
     }
     if (b) {
@@ -659,10 +716,12 @@ export function step(w: World, dt: number) {
             v.construction >= 1 &&
             BUILDINGS[v.type].role === "rest" &&
             w.followers.filter((p) => p.assigned === v.id).length <
-              BUILDINGS[v.type].capacity,
+              BUILDINGS[v.type].capacity + v.upgrade - 1,
         );
         if (rest) {
-          assign(w, f.id, rest.id);
+          const manual = f.manual;
+          assign(w, f.id, rest.id, false);
+          f.returnManual = manual;
           f.returnTo = b.id;
           continue;
         }

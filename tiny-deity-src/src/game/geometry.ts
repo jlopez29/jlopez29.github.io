@@ -52,10 +52,12 @@ export function deform(
   angle: number,
   amount: number,
   smooth = false,
+  width = 0.105,
+  remember = true,
 ) {
-  w.undo = w.terrain.map((t) => t.height);
+  if (remember) w.undo = w.terrain.map((t) => t.height);
   const center = sample(w.terrain, angle).height;
-  const width = w.level >= 13 ? 0.18 : 0.105;
+
   w.terrain.forEach((t, i) => {
     const d = distance((i / w.terrain.length) * TAU, angle);
     if (d < width) {

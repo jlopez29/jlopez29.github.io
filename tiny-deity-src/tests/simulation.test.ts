@@ -90,6 +90,7 @@ describe("miracles and followers", () => {
   it("regenerates mana at the documented base rate", () => {
     const w = createWorld();
     w.mana = 0;
+    w.settings.autonomy = false;
     advance(w, 45);
     expect(w.mana).toBeCloseTo(1, 1);
     expect(w.mana).toBeLessThanOrEqual(maxMana(w));

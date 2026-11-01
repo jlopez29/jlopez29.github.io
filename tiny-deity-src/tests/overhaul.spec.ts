@@ -76,6 +76,7 @@ test("three shrine inhabitants travel, worship separately, and retain reservatio
   expect(followers.every((f) => f.task === "worshipping")).toBe(true);
   await page.reload();
   await expect(page.locator("canvas")).toBeVisible();
+  await page.getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("button", { name: /followers.*curious souls/ }).click();
   await expect(
     page.getByRole("button", { name: "Pip worshipping" }),

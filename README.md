@@ -4,13 +4,14 @@ Personal portfolio and browser-based projects hosted at [jlopez29.github.io](htt
 
 The portfolio and most apps are plain HTML, CSS, and JavaScript. PoolPicks has a
 separate Angular source project that builds into a static folder alongside the
-other apps. There is no repository-wide package install or build step.
+other apps. Root npm scripts install, build, and test Tiny Deity; other apps have independent workflows.
 
 ## Projects
 
 | Project | Description | Source / documentation | Site path |
 | --- | --- | --- | --- |
 | Pit Boss | Casino tycoon prototype with a shared craps simulation and walkable player mode | [casino-godot/](casino-godot/README.md) | `/casino/` |
+| Tiny Deity | Colorful mobile-first god simulator with terrain sculpting, weather, and autonomous followers | [tiny-deity-src/](tiny-deity-src/README.md) | `/tiny-deity/` |
 | Portfolio | Project showcase with responsive navigation and light/dark themes | [index.html](index.html), [home.css](home.css) | `/` |
 | PoolPicks | NFL confidence picks, weekly leaderboards, playoff picks, and achievements; currently configured for the private AFCU group | [poolpicks-app/](poolpicks-app/README.md) | `/poolpicks/` |
 | LoL IQ | League of Legends training games, champion scouting, and guided lessons | [loliq/](loliq/README.md) | `/loliq/` |

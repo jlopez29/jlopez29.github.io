@@ -230,6 +230,15 @@ export function deserialize(raw: string): World {
     w.targetRadius > 5000
   )
     throw new Error("Invalid growth dimensions.");
+  // V3 adds optional job preferences without changing the v2 world schema.
+  for (const f of w.followers) {
+    f.manual = typeof f.manual === "boolean" ? f.manual : !!f.assigned;
+    f.jobCooldown = finite(f.jobCooldown)
+      ? Math.max(0, Math.min(300, f.jobCooldown!))
+      : 0;
+    f.returnManual =
+      typeof f.returnManual === "boolean" ? f.returnManual : !!f.returnTo;
+  }
   restoreSlots(w);
   w.effects = [];
   w.undo = null;
