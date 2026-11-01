@@ -87,6 +87,7 @@ export class GameView {
   labels = new Container();
   private textures = new Map<string, Texture>();
   private sprites = new Map<string, Sprite>();
+  private visualLanes = new Map<string, number>();
   private skyObjects: SkyObject[] = [];
   private drag: Drag | null = null;
   private pointers = new Map<number, { x: number; y: number }>();
@@ -516,6 +517,10 @@ export class GameView {
       this.restoreWeather();
     } else if (d.kind === "terrain") {
       this.sculpt(d, performance.now());
+      if (d.sculpted > 0) {
+        effect(w, "heart", angle);
+        w.effects[w.effects.length - 1].label = "World shaped +1 XP";
+      }
     } else if (ui.tool !== "hand" && d.kind !== "camera") {
       if (!this.onSurface(p.x, p.y))
         error = "Choose a spot on the surface of your planet.";
@@ -876,15 +881,20 @@ export class GameView {
       s.texture = this.textures.get(
         `${animated && Math.sin(this.elapsed * 5) > 0 ? "fa" : "f"}${f.appearance}`,
       )!;
-      const p = radial(
-        f.angle,
-        ground(w, f.angle) +
-          f.lane +
-          (["traveling", "seekingResources", "fleeing"].includes(f.task)
-            ? Math.abs(Math.sin(this.elapsed * 9)) * 2
-            : 0),
+      const bob = ["traveling", "seekingResources", "fleeing"].includes(
+        f.task,
+      )
+        ? Math.abs(Math.sin(this.elapsed * 9)) * 2
+        : 0;
+      const p = radial(f.angle, ground(w, f.angle) + bob);
+      // Pass on a neighboring tangent path, not 28 units above another head.
+      const oldLane = this.visualLanes.get(f.id) ?? 0;
+      const lane = oldLane + (f.lane - oldLane) * 0.25;
+      this.visualLanes.set(f.id, lane);
+      s.position.set(
+        p.x + lane * Math.cos(f.angle),
+        p.y + lane * Math.sin(f.angle),
       );
-      s.position.set(p.x, p.y);
       s.rotation =
         f.angle +
         (f.task === "wandering" || f.task === "traveling"
@@ -916,6 +926,7 @@ export class GameView {
     }
     for (const [id, s] of this.sprites) {
       if (!id.startsWith("d") && !live.has(id)) {
+        this.visualLanes.delete(id);
         s.destroy();
         this.sprites.delete(id);
       }

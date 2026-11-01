@@ -68,12 +68,15 @@ export function effect(
 ) {
   w.effects.push({ id: w.tick * 100 + w.effects.length, type, angle, life: 3 });
 }
-export function discover(w: World, name: string) {
+export function discover(w: World, name: string, angle = 0) {
   if (w.discoveries.includes(name)) return;
   w.discoveries.push(name);
   w.stats.discoveries++;
   w.awe++;
   gainXP(w, 20);
+  effect(w, "rune", angle);
+  effect(w, "heart", angle);
+  w.effects[w.effects.length - 1].label = `${name}! +20 XP`;
   note(w, `Discovery: ${name}. +1 Awe`);
 }
 export function cast(
@@ -135,7 +138,7 @@ export function cast(
     }
     if (power === "sun") {
       w.stats.sun++;
-      if (w.time - w.lastRain < 35) discover(w, "Rainbow");
+      if (w.time - w.lastRain < 35) discover(w, "Rainbow", angle);
     }
     const dryBeforeRain =
       power === "rain" &&
@@ -152,7 +155,7 @@ export function cast(
         t.vegetation = clamp(t.vegetation + 0.19 * f, 0, 1);
         t.fire = 0;
         t.water = Math.min(basinCapacity(w, i), t.water + 9 * f);
-        if (burned) discover(w, "Life after fire");
+        if (burned) discover(w, "Life after fire", angle);
       }
       if (power === "sun") {
         t.heat = clamp(t.heat + 0.25 * f, 0, 1);
@@ -195,10 +198,10 @@ export function cast(
     if (power === "rain") {
       const local = nearby(w, angle);
       if (w.stats.terraforms > 0 && local.some((t) => t.water > 7)) {
-        discover(w, "Lake Maker");
+        discover(w, "Lake Maker", angle);
       }
       if (dryBeforeRain && local.some((t) => t.vegetation > 0.28)) {
-        discover(w, "Green Thumb");
+        discover(w, "Green Thumb", angle);
       }
     }
     w.buildings.forEach((b) => {
@@ -239,7 +242,7 @@ export function cast(
         f.happiness = Math.max(10, f.happiness - 12);
       }
     });
-    if (nearby(w, angle).some((t) => t.water > 3)) discover(w, "Lakeside");
+    if (nearby(w, angle).some((t) => t.water > 3)) discover(w, "Lakeside", angle);
     w.terrainVersion++;
   }
   checkQuests(w);
@@ -527,6 +530,8 @@ export function collect(w: World, id: string): number {
   w.stats.collected += gold;
   gainXP(w, Math.ceil(gold / 3));
   effect(w, "coin", b.angle);
+  effect(w, "coin", b.angle);
+  w.effects[w.effects.length - 1].label = `+${gold} Gold!`;
   checkQuests(w);
   return gold;
 }
