@@ -143,6 +143,7 @@ export class GameView {
     this.app.canvas.setAttribute("role", "application");
     this.app.canvas.tabIndex = 0;
     this.app.stage.addChild(this.sky, this.scene);
+    this.objects.sortableChildren = true;
     this.scene.addChild(
       this.terrain,
       this.details,
@@ -826,7 +827,7 @@ export class GameView {
     }
     this.seed = w.seed;
   }
-  private renderEntities(w: World) {
+  private renderEntities(w: World, dt: number) {
     const live = new Set<string>();
     for (const [id, s] of this.sprites) {
       if (!id.startsWith("d")) continue;
@@ -886,25 +887,26 @@ export class GameView {
       )
         ? Math.abs(Math.sin(this.elapsed * 9)) * 2
         : 0;
-      const p = radial(f.angle, ground(w, f.angle) + bob);
-      // Pass on a neighboring tangent path, not 28 units above another head.
+      // Use an inner, parallel surface path. A tangent offset used to
+      // move the character *towards* the person they were passing.
       const oldLane = this.visualLanes.get(f.id) ?? 0;
-      const lane = oldLane + (f.lane - oldLane) * 0.25;
+      const ease = w.settings.reduced ? 1 : 1 - Math.exp(-dt * 18);
+      const lane = oldLane + (f.lane - oldLane) * ease;
       this.visualLanes.set(f.id, lane);
-      s.position.set(
-        p.x + lane * Math.cos(f.angle),
-        p.y + lane * Math.sin(f.angle),
-      );
+      const p = radial(f.angle, ground(w, f.angle) + bob - lane);
+      s.position.set(p.x, p.y);
+      s.zIndex = lane > 2 ? -1 : 1;
       s.rotation =
         f.angle +
         (f.task === "wandering" || f.task === "traveling"
           ? Math.sin(this.elapsed * 8 + f.appearance) * 0.06
           : 0);
+      const depthScale = 1 - (lane / 48) * 0.1;
       s.scale.set(
-        0.64 * (f.facing || 1),
-        f.task === "worshipping"
+        0.64 * depthScale * (f.facing || 1),
+        (f.task === "worshipping"
           ? 0.55 + Math.sin(this.elapsed * 3 + f.appearance) * 0.05
-          : 0.64,
+          : 0.64) * depthScale,
       );
       s.alpha = f.faith < 50 ? 0.88 : 1;
       s.tint = f.alive ? 0xffffff : 0x87908a;
@@ -922,6 +924,7 @@ export class GameView {
         const dragP = this.worldPoint(this.drag.x, this.drag.y);
         s.position.set(dragP.x, dragP.y);
         s.rotation = -this.camera.rotation;
+        s.zIndex = 5;
       }
     }
     for (const [id, s] of this.sprites) {
@@ -980,7 +983,7 @@ export class GameView {
       if (o.kind === "lightning") o.sprite.visible = w.level >= 3;
     }
     if (this.meshVersion !== w.terrainVersion) this.drawTerrain(w);
-    this.renderEntities(w);
+    this.renderEntities(w, dt);
     this.drawFeedback(w, overview);
   };
   private drawFeedback(w: World, _overview: boolean) {
