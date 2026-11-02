@@ -94,14 +94,16 @@ export function redistributeWater(w: World, passes = 4) {
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       const difference =
-        w.terrain[i].height + volumes[i] -
-        (w.terrain[j].height + volumes[j]);
+        w.terrain[i].height + volumes[i] - (w.terrain[j].height + volumes[j]);
       if (Math.abs(difference) < 0.05) continue;
       const source = difference > 0 ? i : j;
       const destination = difference > 0 ? j : i;
       const flow = Math.min(
         Math.max(0, volumes[source] + changes[source]),
-        Math.max(0, limits[destination] - volumes[destination] - changes[destination]),
+        Math.max(
+          0,
+          limits[destination] - volumes[destination] - changes[destination],
+        ),
         Math.abs(difference) * 0.3,
       );
       if (flow <= 0) continue;

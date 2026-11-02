@@ -18,6 +18,10 @@ npm run test:e2e
 
 The dev server listens on `0.0.0.0:5173`. `npm run build` emits the static application into `../tiny-deity/`, with relative asset URLs. The portfolio card opens `/tiny-deity/`. Commit the generated directory along with source changes so the repository's existing GitHub Pages deployment serves the game without a Node server. To inspect the complete production site locally: `python3 -m http.server 4173` from the repository root, then open `http://localhost:4173/tiny-deity/`.
 
+Build and deploy the entire generated directory together. Keep Vite's hashed entry and chunk filenames: renderer chunks import the entry, so renaming or replacing only the entry can load two copies of Pixi and break pointer events and text rendering. The production browser tests check this module graph.
+
+Version 0.4.4 (`surface-crossing` in Settings) lets followers pass through one another on the same surface path without collision delays, lane offsets, or depth scaling. Existing save files remain compatible.
+
 ## Play
 
 Start with a compact planet, two inhabitants, 255 gold, and a small material inventory. Rain near Pip to earn their faith, watch believers find the shrine: they walk to reserved positions and worship. Rain on the nearby forest, gather wood in Resources, build a logging camp, and let autonomous followers construct and operate it. Use logs for a farm and tent. Farms turn water into food and collectible gold; collectors catch local rain or draw from ponds. Hungry followers eat, tired workers rest, and productive work supports new arrivals. Real activity completes goals; sacred runes expand the planet at levels 3, 6, 10, and 15.

@@ -364,6 +364,7 @@ describe("approachable early game", () => {
     const farm = purchase(w, "farm", 0.25);
     if (typeof farm === "string") throw Error(farm);
     assign(w, w.followers[0].id, farm.id);
+    expect(cast(w, "rain", farm.angle)).toBeNull();
     advance(w, 65);
     expect(w.stats.farmedFood).toBeGreaterThanOrEqual(5);
     expect(w.consumed.water).toBeGreaterThan(0);

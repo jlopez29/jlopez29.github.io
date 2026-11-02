@@ -242,7 +242,8 @@ export function cast(
         f.happiness = Math.max(10, f.happiness - 12);
       }
     });
-    if (nearby(w, angle).some((t) => t.water > 3)) discover(w, "Lakeside", angle);
+    if (nearby(w, angle).some((t) => t.water > 3))
+      discover(w, "Lakeside", angle);
     w.terrainVersion++;
   }
   checkQuests(w);
@@ -476,65 +477,13 @@ export function restoreSlots(w: World) {
     }
   }
 }
-/**
- * Keep followers from intersecting at busy crossings. The surface is a
- * one-dimensional circle: overtaking and oncoming traffic need a second,
- * *radial* visual path, not a shift along the walking tangent.
- * The alternate lane starts well before contact and is held until clear.
- */
+/** Followers share the surface path and can walk through one another. */
 function walk(w: World, f: Follower, target: number, dt: number) {
   const radius = ground(w, f.angle);
   const diff = signedDistance(target, f.angle);
   const direction = Math.sign(diff);
   f.facing = direction || f.facing;
-  let amount = Math.min(Math.abs(diff), (dt * f.speed * 1700) / radius);
-  const movingTasks = new Set([
-    "traveling",
-    "wandering",
-    "fleeing",
-    "seekingResources",
-  ]);
-  let passing = false;
-  // Keep the inner path until the other pedestrian is completely behind us.
-  const encounterRadius = f.lane > 0 ? 145 : 115;
-  for (const other of w.followers) {
-    if (other.id === f.id || !other.alive || other.task === "carried") continue;
-    const gap = distance(other.angle, f.angle) * radius;
-    if (gap > encounterRadius) continue;
-    const ahead = signedDistance(other.angle, f.angle) * direction * radius;
-    const moving = movingTasks.has(other.task);
-    const opposing = moving && other.facing === -direction;
-    const overtaking =
-      moving &&
-      other.facing === direction &&
-      ahead > 0 &&
-      f.speed > other.speed + 0.0001;
-    // A moving follower steps around a parked follower. Oncoming followers
-    // choose deterministically which one uses the back path.
-    if (!moving || (opposing && f.id > other.id) || overtaking) {
-      passing = true;
-    } else if (
-      moving &&
-      other.facing === direction &&
-      ahead > 0 &&
-      ahead < 32
-    ) {
-      // No same-lane tailgating if both travel at similar speeds.
-      amount = Math.min(amount, Math.max(0, (ahead - 29) / radius));
-    }
-    // Multiple passers on the inner path also keep a safe following gap.
-    if (
-      moving &&
-      f.lane > 0 &&
-      other.lane > 0 &&
-      other.facing === direction &&
-      ahead > 0 &&
-      ahead < 32
-    ) {
-      amount = Math.min(amount, Math.max(0, (ahead - 29) / radius));
-    }
-  }
-  f.lane = passing ? 36 : 0;
+  const amount = Math.min(Math.abs(diff), (dt * f.speed * 1700) / radius);
   f.angle = wrap(f.angle + direction * amount);
   return distance(f.angle, target) * radius < 0.5;
 }
@@ -626,15 +575,8 @@ export function step(w: World, dt: number) {
   const groups = new Map<string, Follower[]>();
   for (const f of w.followers) {
     if (!f.alive || f.task === "carried") continue;
-    // Interruptions (e.g. observing a miracle) must release the passing path.
-    // Otherwise an idle follower may remain visually detached from the ground.
-    if (
-      f.task !== "traveling" &&
-      f.task !== "wandering" &&
-      f.task !== "fleeing" &&
-      f.task !== "seekingResources"
-    )
-      f.lane = 0;
+    // Retain the legacy save field, but never offset followers from the surface.
+    f.lane = 0;
     f.jobCooldown = Math.max(0, (f.jobCooldown ?? 0) - dt);
     f.manual ??= !!f.assigned;
     f.hunger = Math.min(100, f.hunger + dt * 0.06);

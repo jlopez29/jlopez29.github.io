@@ -85,7 +85,8 @@ describe("miracles and followers", () => {
     expect(f.faith).toBeGreaterThanOrEqual(50);
     expect(w.terrain[0].moisture).toBeGreaterThan(moisture);
     expect(w.stats.converted).toBe(1);
-    expect(w.mana).toBe(9);
+    expect(w.level).toBe(2);
+    expect(w.mana).toBe(maxMana(w));
   });
   it("regenerates mana at the documented base rate", () => {
     const w = createWorld();

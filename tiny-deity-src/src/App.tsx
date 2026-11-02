@@ -46,8 +46,8 @@ import {
 } from "./persistence/database";
 import { GameView } from "./render/GameView";
 import { chime } from "./audio";
-const GAME_VERSION = "0.4.3";
-const GAME_BUILD = "grounded-followers";
+const GAME_VERSION = "0.4.4";
+const GAME_BUILD = "surface-crossing";
 let saveChain = Promise.resolve();
 let saveBlocked = false;
 let protectedBackup: string | null = null;

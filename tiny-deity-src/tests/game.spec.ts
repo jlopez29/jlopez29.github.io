@@ -1,20 +1,17 @@
 import { test, expect, type Page } from "@playwright/test";
-async function start(page: Page) {
-  await page.goto("/tiny-deity/");
+test.beforeEach(async ({ page }) => {
   await page.addLocatorHandler(
     page.getByRole("dialog", { name: "Level up" }),
     async () => {
       await page.getByRole("button", { name: "Keep growing" }).click();
     },
   );
+});
+async function start(page: Page) {
+  await page.goto("/tiny-deity/");
   await expect(page.locator("canvas")).toBeVisible();
   await expect(page.getByText("Growing your little world…")).toHaveCount(0);
   await page.waitForTimeout(1500);
-}
-async function closeLevel(page: Page) {
-  await page.waitForTimeout(450);
-  const keep = page.getByRole("button", { name: "Keep growing" });
-  if (await keep.isVisible()) await keep.click();
 }
 test("main page launches the playable game; planet, navigation, and direct rain work", async ({
   page,
@@ -37,7 +34,8 @@ test("main page launches the playable game; planet, navigation, and direct rain 
     box.x + box.width * 0.5,
     box.y + box.height * 0.17 - 4,
   );
-  await expect(page.getByTestId("mana")).toContainText("9.");
+  // Converting Pip completes goals and levels up, refilling the mana cap.
+  await expect(page.getByTestId("mana")).toContainText("12.");
   await page.getByRole("button", { name: "Rotate planet left" }).click();
   await page.getByRole("button", { name: "Zoom out", exact: true }).click();
   await page.getByRole("button", { name: "Full planet overview" }).click();
@@ -58,7 +56,6 @@ test("a follower builds and operates a farm, collects gold, and survives save/re
   await page.getByRole("button", { name: /followers.*curious souls/ }).click();
   await page.getByRole("button", { name: "Pip Curious inhabitant" }).click();
   await page.getByRole("button", { name: "Rain on Pip" }).click();
-  await closeLevel(page);
   await expect(page.getByText("A DEVOTED LITTLE SOUL")).toBeVisible();
   await page.getByRole("button", { name: "Close panel" }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -72,7 +69,6 @@ test("a follower builds and operates a farm, collects gold, and survives save/re
   await page.getByRole("button", { name: /Sunpatch farm/ }).click();
   await page.getByRole("button", { name: "Return to home view" }).click();
   await page.waitForTimeout(1200);
-  await closeLevel(page);
   const box = (await page.locator("canvas").boundingBox())!;
   await page.mouse.click(
     box.x + box.width / 2 + Math.sin(0.6) * box.height * 0.34,
@@ -86,14 +82,11 @@ test("a follower builds and operates a farm, collects gold, and survives save/re
   await expect(
     page.getByText("UNDER CONSTRUCTION", { exact: false }),
   ).toHaveCount(0, { timeout: 35000 });
-  await closeLevel(page);
   await page.getByRole("button", { name: "Water this building" }).click();
-  await closeLevel(page);
   await expect(
     page.getByRole("button", { name: /Collect \d+ gold/ }),
   ).toBeEnabled({ timeout: 60000 });
   await page.getByRole("button", { name: /Collect \d+ gold/ }).click();
-  await closeLevel(page);
   await expect(page.getByRole("status")).toContainText("harvest");
   await page.getByRole("button", { name: "Close panel" }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();

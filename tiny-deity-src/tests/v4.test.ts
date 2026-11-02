@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createWorld } from "../src/game/world";
-import { distance, ground, radial, signedDistance } from "../src/game/geometry";
-import { step } from "../src/game/simulation";
+import { distance, signedDistance, wrap } from "../src/game/geometry";
+import { assign, slotAngle, step } from "../src/game/simulation";
 import { redistributeWater } from "../src/game/geometry";
 import { materialProduction } from "../src/game/economy";
 import { cast, offline, purchase } from "../src/game/simulation";
@@ -38,7 +38,7 @@ describe("V4 environmental consistency and rewards", () => {
   it("keeps passive water collection but rewards assigning a worker", () => {
     const run = (staffed: boolean) => {
       const w = createWorld();
-      const b = purchase(w, "collector", 1.18);
+      const b = purchase(w, "collector", 1.0);
       if (typeof b === "string") throw Error(b);
       b.construction = 1;
       const start = w.resources.water;
@@ -54,9 +54,7 @@ describe("V4 environmental consistency and rewards", () => {
     w.mana = 10;
     expect(cast(w, "lightning", -0.86)).toBeNull();
     expect(w.resources.stone).toBeGreaterThan(3);
-    const accessible = w.terrain.filter(
-      (t) => t.stone > 0.1 && t.rock > 0.12,
-    );
+    const accessible = w.terrain.filter((t) => t.stone > 0.1 && t.rock > 0.12);
     expect(accessible.length).toBeGreaterThan(0);
   });
 
@@ -79,60 +77,96 @@ describe("V4 environmental consistency and rewards", () => {
   });
 });
 
-describe("V4 follower passing lanes", () => {
-  it("separates oncoming people before crossing and restores the main path", () => {
+describe("follower surface crossing", () => {
+  it.each([1, -1])(
+    "walks through a stationary follower in direction %s",
+    (direction) => {
+      const w = createWorld();
+      w.settings.autonomy = false;
+      w.settings.events = false;
+      const [parked, walker] = w.followers;
+      parked.angle = 0;
+      parked.task = "observing";
+      parked.timer = 20;
+      walker.angle = wrap(-direction * 0.08);
+      // Wandering direction is derived from world time and appearance.
+      walker.appearance = direction > 0 ? 0 : 1;
+      walker.lane = 36; // A save from the old passing-lane build.
+      const original = parked.angle;
+      let crossed = false;
+      let closest = Infinity;
+      for (let i = 0; i < 100; i++) {
+        step(w, 0.05);
+        closest = Math.min(
+          closest,
+          distance(walker.angle, parked.angle) * w.radius,
+        );
+        crossed ||= signedDistance(walker.angle, parked.angle) * direction > 0;
+        expect(walker.lane).toBe(0);
+        expect(parked.angle).toBe(original);
+        expect(parked.lane).toBe(0);
+      }
+      expect(crossed).toBe(true);
+      expect(closest).toBeLessThan(1);
+    },
+  );
+
+  it("lets oncoming followers cross without offsets or blocking", () => {
     const w = createWorld();
     w.settings.autonomy = false;
     w.settings.events = false;
     const [left, right] = w.followers;
-    left.angle = 1.1;
-    right.angle = 1.4;
-    left.task = right.task = "wandering";
-    left.facing = 1;
-    right.facing = -1;
-    let passing = false;
-    let crossed = false;
-    let minClearance = Infinity;
-    for (let i = 0; i < 140; i++) {
+    left.angle = 0.5;
+    right.angle = 0.7;
+    left.appearance = 0;
+    right.appearance = 1;
+    let closest = Infinity;
+    for (let i = 0; i < 100; i++) {
       step(w, 0.05);
-      if (left.lane || right.lane) {
-        passing = true;
-        const a = radial(left.angle, ground(w, left.angle) - left.lane);
-        const b = radial(right.angle, ground(w, right.angle) - right.lane);
-        minClearance = Math.min(
-          minClearance,
-          Math.hypot(a.x - b.x, a.y - b.y),
-        );
-      }
-      crossed ||= signedDistance(left.angle, right.angle) > 0;
+      closest = Math.min(closest, distance(left.angle, right.angle) * w.radius);
+      expect(left.lane).toBe(0);
+      expect(right.lane).toBe(0);
     }
-    expect(passing).toBe(true);
-    expect(crossed).toBe(true);
-    expect(minClearance).toBeGreaterThan(30);
-    expect(distance(left.angle, right.angle) * w.radius).toBeGreaterThan(100);
-    expect(left.lane).toBe(0);
-    expect(right.lane).toBe(0);
+    expect(signedDistance(left.angle, right.angle)).toBeGreaterThan(0);
+    expect(closest).toBeLessThan(1);
   });
 
-  it("routes a walker around a stationary person rather than through them", () => {
+  it("lets a faster walker overtake without tailgating", () => {
     const w = createWorld();
     w.settings.autonomy = false;
-    const [parked, walker] = w.followers;
-    parked.angle = 1;
+    w.settings.events = false;
+    const [slow, fast] = w.followers;
+    slow.angle = 0.6;
+    fast.angle = 0.55;
+    slow.appearance = fast.appearance = 0;
+    slow.speed = 0.01;
+    fast.speed = 0.04;
+    for (let i = 0; i < 80; i++) {
+      step(w, 0.05);
+      expect(slow.lane).toBe(0);
+      expect(fast.lane).toBe(0);
+    }
+    expect(signedDistance(fast.angle, slow.angle)).toBeGreaterThan(0);
+  });
+
+  it("reaches a reserved job slot through a stationary follower", () => {
+    const w = createWorld();
+    w.settings.autonomy = false;
+    w.settings.events = false;
+    const [parked, worker] = w.followers;
+    const b = w.buildings[0];
+    worker.faith = 80;
+    expect(assign(w, worker.id, b.id)).toBeNull();
+    const target = slotAngle(w, b, worker.slot!);
+    worker.angle = wrap(target + 0.2);
+    parked.angle = wrap(target + 0.1);
     parked.task = "observing";
     parked.timer = 20;
-    walker.angle = 1.22;
-    walker.task = "wandering";
-    walker.facing = -1;
-    let passed = false;
-    for (let i = 0; i < 110; i++) {
-      step(w, 0.05);
-      if (walker.angle < parked.angle) passed = true;
-      if (distance(parked.angle, walker.angle) * w.radius < 28) {
-        expect(walker.lane).toBeGreaterThanOrEqual(45);
-      }
-    }
-    expect(passed).toBe(true);
+    for (let i = 0; i < 120; i++) step(w, 0.05);
+    expect(distance(worker.angle, target) * w.radius).toBeLessThan(0.5);
+    expect(worker.task).toBe("worshipping");
+    expect(worker.lane).toBe(0);
+    expect(parked.angle).toBe(wrap(target + 0.1));
   });
 });
 

@@ -87,7 +87,6 @@ export class GameView {
   labels = new Container();
   private textures = new Map<string, Texture>();
   private sprites = new Map<string, Sprite>();
-  private visualLanes = new Map<string, number>();
   private skyObjects: SkyObject[] = [];
   private drag: Drag | null = null;
   private pointers = new Map<number, { x: number; y: number }>();
@@ -827,7 +826,7 @@ export class GameView {
     }
     this.seed = w.seed;
   }
-  private renderEntities(w: World, dt: number) {
+  private renderEntities(w: World) {
     const live = new Set<string>();
     for (const [id, s] of this.sprites) {
       if (!id.startsWith("d")) continue;
@@ -882,40 +881,23 @@ export class GameView {
       s.texture = this.textures.get(
         `${animated && Math.sin(this.elapsed * 5) > 0 ? "fa" : "f"}${f.appearance}`,
       )!;
-      const bob = ["traveling", "seekingResources", "fleeing"].includes(
-        f.task,
-      )
+      const bob = ["traveling", "seekingResources", "fleeing"].includes(f.task)
         ? Math.abs(Math.sin(this.elapsed * 9)) * 2
         : 0;
-      // Use an inner, parallel surface path. A tangent offset used to
-      // move the character *towards* the person they were passing.
-      const oldLane = this.visualLanes.get(f.id) ?? 0;
-      // Only moving pedestrians can use the inner path. A follower who stops
-      // to worship, observe or rest must stay anchored to actual ground.
-      const walking = [
-        "traveling",
-        "wandering",
-        "fleeing",
-        "seekingResources",
-      ].includes(f.task);
-      const targetLane = walking ? Math.min(36, f.lane) : 0;
-      const ease = w.settings.reduced ? 1 : 1 - Math.exp(-dt * 18);
-      const lane = oldLane + (targetLane - oldLane) * ease;
-      this.visualLanes.set(f.id, lane);
-      const p = radial(f.angle, ground(w, f.angle) + bob - lane);
+      // Crossing followers keep the same ground path, scale and draw order.
+      const p = radial(f.angle, ground(w, f.angle) + bob);
       s.position.set(p.x, p.y);
-      s.zIndex = lane > 2 ? -1 : 1;
+      s.zIndex = 1;
       s.rotation =
         f.angle +
         (f.task === "wandering" || f.task === "traveling"
           ? Math.sin(this.elapsed * 8 + f.appearance) * 0.06
           : 0);
-      const depthScale = 1 - (lane / 36) * 0.12;
       s.scale.set(
-        0.64 * depthScale * (f.facing || 1),
-        (f.task === "worshipping"
+        0.64 * (f.facing || 1),
+        f.task === "worshipping"
           ? 0.55 + Math.sin(this.elapsed * 3 + f.appearance) * 0.05
-          : 0.64) * depthScale,
+          : 0.64,
       );
       s.alpha = f.faith < 50 ? 0.88 : 1;
       s.tint = f.alive ? 0xffffff : 0x87908a;
@@ -938,7 +920,6 @@ export class GameView {
     }
     for (const [id, s] of this.sprites) {
       if (!id.startsWith("d") && !live.has(id)) {
-        this.visualLanes.delete(id);
         s.destroy();
         this.sprites.delete(id);
       }
@@ -992,7 +973,7 @@ export class GameView {
       if (o.kind === "lightning") o.sprite.visible = w.level >= 3;
     }
     if (this.meshVersion !== w.terrainVersion) this.drawTerrain(w);
-    this.renderEntities(w, dt);
+    this.renderEntities(w);
     this.drawFeedback(w, overview);
   };
   private drawFeedback(w: World, _overview: boolean) {
