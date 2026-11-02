@@ -534,7 +534,7 @@ function walk(w: World, f: Follower, target: number, dt: number) {
       amount = Math.min(amount, Math.max(0, (ahead - 29) / radius));
     }
   }
-  f.lane = passing ? 48 : 0;
+  f.lane = passing ? 36 : 0;
   f.angle = wrap(f.angle + direction * amount);
   return distance(f.angle, target) * radius < 0.5;
 }
@@ -626,6 +626,15 @@ export function step(w: World, dt: number) {
   const groups = new Map<string, Follower[]>();
   for (const f of w.followers) {
     if (!f.alive || f.task === "carried") continue;
+    // Interruptions (e.g. observing a miracle) must release the passing path.
+    // Otherwise an idle follower may remain visually detached from the ground.
+    if (
+      f.task !== "traveling" &&
+      f.task !== "wandering" &&
+      f.task !== "fleeing" &&
+      f.task !== "seekingResources"
+    )
+      f.lane = 0;
     f.jobCooldown = Math.max(0, (f.jobCooldown ?? 0) - dt);
     f.manual ??= !!f.assigned;
     f.hunger = Math.min(100, f.hunger + dt * 0.06);
