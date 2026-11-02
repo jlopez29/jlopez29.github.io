@@ -890,8 +890,17 @@ export class GameView {
       // Use an inner, parallel surface path. A tangent offset used to
       // move the character *towards* the person they were passing.
       const oldLane = this.visualLanes.get(f.id) ?? 0;
+      // Only moving pedestrians can use the inner path. A follower who stops
+      // to worship, observe or rest must stay anchored to actual ground.
+      const walking = [
+        "traveling",
+        "wandering",
+        "fleeing",
+        "seekingResources",
+      ].includes(f.task);
+      const targetLane = walking ? Math.min(36, f.lane) : 0;
       const ease = w.settings.reduced ? 1 : 1 - Math.exp(-dt * 18);
-      const lane = oldLane + (f.lane - oldLane) * ease;
+      const lane = oldLane + (targetLane - oldLane) * ease;
       this.visualLanes.set(f.id, lane);
       const p = radial(f.angle, ground(w, f.angle) + bob - lane);
       s.position.set(p.x, p.y);
@@ -901,7 +910,7 @@ export class GameView {
         (f.task === "wandering" || f.task === "traveling"
           ? Math.sin(this.elapsed * 8 + f.appearance) * 0.06
           : 0);
-      const depthScale = 1 - (lane / 48) * 0.1;
+      const depthScale = 1 - (lane / 36) * 0.12;
       s.scale.set(
         0.64 * depthScale * (f.facing || 1),
         (f.task === "worshipping"

@@ -46,6 +46,8 @@ import {
 } from "./persistence/database";
 import { GameView } from "./render/GameView";
 import { chime } from "./audio";
+const GAME_VERSION = "0.4.3";
+const GAME_BUILD = "grounded-followers";
 let saveChain = Promise.resolve();
 let saveBlocked = false;
 let protectedBackup: string | null = null;
@@ -890,6 +892,12 @@ export default function App() {
             {ui.panel === "settings" && (
               <>
                 <h2>A moment of calm.</h2>
+                <div className="status-line" aria-label="Game build version">
+                  <span>Version</span>
+                  <b>
+                    v{GAME_VERSION} · {GAME_BUILD}
+                  </b>
+                </div>
                 <div className="settings-content">
                   <label className="field-label">
                     Planet name

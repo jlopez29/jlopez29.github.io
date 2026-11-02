@@ -135,3 +135,30 @@ describe("V4 follower passing lanes", () => {
     expect(passed).toBe(true);
   });
 });
+
+describe("V4.3 stationary follower grounding", () => {
+  it("clears a stranded passing lane when a follower stops to observe", () => {
+    const w = createWorld();
+    w.settings.autonomy = false;
+    const follower = w.followers[1];
+    follower.task = "observing";
+    follower.timer = 4;
+    follower.lane = 36;
+    const originalAngle = follower.angle;
+    step(w, 0.05);
+    expect(follower.lane).toBe(0);
+    expect(follower.angle).toBe(originalAngle);
+    expect(follower.task).toBe("observing");
+  });
+
+  it("does not keep a passing lane when a worker starts resting", () => {
+    const w = createWorld();
+    w.settings.autonomy = false;
+    const follower = w.followers[1];
+    follower.task = "resting";
+    follower.timer = 3;
+    follower.lane = 36;
+    step(w, 0.05);
+    expect(follower.lane).toBe(0);
+  });
+});
